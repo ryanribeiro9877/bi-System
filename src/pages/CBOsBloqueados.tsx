@@ -1,9 +1,7 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Ban, Users, DollarSign, Building2, Loader2, LayoutGrid, Zap, Factory, List } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Ban, Users, DollarSign, Building2, LayoutGrid, Zap, Factory, List } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAuth } from "@/hooks/useAuth";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import VisaoGeralCBOsPanel from "@/components/cbos/VisaoGeralCBOsPanel";
 import PorBancoCBOsPanel from "@/components/cbos/PorBancoCBOsPanel";
@@ -18,28 +16,12 @@ interface CBOStats {
 }
 
 const CBOsBloqueados = () => {
-  const navigate = useNavigate();
-  const { user, isLoading: authLoading } = useAuth();
-  
   const [stats] = useState<CBOStats>({
     totalBloqueados: 8,
     leadsAfetados: 1050,
     margemPerdida: 521000,
     setoresAfetados: 7,
   });
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    navigate("/");
-    return null;
-  }
 
   const formatCurrency = (value: number) => {
     if (value >= 1000000) {

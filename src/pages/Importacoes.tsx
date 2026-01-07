@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { Upload, FileSpreadsheet, FileText, Check, X, Loader2, AlertCircle, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,8 +73,7 @@ const determinarStatus = (simulacao: any, proposta: any, getProposta: any): stri
 };
 
 const Importacoes = () => {
-  const navigate = useNavigate();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   
   const [isDragging, setIsDragging] = useState(false);
@@ -451,18 +449,6 @@ const Importacoes = () => {
     setIsDragging(false);
   }, []);
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    navigate("/");
-    return null;
-  }
 
   const getStatusBadge = (status: string) => {
     switch (status) {

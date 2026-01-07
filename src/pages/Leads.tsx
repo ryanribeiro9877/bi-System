@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { CheckCircle, TrendingUp, DollarSign, Clock, Eye, ChevronLeft, ChevronRight, Loader2, Search, Settings, BarChart3, Building2, Zap, Users, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,8 +41,7 @@ interface Lead {
 }
 
 const Leads = () => {
-  const navigate = useNavigate();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user } = useAuth();
   
   const [stats, setStats] = useState<LeadStats>({
     totalAprovados: 0,
@@ -163,19 +161,6 @@ const Leads = () => {
       </Badge>
     );
   };
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    navigate("/");
-    return null;
-  }
 
   const kpiCards = [
     {
@@ -446,17 +431,20 @@ const Leads = () => {
                             variant="outline"
                             size="icon"
                             className="h-8 w-8"
+                            onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                             disabled={currentPage === 1}
-                            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                           >
                             <ChevronLeft className="h-4 w-4" />
                           </Button>
+                          <span className="flex items-center px-3 text-sm text-muted-foreground">
+                            Página {currentPage} de {totalPages || 1}
+                          </span>
                           <Button
                             variant="outline"
                             size="icon"
                             className="h-8 w-8"
-                            disabled={currentPage === totalPages || totalPages === 0}
-                            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                            onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                            disabled={currentPage >= totalPages}
                           >
                             <ChevronRight className="h-4 w-4" />
                           </Button>

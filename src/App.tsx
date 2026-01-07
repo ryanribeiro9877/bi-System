@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import UserManagement from "./pages/UserManagement";
@@ -24,12 +25,54 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/dashboard/users" element={<UserManagement />} />
-            <Route path="/dashboard/importacoes" element={<Importacoes />} />
-            <Route path="/dashboard/leads" element={<Leads />} />
-            <Route path="/dashboard/cbos-bloqueados" element={<CBOsBloqueados />} />
-            <Route path="/dashboard/alertas" element={<Alertas />} />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/users"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <UserManagement />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/importacoes"
+              element={
+                <ProtectedRoute>
+                  <Importacoes />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/leads"
+              element={
+                <ProtectedRoute>
+                  <Leads />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/cbos-bloqueados"
+              element={
+                <ProtectedRoute>
+                  <CBOsBloqueados />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/alertas"
+              element={
+                <ProtectedRoute>
+                  <Alertas />
+                </ProtectedRoute>
+              }
+            />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

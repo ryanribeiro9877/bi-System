@@ -1,9 +1,6 @@
-import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import DashboardFilters from "@/components/dashboard/DashboardFilters";
 import DashboardTabs from "@/components/dashboard/DashboardTabs";
-import { useAuth } from "@/hooks/useAuth";
 import { DashboardProvider, useDashboard } from "@/contexts/DashboardContext";
 import { Loader2 } from "lucide-react";
 
@@ -39,40 +36,13 @@ const DashboardContent = () => {
   );
 };
 
-const DashboardLayout = () => {
-  return (
-    <div className="flex min-h-screen bg-background">
-      <DashboardSidebar />
-      <DashboardContent />
-    </div>
-  );
-};
-
 const Dashboard = () => {
-  const navigate = useNavigate();
-  const { user, isLoading } = useAuth();
-
-  useEffect(() => {
-    if (!isLoading && !user) {
-      navigate("/");
-    }
-  }, [user, isLoading, navigate]);
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
-
   return (
     <DashboardProvider>
-      <DashboardLayout />
+      <div className="flex min-h-screen bg-background">
+        <DashboardSidebar />
+        <DashboardContent />
+      </div>
     </DashboardProvider>
   );
 };
