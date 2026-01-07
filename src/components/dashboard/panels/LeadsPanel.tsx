@@ -48,29 +48,77 @@ const LeadsPanel = () => {
   const [detailOpen, setDetailOpen] = useState(false);
   const leadsPerPage = 15;
 
-  // Helper para normalizar status do lead
+  // Helper para normalizar status do lead - suporta múltiplos formatos
   const getNormalizedStatus = (lead: Lead): string => {
     const margem = lead.retorno_margem as any;
+    const simulacao = lead.retorno_simulacao as any;
     
-    // Se não tem retorno de margem = CPF não encontrado
-    if (!margem || margem === null) {
-      return "cpf_nao_encontrado";
+    // Verificar status explícito no retorno_simulacao.details (novo formato)
+    const detailsStatus = simulacao?.details?.status?.toUpperCase();
+    if (detailsStatus === "APPROVED" || detailsStatus === "SUCCESS") return "aprovado";
+    if (detailsStatus === "REJECTED" || detailsStatus === "FAILED") {
+      // Verificar se é CPF não encontrado ou reprovado por margem
+      const error = simulacao?.details?.error || "";
+      if (error.includes("não encontrado") || error.includes("inelegível") || error.includes("não elegível")) {
+        return "cpf_nao_encontrado";
+      }
+      return "reprovado";
     }
     
-    // Se tem erro de timeout ou rate limit = CPF não encontrado
-    const erro = margem?.error || "";
-    if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
-      return "cpf_nao_encontrado";
-    }
-    
-    // Se tem margem disponível > 0 = aprovado
+    // Se tem margem disponível > 0 = aprovado (retorno_margem)
     const valorMargem = margem?.valorMargemDisponivel;
     if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
       return "aprovado";
     }
     
+    // Se tem availableMarginValue > 0 = aprovado (retorno_simulacao.details)
+    const availableMargin = simulacao?.details?.availableMarginValue;
+    if (availableMargin !== undefined && availableMargin !== null && parseFloat(availableMargin) > 0) {
+      return "aprovado";
+    }
+    
+    // Se não tem margem e não tem details = CPF não encontrado
+    if (!margem && !simulacao?.details) {
+      return "cpf_nao_encontrado";
+    }
+    
+    // Se tem erro de timeout ou rate limit = CPF não encontrado
+    const erro = margem?.error || simulacao?.error || "";
+    if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
+      return "cpf_nao_encontrado";
+    }
+    
     // Se tem retorno mas margem <= 0 = reprovado
     return "reprovado";
+  };
+  
+  // Helper para extrair valor da margem disponível
+  const getValorMargem = (lead: Lead): number => {
+    const margem = lead.retorno_margem as any;
+    const simulacao = lead.retorno_simulacao as any;
+    
+    if (margem?.valorMargemDisponivel !== undefined && margem?.valorMargemDisponivel !== null) {
+      return parseFloat(margem.valorMargemDisponivel) || 0;
+    }
+    if (simulacao?.details?.availableMarginValue !== undefined && simulacao?.details?.availableMarginValue !== null) {
+      return parseFloat(simulacao.details.availableMarginValue) || 0;
+    }
+    return 0;
+  };
+  
+  // Helper para extrair nome
+  const getNome = (lead: Lead): string => {
+    if (lead.nome) return lead.nome;
+    
+    const margem = lead.retorno_margem as any;
+    const simulacao = lead.retorno_simulacao as any;
+    
+    if (margem?.registroEmpregaticio?.nomeEmpregado) return margem.registroEmpregaticio.nomeEmpregado;
+    if (margem?.nomeEmpregado) return margem.nomeEmpregado;
+    if (simulacao?.details?.name) return simulacao.details.name;
+    if (simulacao?.name) return simulacao.name;
+    
+    return "-";
   };
 
   // Filtra e pagina os leads
@@ -194,9 +242,8 @@ const LeadsPanel = () => {
                 </TableHeader>
                 <TableBody>
                   {paginatedLeads.map((lead) => {
-                    const margem = lead.retorno_margem as any;
-                    const nome = lead.nome || margem?.registroEmpregaticio?.nomeEmpregado || margem?.nomeEmpregado || "-";
-                    const valorMargemDisponivel = margem?.valorMargemDisponivel || 0;
+                    const nome = getNome(lead);
+                    const valorMargemDisponivel = getValorMargem(lead);
                     const banco = lead.banco || "-";
                     const statusNormalizado = getNormalizedStatus(lead);
 
