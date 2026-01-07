@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, BellRing, BellOff, Plus, Settings, Clock, CheckCircle2, AlertTriangle, Trash2 } from "lucide-react";
+import { Bell, BellRing, BellOff, Plus, Settings, Clock, CheckCircle2, AlertTriangle, Trash2, Pencil } from "lucide-react";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import KPICard from "@/components/dashboard/KPICard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,12 +25,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const alertasAtivos = [
+interface Alerta {
+  id: number;
+  nome: string;
+  descricao: string;
+  tipo: string;
+  limite?: string;
+  banco?: string;
+  ativo: boolean;
+  criadoEm: string;
+}
+
+const alertasIniciais: Alerta[] = [
   {
     id: 1,
     nome: "CBO Bloqueado - Vendedor",
     descricao: "Alerta quando CBO de vendedor for bloqueado",
-    tipo: "cbo",
+    tipo: "cbos_bloqueados",
+    limite: "10",
+    banco: "Todos os bancos",
     ativo: true,
     criadoEm: "2026-01-05",
   },
@@ -38,7 +51,9 @@ const alertasAtivos = [
     id: 2,
     nome: "Reprovação acima de 30%",
     descricao: "Alerta quando taxa de reprovação ultrapassar 30%",
-    tipo: "taxa",
+    tipo: "taxa_reprovacao",
+    limite: "30",
+    banco: "Presença",
     ativo: true,
     criadoEm: "2026-01-03",
   },
@@ -46,7 +61,9 @@ const alertasAtivos = [
     id: 3,
     nome: "Novo banco disponível",
     descricao: "Alerta quando novo banco entrar na plataforma",
-    tipo: "banco",
+    tipo: "volume_leads",
+    limite: "500",
+    banco: "UY3",
     ativo: false,
     criadoEm: "2026-01-01",
   },
@@ -124,14 +141,17 @@ const tiposAlerta = [
 ];
 
 const Alertas = () => {
+  const [alertas, setAlertas] = useState<Alerta[]>(alertasIniciais);
   const [openDialog, setOpenDialog] = useState(false);
+  const [openConfigDialog, setOpenConfigDialog] = useState(false);
+  const [editingAlerta, setEditingAlerta] = useState<Alerta | null>(null);
   const [nomeAlerta, setNomeAlerta] = useState("");
   const [descricaoAlerta, setDescricaoAlerta] = useState("");
   const [tipoAlerta, setTipoAlerta] = useState("");
   const [limite, setLimite] = useState("");
   const [bancoFiltro, setBancoFiltro] = useState("");
 
-  const alertasAtivosCount = alertasAtivos.filter(a => a.ativo).length;
+  const alertasAtivosCount = alertas.filter(a => a.ativo).length;
   const naoLidosCount = historicoAlertas.filter(a => !a.lido).length;
   const totalDisparados = historicoAlertas.length;
 
@@ -163,15 +183,48 @@ const Alertas = () => {
   };
 
   const handleCreateAlerta = () => {
-    // Aqui seria a lógica para criar o alerta
-    console.log({
+    const novoAlerta: Alerta = {
+      id: Date.now(),
       nome: nomeAlerta,
       descricao: descricaoAlerta,
       tipo: tipoAlerta,
       limite,
       banco: bancoFiltro,
-    });
+      ativo: true,
+      criadoEm: new Date().toISOString().split('T')[0],
+    };
+    setAlertas([...alertas, novoAlerta]);
     setOpenDialog(false);
+    resetForm();
+  };
+
+  const handleEditAlerta = (alerta: Alerta) => {
+    setEditingAlerta(alerta);
+    setNomeAlerta(alerta.nome);
+    setDescricaoAlerta(alerta.descricao);
+    setTipoAlerta(alerta.tipo);
+    setLimite(alerta.limite || "");
+    setBancoFiltro(alerta.banco || "");
+  };
+
+  const handleSaveEditAlerta = () => {
+    if (!editingAlerta) return;
+    
+    const updatedAlertas = alertas.map(a => 
+      a.id === editingAlerta.id
+        ? { ...a, nome: nomeAlerta, descricao: descricaoAlerta, tipo: tipoAlerta, limite, banco: bancoFiltro }
+        : a
+    );
+    setAlertas(updatedAlertas);
+    setEditingAlerta(null);
+    resetForm();
+  };
+
+  const handleDeleteAlerta = (id: number) => {
+    setAlertas(alertas.filter(a => a.id !== id));
+  };
+
+  const resetForm = () => {
     setNomeAlerta("");
     setDescricaoAlerta("");
     setTipoAlerta("");
@@ -334,15 +387,147 @@ const Alertas = () => {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
-                <Button variant="outline" className="gap-2">
-                  <Settings className="w-4 h-4" />
-                  Configurar Alertas
-                </Button>
+                <Dialog open={openConfigDialog} onOpenChange={setOpenConfigDialog}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" className="gap-2">
+                      <Settings className="w-4 h-4" />
+                      Configurar Alertas
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[600px]">
+                    <DialogHeader>
+                      <DialogTitle>Configurar Alertas</DialogTitle>
+                    </DialogHeader>
+                    {alertas.length === 0 ? (
+                      <div className="py-8 text-center">
+                        <AlertTriangle className="w-12 h-12 text-destructive mx-auto mb-4" />
+                        <p className="text-destructive font-medium">Nenhum alerta encontrado</p>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          Crie um alerta primeiro para poder configurá-lo.
+                        </p>
+                      </div>
+                    ) : editingAlerta ? (
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-nome">Nome do Alerta *</Label>
+                          <Input
+                            id="edit-nome"
+                            placeholder="Digite o nome do alerta"
+                            value={nomeAlerta}
+                            onChange={(e) => setNomeAlerta(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-descricao">Descrição</Label>
+                          <Textarea
+                            id="edit-descricao"
+                            placeholder="Descrição do alerta..."
+                            value={descricaoAlerta}
+                            onChange={(e) => setDescricaoAlerta(e.target.value)}
+                            rows={2}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-tipo">Tipo de Alerta *</Label>
+                          <Select value={tipoAlerta} onValueChange={(value) => {
+                            setTipoAlerta(value);
+                            setLimite("");
+                          }}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione o tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {tiposAlerta.map((tipo) => (
+                                <SelectItem key={tipo.value} value={tipo.value}>
+                                  {tipo.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-limite">Limite *</Label>
+                          <Input
+                            id="edit-limite"
+                            type="number"
+                            placeholder="Digite o limite"
+                            value={limite}
+                            onChange={(e) => handleLimiteChange(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-banco">Banco *</Label>
+                          <Select value={bancoFiltro} onValueChange={setBancoFiltro}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione o banco" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {bancosCadastrados.map((banco) => (
+                                <SelectItem key={banco} value={banco}>
+                                  {banco}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <DialogFooter className="pt-4">
+                          <Button variant="outline" onClick={() => {
+                            setEditingAlerta(null);
+                            resetForm();
+                          }}>
+                            Voltar
+                          </Button>
+                          <Button onClick={handleSaveEditAlerta} disabled={!isFormValid}>
+                            Salvar Alterações
+                          </Button>
+                        </DialogFooter>
+                      </div>
+                    ) : (
+                      <div className="py-4">
+                        <ScrollArea className="h-[300px] pr-4">
+                          <div className="space-y-3">
+                            {alertas.map((alerta) => (
+                              <div
+                                key={alerta.id}
+                                className="p-4 rounded-lg border bg-muted/20 flex items-center justify-between"
+                              >
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <BellRing className={`w-4 h-4 ${alerta.ativo ? 'text-success' : 'text-muted-foreground'}`} />
+                                    <span className="font-medium text-sm">{alerta.nome}</span>
+                                    <Badge variant={alerta.ativo ? "default" : "secondary"} className="text-xs">
+                                      {alerta.ativo ? "Ativo" : "Inativo"}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">{alerta.descricao}</p>
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1"
+                                  onClick={() => handleEditAlerta(alerta)}
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                  Editar
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </div>
+                    )}
+                  </DialogContent>
+                </Dialog>
               </div>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {alertasAtivos.map((alerta) => (
+                {alertas.map((alerta) => (
                   <Card key={alerta.id} className={`border ${alerta.ativo ? 'border-success/30 bg-success/5' : 'border-muted bg-muted/20'}`}>
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between mb-2">
@@ -359,7 +544,12 @@ const Alertas = () => {
                         <span className="text-xs text-muted-foreground">
                           Criado em {new Date(alerta.criadoEm).toLocaleDateString('pt-BR')}
                         </span>
-                        <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-7 px-2 text-destructive hover:text-destructive"
+                          onClick={() => handleDeleteAlerta(alerta.id)}
+                        >
                           <Trash2 className="w-3 h-3" />
                         </Button>
                       </div>
