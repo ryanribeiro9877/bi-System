@@ -62,12 +62,12 @@ const Dashboard = () => {
   }
 
   return (
-    <DashboardProvider>
-      <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-background">
+      <DashboardProvider>
         <DashboardSidebar />
         <DashboardContent />
-      </div>
-    </DashboardProvider>
+      </DashboardProvider>
+    </div>
   );
 };
 
