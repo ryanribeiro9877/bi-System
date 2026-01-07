@@ -67,14 +67,24 @@ const LeadsContent = () => {
   const getNormalizedStatus = (lead: Lead): string => {
     const s = (lead.status || "").toLowerCase().trim();
     
-    // Status explícitos sempre respeitados
+    // Status explícitos (exceto pendente) sempre respeitados
     if (s === "aprovado" || s === "approved") return "aprovado";
     if (s === "reprovado" || s === "rejected" || s === "recusado") return "reprovado";
     if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "cpf_nao_encontrado";
     
+    // Para status "pendente" ou vazio, analisar os dados do retorno
     const margem = lead.retorno_margem as any;
     const simulacao = lead.retorno_simulacao as any;
     const getProposta = lead.retorno_get_proposta as any;
+    
+    // === FORMATO V8 ===
+    // Verificar retorno_get_proposta primeiro (V8 aprovado tem proposta)
+    if (getProposta) {
+      const getPropostaStatus = getProposta?.status?.toUpperCase?.() || "";
+      if (getPropostaStatus === "APPROVED" || getPropostaStatus === "ACTIVE" || getPropostaStatus) {
+        return "aprovado";
+      }
+    }
     
     // Verificar status explícito no retorno_simulacao.details (formato V8)
     const detailsStatus = typeof simulacao?.details?.status === 'string' 
@@ -82,32 +92,44 @@ const LeadsContent = () => {
       : String(simulacao?.details?.status || "").toUpperCase();
     
     if (detailsStatus === "APPROVED" || detailsStatus === "SUCCESS") return "aprovado";
-    if (detailsStatus === "REJECTED" || detailsStatus === "FAILED") {
+    if (detailsStatus === "REJECTED") return "reprovado";
+    if (detailsStatus === "FAILED") {
       const error = String(simulacao?.details?.error || simulacao?.details?.description || "");
       if (error.includes("não encontrado") || error.includes("inelegível") || error.includes("não elegível")) {
         return "cpf_nao_encontrado";
       }
-      return "reprovado";
-    }
-    
-    // Verificar status no retorno_get_proposta (formato V8)
-    const getPropostaStatus = getProposta?.status?.toUpperCase?.() || "";
-    if (getPropostaStatus === "APPROVED" || getPropostaStatus === "ACTIVE") return "aprovado";
-    
-    // Se tem margem disponível > 0 = aprovado (retorno_margem - formato Presença)
-    const valorMargem = margem?.valorMargemDisponivel;
-    if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
-      return "aprovado";
+      return "cpf_nao_encontrado"; // FAILED sem detalhes = CPF não encontrado
     }
     
     // Se tem availableMarginValue > 0 = aprovado (retorno_simulacao.details - formato V8)
     const availableMargin = simulacao?.details?.availableMarginValue;
     if (availableMargin !== undefined && availableMargin !== null && parseFloat(availableMargin) > 0) {
+      // Mas se status é REJECTED, ainda é reprovado
+      if (detailsStatus !== "REJECTED") {
+        return "aprovado";
+      }
+    }
+    
+    // === FORMATO PRESENÇA ===
+    // Se tem margem disponível > 0 = aprovado
+    const valorMargem = margem?.valorMargemDisponivel;
+    if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
       return "aprovado";
     }
     
-    // Se não tem margem e não tem details = CPF não encontrado
-    if (!margem && !simulacao?.details && !getProposta) {
+    // Se tem retorno_margem mas com erro = reprovado (ex: "Margem indisponível")
+    const erroMargem = margem?.error || "";
+    if (erroMargem) {
+      return "reprovado";
+    }
+    
+    // Se tem retorno_margem mas margem é 0 ou null = reprovado
+    if (margem && (valorMargem === 0 || valorMargem === null)) {
+      return "reprovado";
+    }
+    
+    // Se não tem nenhum retorno = CPF não encontrado
+    if (!margem && !simulacao && !getProposta) {
       return "cpf_nao_encontrado";
     }
     
@@ -117,7 +139,7 @@ const LeadsContent = () => {
       return "cpf_nao_encontrado";
     }
     
-    // Se tem retorno mas margem <= 0 = reprovado
+    // Fallback: se tem algum retorno mas não identificou = reprovado
     return "reprovado";
   };
 
