@@ -20,6 +20,7 @@ import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import PerfilIdealPanel from "@/components/leads/PerfilIdealPanel";
 import CBOsQueAprovamPanel from "@/components/leads/CBOsQueAprovamPanel";
 import EmpresasPanel from "@/components/leads/EmpresasPanel";
+import PorBancoPanel from "@/components/leads/PorBancoPanel";
 
 interface LeadStats {
   totalAprovados: number;
@@ -315,14 +316,7 @@ const Leads = () => {
             </TabsContent>
 
             <TabsContent value="banco" className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Por Banco</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">Distribuição de aprovações por instituição bancária.</p>
-                </CardContent>
-              </Card>
+              <PorBancoPanel />
             </TabsContent>
 
             <TabsContent value="lista" className="mt-6">
