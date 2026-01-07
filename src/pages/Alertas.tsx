@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, BellRing, BellOff, Plus, Settings, AlertTriangle, Trash2, Pencil } from "lucide-react";
+import { Bell, BellRing, BellOff, Plus, Settings, Clock, AlertTriangle, Trash2, Pencil } from "lucide-react";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import KPICard from "@/components/dashboard/KPICard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -491,6 +491,25 @@ const Alertas = () => {
                     </CardContent>
                   </Card>
                 ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Histórico de Alertas */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold flex items-center gap-2">
+                <Clock className="w-5 h-5" />
+                Histórico de Alertas
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <BellOff className="w-12 h-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground font-medium">Nenhum alerta disparado ainda</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Quando seus alertas forem acionados, eles aparecerão aqui.
+                </p>
               </div>
             </CardContent>
           </Card>
