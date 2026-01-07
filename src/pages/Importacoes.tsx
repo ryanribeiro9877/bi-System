@@ -140,16 +140,58 @@ const Importacoes = () => {
     return mappings[normalized] || normalized;
   };
 
+  // Função para converter data do Excel para string formatada
+  const parseExcelDate = (value: any): string | undefined => {
+    if (!value) return undefined;
+    
+    // Se já é uma string no formato esperado, retorna direto
+    if (typeof value === 'string') {
+      // Verificar se já está no formato correto (YYYY-MM-DD HH:MM:SS ou similar)
+      if (/^\d{4}-\d{2}-\d{2}/.test(value) || /^\d{2}\/\d{2}\/\d{4}/.test(value)) {
+        return value;
+      }
+    }
+    
+    // Se é um número serial do Excel
+    if (typeof value === 'number') {
+      // Excel usa epoch 1900-01-01, com bug do ano bissexto
+      // Número serial = dias desde 1899-12-30 (Excel considera 1900 como bissexto incorretamente)
+      const excelEpoch = new Date(1899, 11, 30);
+      const days = Math.floor(value);
+      const fraction = value - days;
+      
+      const date = new Date(excelEpoch.getTime() + days * 24 * 60 * 60 * 1000);
+      
+      // Calcular horas, minutos, segundos da fração do dia
+      const totalSeconds = Math.round(fraction * 24 * 60 * 60);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hh = String(hours).padStart(2, '0');
+      const mm = String(minutes).padStart(2, '0');
+      const ss = String(seconds).padStart(2, '0');
+      
+      return `${year}-${month}-${day} ${hh}:${mm}:${ss}`;
+    }
+    
+    return String(value);
+  };
+
   const parseExcel = (file: File): Promise<ParsedLead[]> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
           const data = new Uint8Array(e.target?.result as ArrayBuffer);
-          const workbook = XLSX.read(data, { type: "array" });
+          // Usar raw: true para obter números seriais de datas, depois converter manualmente
+          const workbook = XLSX.read(data, { type: "array", cellDates: false });
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
-          const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false });
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: true });
           
           const leads: ParsedLead[] = jsonData.map((row: any) => {
             const lead: ParsedLead = { cpf: "" };
@@ -190,7 +232,7 @@ const Importacoes = () => {
               } else if (normalizedKey === "retorno_get_proposta") {
                 lead.retorno_get_proposta = parseJsonSafe(value);
               } else if (normalizedKey === "ultimo_log") {
-                lead.ultimo_log = value;
+                lead.ultimo_log = parseExcelDate(value);
               }
             });
             
