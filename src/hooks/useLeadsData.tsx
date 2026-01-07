@@ -237,8 +237,8 @@ export const useLeadsData = (filters?: FilterState) => {
     const leadsReprovados = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovado").length;
     const leadsPendentes = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "pendente").length;
     
-    const taxaReprovacao = totalLeads > 0 ? Math.round((leadsReprovados / totalLeads) * 100) : 0;
-    const taxaAprovacao = totalLeads > 0 ? Math.round((leadsAprovados / totalLeads) * 100) : 0;
+    const taxaReprovacao = totalLeads > 0 ? parseFloat(((leadsReprovados / totalLeads) * 100).toFixed(2)) : 0;
+    const taxaAprovacao = totalLeads > 0 ? parseFloat(((leadsAprovados / totalLeads) * 100).toFixed(2)) : 0;
     
     // Calcular valores
     const valorTotal = leads.reduce((acc, l) => acc + (l.valor || 0), 0);
