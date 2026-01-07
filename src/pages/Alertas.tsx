@@ -123,7 +123,7 @@ const bancosCadastrados = [
 const tiposAlerta = [
   { value: "taxa_reprovacao", label: "Taxa de Reprovação" },
   { value: "taxa_aprovacao", label: "Taxa de Aprovação" },
-  { value: "cbos_bloqueados", label: "Taxa de CBOs Bloqueados" },
+  { value: "cbos_bloqueados", label: "CBOs Bloqueados" },
   { value: "volume_leads", label: "Volume de Leads" },
 ];
 
@@ -138,8 +138,9 @@ const Alertas = () => {
   const naoLidosCount = historicoAlertas.filter(a => !a.lido).length;
   const totalDisparados = historicoAlertas.length;
 
-  const isPercentageType = tipoAlerta === "taxa_reprovacao" || tipoAlerta === "taxa_aprovacao" || tipoAlerta === "cbos_bloqueados";
+  const isPercentageType = tipoAlerta === "taxa_reprovacao" || tipoAlerta === "taxa_aprovacao";
   const isVolumeType = tipoAlerta === "volume_leads";
+  const isCBOsType = tipoAlerta === "cbos_bloqueados";
 
   const handleLimiteChange = (value: string) => {
     if (isPercentageType) {
@@ -152,6 +153,11 @@ const Alertas = () => {
     } else if (isVolumeType) {
       const numValue = parseInt(value);
       if (numValue >= 100 || value === "") {
+        setLimite(value);
+      }
+    } else if (isCBOsType) {
+      const numValue = parseInt(value);
+      if (numValue >= 5 || value === "") {
         setLimite(value);
       }
     } else {
@@ -265,15 +271,16 @@ const Alertas = () => {
                         <Label htmlFor="limite">
                           Limite * {isPercentageType && "(%)"}
                           {isVolumeType && "(mínimo 100)"}
+                          {isCBOsType && "(mínimo 5)"}
                         </Label>
                         <div className="relative">
                           <Input
                             id="limite"
                             type="number"
-                            placeholder={isPercentageType ? "Ex: 30" : isVolumeType ? "Mínimo 100" : "Digite o limite"}
+                            placeholder={isPercentageType ? "Ex: 30" : isVolumeType ? "Mínimo 100" : isCBOsType ? "Mínimo 5" : "Digite o limite"}
                             value={limite}
                             onChange={(e) => handleLimiteChange(e.target.value)}
-                            min={isVolumeType ? 100 : 0}
+                            min={isVolumeType ? 100 : isCBOsType ? 5 : 0}
                             max={isPercentageType ? 100 : undefined}
                             disabled={!tipoAlerta}
                           />
@@ -285,6 +292,9 @@ const Alertas = () => {
                         </div>
                         {isVolumeType && limite && parseInt(limite) < 100 && (
                           <p className="text-xs text-destructive">O volume mínimo é 100 leads</p>
+                        )}
+                        {isCBOsType && limite && parseInt(limite) < 5 && (
+                          <p className="text-xs text-destructive">O mínimo é 5 CBOs bloqueados</p>
                         )}
                       </div>
 
