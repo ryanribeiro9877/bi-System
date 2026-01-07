@@ -1,0 +1,73 @@
+import { useNavigate, useLocation } from "react-router-dom";
+import { BarChart3, LayoutDashboard, FileText, Settings, LogOut, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+const menuItems = [
+  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
+  { icon: Users, label: "Leads", path: "/dashboard/leads" },
+  { icon: FileText, label: "Relatórios", path: "/dashboard/reports" },
+  { icon: Settings, label: "Configurações", path: "/dashboard/settings" },
+];
+
+const DashboardSidebar = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const handleLogout = () => {
+    localStorage.removeItem("isAuthenticated");
+    navigate("/");
+  };
+
+  return (
+    <aside className="w-64 min-h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
+      {/* Logo */}
+      <div className="p-6 border-b border-sidebar-border">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center">
+            <BarChart3 className="w-5 h-5 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="font-bold text-sidebar-foreground">BI Leads CLT</h1>
+            <p className="text-xs text-muted-foreground">Dashboard</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 p-4 space-y-2">
+        {menuItems.map((item) => {
+          const isActive = location.pathname === item.path;
+          return (
+            <Button
+              key={item.path}
+              variant="ghost"
+              className={`w-full justify-start gap-3 h-11 ${
+                isActive
+                  ? "bg-sidebar-accent text-sidebar-primary"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              }`}
+              onClick={() => navigate(item.path)}
+            >
+              <item.icon className="w-5 h-5" />
+              {item.label}
+            </Button>
+          );
+        })}
+      </nav>
+
+      {/* Logout */}
+      <div className="p-4 border-t border-sidebar-border">
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-3 h-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={handleLogout}
+        >
+          <LogOut className="w-5 h-5" />
+          Sair
+        </Button>
+      </div>
+    </aside>
+  );
+};
+
+export default DashboardSidebar;
