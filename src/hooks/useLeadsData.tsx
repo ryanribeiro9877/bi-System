@@ -67,8 +67,15 @@ export interface DashboardStats {
 // Helper para extrair nome do lead
 const extrairNome = (lead: Lead): string => {
   if (lead.nome) return lead.nome;
-  const margem = lead.retorno_margem;
-  if (margem?.registroEmpregaticio?.nomeEmpregado) return margem.registroEmpregaticio.nomeEmpregado;
+
+  const margem = lead.retorno_margem as any;
+  const registro = margem?.registroEmpregaticio;
+
+  // Em alguns retornos, registroEmpregaticio pode vir como string (ex: "FJC.0086")
+  if (registro && typeof registro === "object" && registro.nomeEmpregado) {
+    return registro.nomeEmpregado;
+  }
+
   if (margem?.nomeEmpregado) return margem.nomeEmpregado;
   return "";
 };
@@ -83,6 +90,15 @@ const extrairCBO = (lead: Lead): string => {
 // Helper para extrair banco
 const extrairBanco = (lead: Lead): string => {
   if (lead.banco) return lead.banco;
+
+  const simulacao = lead.retorno_simulacao as any;
+  const autorizacao = lead.retorno_autorizacao as any;
+  const haystack = `${simulacao?.productName ?? ""} ${autorizacao?.shortUrl ?? ""}`.toLowerCase();
+
+  if (haystack.includes("presen")) return "Presença";
+  if (haystack.includes("uy3")) return "UY3";
+  if (haystack.includes("v8")) return "V8";
+
   return "";
 };
 
@@ -105,39 +121,55 @@ export const useLeadsData = (filters?: FilterState) => {
     setError(null);
 
     try {
-      let query = supabase
-        .from("leads")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const pageSize = 1000;
+      let from = 0;
+      let allRows: any[] = [];
 
-      // Apply filters
-      if (filters?.dataInicial) {
-        query = query.gte("created_at", filters.dataInicial.toISOString());
-      }
-      if (filters?.dataFinal) {
-        query = query.lte("created_at", filters.dataFinal.toISOString());
-      }
-      if (filters?.banco) {
-        query = query.eq("banco", filters.banco);
-      }
-      if (filters?.tipoReprovacao) {
-        query = query.eq("tipo_reprovacao", filters.tipoReprovacao);
-      }
-      if (filters?.status) {
-        query = query.eq("status", filters.status);
-      }
-      if (filters?.cpf) {
-        query = query.ilike("cpf", `%${filters.cpf}%`);
-      }
+      const buildBaseQuery = () => {
+        let query = supabase
+          .from("leads")
+          .select("*")
+          .order("created_at", { ascending: false });
 
-      const { data, error: fetchError } = await query;
+        // Apply filters
+        if (filters?.dataInicial) {
+          query = query.gte("created_at", filters.dataInicial.toISOString());
+        }
+        if (filters?.dataFinal) {
+          query = query.lte("created_at", filters.dataFinal.toISOString());
+        }
+        if (filters?.banco) {
+          query = query.eq("banco", filters.banco);
+        }
+        if (filters?.tipoReprovacao) {
+          query = query.eq("tipo_reprovacao", filters.tipoReprovacao);
+        }
+        if (filters?.status) {
+          query = query.eq("status", filters.status);
+        }
+        if (filters?.cpf) {
+          query = query.ilike("cpf", `%${filters.cpf}%`);
+        }
 
-      if (fetchError) {
-        throw fetchError;
+        return query;
+      };
+
+      // PostgREST tem limite padrão de 1000 linhas por request.
+      // Aqui buscamos em páginas para montar estatísticas corretas.
+      while (true) {
+        const { data, error: fetchError } = await buildBaseQuery().range(from, from + pageSize - 1);
+
+        if (fetchError) throw fetchError;
+
+        const batch = data || [];
+        allRows = allRows.concat(batch);
+
+        if (batch.length < pageSize) break;
+        from += pageSize;
       }
 
       // Parse JSONB fields
-      const parsedLeads: Lead[] = (data || []).map((row: any) => ({
+      const parsedLeads: Lead[] = allRows.map((row: any) => ({
         ...row,
         retorno_autorizacao: parseJsonSafe<RetornoAutorizacao>(row.retorno_autorizacao),
         retorno_margem: parseJsonSafe<RetornoMargem>(row.retorno_margem),
