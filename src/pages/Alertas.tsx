@@ -15,6 +15,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -125,6 +126,7 @@ const tiposAlerta = [
 const Alertas = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [nomeAlerta, setNomeAlerta] = useState("");
+  const [descricaoAlerta, setDescricaoAlerta] = useState("");
   const [tipoAlerta, setTipoAlerta] = useState("");
   const [limite, setLimite] = useState("");
   const [bancoFiltro, setBancoFiltro] = useState("");
@@ -164,12 +166,14 @@ const Alertas = () => {
     // Aqui seria a lógica para criar o alerta
     console.log({
       nome: nomeAlerta,
+      descricao: descricaoAlerta,
       tipo: tipoAlerta,
       limite,
       banco: bancoFiltro,
     });
     setOpenDialog(false);
     setNomeAlerta("");
+    setDescricaoAlerta("");
     setTipoAlerta("");
     setLimite("");
     setBancoFiltro("");
@@ -307,6 +311,17 @@ const Alertas = () => {
                             ))}
                           </SelectContent>
                         </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="descricao">Descrição (opcional)</Label>
+                        <Textarea
+                          id="descricao"
+                          placeholder="Adicione informações adicionais sobre o alerta..."
+                          value={descricaoAlerta}
+                          onChange={(e) => setDescricaoAlerta(e.target.value)}
+                          rows={3}
+                        />
                       </div>
                     </div>
                     <DialogFooter>
