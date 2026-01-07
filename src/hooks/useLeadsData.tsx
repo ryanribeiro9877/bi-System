@@ -363,27 +363,80 @@ export const useLeadsData = (filters?: FilterState) => {
       return acc + (parseFloat(valor) || 0);
     }, 0);
 
+    // Função para resumir motivos de reprovação
+    const resumirMotivo = (motivo: string): string => {
+      if (!motivo || motivo === "-") return "Não informado";
+      
+      const motivoLower = motivo.toLowerCase();
+      
+      // Mapeamento de padrões para resumos
+      if (motivoLower.includes("timeout") || motivoLower.includes("curl error") || motivoLower.includes("timed out")) {
+        return "Timeout";
+      }
+      if (motivoLower.includes("rate limit")) {
+        return "Limite de requisições";
+      }
+      if (motivoLower.includes("margem negativa") || motivoLower.includes("negative margin")) {
+        return "Margem negativa";
+      }
+      if (motivoLower.includes("margem indispon") || motivoLower.includes("sem margem") || motivoLower.includes("unavailable margin")) {
+        return "Margem indisponível";
+      }
+      if (motivoLower.includes("cbo") || motivoLower.includes("ocupação") || motivoLower.includes("occupation")) {
+        return "CBO bloqueado";
+      }
+      if (motivoLower.includes("cpf") && (motivoLower.includes("não encontrado") || motivoLower.includes("not found"))) {
+        return "CPF não encontrado";
+      }
+      if (motivoLower.includes("idade") || motivoLower.includes("age")) {
+        return "Idade incompatível";
+      }
+      if (motivoLower.includes("renda") || motivoLower.includes("income") || motivoLower.includes("salário")) {
+        return "Renda insuficiente";
+      }
+      if (motivoLower.includes("inadimplente") || motivoLower.includes("negativado") || motivoLower.includes("restrição")) {
+        return "Restrição cadastral";
+      }
+      if (motivoLower.includes("empréstimo") || motivoLower.includes("loan") || motivoLower.includes("contrato")) {
+        return "Empréstimo ativo";
+      }
+      if (motivoLower.includes("servidor") || motivoLower.includes("server error") || motivoLower.includes("500")) {
+        return "Erro no servidor";
+      }
+      if (motivoLower.includes("não elegível") || motivoLower.includes("not eligible") || motivoLower.includes("inelegível")) {
+        return "Não elegível";
+      }
+      if (motivoLower.includes("documento") || motivoLower.includes("document")) {
+        return "Documento inválido";
+      }
+      
+      // Se o motivo for muito longo, trunca
+      if (motivo.length > 25) {
+        return motivo.substring(0, 22) + "...";
+      }
+      
+      return motivo;
+    };
+
     // Count by motivo de reprovação - extrair do JSON retorno_margem.error ou retorno_simulacao.details.error
     const motivoReprovacaoCount: Record<string, number> = {};
     leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovado").forEach(l => {
       const margem = l.retorno_margem as any;
       const simulacao = l.retorno_simulacao as any;
-      let motivo = simulacao?.details?.error || simulacao?.error || margem?.error || l.tipo_reprovacao || "";
+      let motivoOriginal = simulacao?.details?.error || simulacao?.error || margem?.error || l.tipo_reprovacao || "";
       
-      // Normaliza os motivos para agrupamento
-      if (motivo.includes("timeout") || motivo.includes("cURL error")) {
-        motivo = "Timeout na consulta";
-      } else if (motivo.includes("Rate limit")) {
-        motivo = "Limite de requisições";
-      } else if (!motivo || motivo === "Margem indisponível" || motivo.includes("sem margem")) {
-        // Verifica se tem margem negativa ou zero
+      // Verifica se tem margem negativa ou zero quando não tem motivo
+      if (!motivoOriginal || motivoOriginal === "Margem indisponível" || motivoOriginal.includes("sem margem")) {
         const valorMargem = margem?.valorMargemDisponivel || simulacao?.details?.availableMarginValue || 0;
         if (parseFloat(valorMargem) < 0) {
-          motivo = "Margem negativa";
+          motivoOriginal = "Margem negativa";
         } else {
-          motivo = "Margem indisponível";
+          motivoOriginal = "Margem indisponível";
         }
       }
+      
+      // Aplica o resumo do motivo
+      const motivo = resumirMotivo(motivoOriginal);
       
       if (motivo) {
         motivoReprovacaoCount[motivo] = (motivoReprovacaoCount[motivo] || 0) + 1;
