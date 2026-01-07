@@ -110,14 +110,9 @@ const tipoBadge = {
 
 const bancosCadastrados = [
   "Todos os bancos",
-  "Banco Pan",
-  "Banco Bradesco",
-  "Banco Itaú",
-  "Banco Santander",
-  "Banco C6",
-  "Banco BMG",
-  "Banco Safra",
-  "Banco Inter",
+  "Presença",
+  "UY3",
+  "V8",
 ];
 
 const tiposAlerta = [
