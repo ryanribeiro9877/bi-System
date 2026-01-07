@@ -71,21 +71,30 @@ const extrairNome = (lead: Lead): string => {
   if (lead.nome) return lead.nome;
 
   const margem = lead.retorno_margem as any;
+  const simulacao = lead.retorno_simulacao as any;
   const registro = margem?.registroEmpregaticio;
 
-  // Em alguns retornos, registroEmpregaticio pode vir como string (ex: "FJC.0086")
+  // Tenta do retorno_margem
   if (registro && typeof registro === "object" && registro.nomeEmpregado) {
     return registro.nomeEmpregado;
   }
-
   if (margem?.nomeEmpregado) return margem.nomeEmpregado;
+  
+  // Tenta do retorno_simulacao.details (novo formato)
+  if (simulacao?.details?.name) return simulacao.details.name;
+  if (simulacao?.name) return simulacao.name;
+  
   return "";
 };
 
 // Helper para extrair CBO
 const extrairCBO = (lead: Lead): string => {
   if (lead.cbo) return lead.cbo;
-  // CBO pode vir de outros campos no futuro
+  
+  const margem = lead.retorno_margem as any;
+  if (margem?.registroEmpregaticio?.cbo) return margem.registroEmpregaticio.cbo;
+  if (margem?.cbo) return margem.cbo;
+  
   return "";
 };
 
@@ -103,6 +112,7 @@ const extrairBanco = (lead: Lead): string => {
   const haystack = [
     simulacao?.productName,
     simulacao?.productId,
+    simulacao?.details?.partnerId,
     autorizacao?.shortUrl,
     proposta?.banco,
     proposta?.instituicao,
@@ -123,6 +133,7 @@ const extrairBanco = (lead: Lead): string => {
   if (haystack.includes("bradesco")) return "Bradesco";
   if (haystack.includes("caixa")) return "Caixa";
   if (haystack.includes("bb") || haystack.includes("brasil")) return "Banco do Brasil";
+  if (haystack.includes("d1231") || haystack.includes("10253")) return "D1231";
 
   // 4. Se productName existe mas não encontrou padrão, usar o próprio productName
   if (simulacao?.productName) {
@@ -144,22 +155,41 @@ const normalizarStatus = (status: string | null, lead?: Lead): string => {
   // Para outros status, verificar dados do lead
   if (lead) {
     const margem = lead.retorno_margem as any;
+    const simulacao = lead.retorno_simulacao as any;
     
-    // Se não tem retorno de margem = CPF não encontrado na base
-    if (!margem || margem === null) {
+    // Verificar status explícito no retorno_simulacao.details (novo formato)
+    const detailsStatus = simulacao?.details?.status?.toUpperCase();
+    if (detailsStatus === "APPROVED" || detailsStatus === "SUCCESS") return "aprovado";
+    if (detailsStatus === "REJECTED" || detailsStatus === "FAILED") {
+      // Verificar se é CPF não encontrado ou reprovado por margem
+      const error = simulacao?.details?.error || "";
+      if (error.includes("não encontrado") || error.includes("inelegível") || error.includes("não elegível")) {
+        return "cpf_nao_encontrado";
+      }
+      return "reprovado";
+    }
+    
+    // Se tem margem disponível > 0 = aprovado (retorno_margem)
+    const valorMargem = margem?.valorMargemDisponivel;
+    if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
+      return "aprovado";
+    }
+    
+    // Se tem availableMarginValue > 0 = aprovado (retorno_simulacao.details)
+    const availableMargin = simulacao?.details?.availableMarginValue;
+    if (availableMargin !== undefined && availableMargin !== null && parseFloat(availableMargin) > 0) {
+      return "aprovado";
+    }
+    
+    // Se não tem margem e não tem details = CPF não encontrado
+    if (!margem && !simulacao?.details) {
       return "cpf_nao_encontrado";
     }
     
     // Se tem erro de timeout ou rate limit = CPF não encontrado (não conseguiu verificar)
-    const erro = margem?.error || "";
+    const erro = margem?.error || simulacao?.error || "";
     if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
       return "cpf_nao_encontrado";
-    }
-    
-    // Se tem margem disponível > 0 = aprovado
-    const valorMargem = margem?.valorMargemDisponivel;
-    if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
-      return "aprovado";
     }
     
     // Se tem retorno mas margem <= 0 ou erro de margem indisponível = reprovado
@@ -301,38 +331,56 @@ export const useLeadsData = (filters?: FilterState) => {
     
     // Calcular valores
     const valorTotal = leads.reduce((acc, l) => acc + (l.valor || 0), 0);
+    
+    // Função auxiliar para extrair margem disponível (suporta múltiplos formatos)
+    const extrairMargemDisponivel = (l: Lead): number => {
+      const margem = l.retorno_margem as any;
+      const simulacao = l.retorno_simulacao as any;
+      
+      // Tenta do retorno_margem primeiro
+      if (margem?.valorMargemDisponivel !== undefined && margem?.valorMargemDisponivel !== null) {
+        return parseFloat(margem.valorMargemDisponivel) || 0;
+      }
+      // Tenta do retorno_simulacao.details (novo formato)
+      if (simulacao?.details?.availableMarginValue !== undefined && simulacao?.details?.availableMarginValue !== null) {
+        return parseFloat(simulacao.details.availableMarginValue) || 0;
+      }
+      return 0;
+    };
+    
     // Calcular Margem Média dos leads aprovados
     const leadsAprovadosComMargem = leadsComStatusNormalizado.filter(l => {
-      const margem = l.retorno_margem?.valorMargemDisponivel || 0;
+      const margem = extrairMargemDisponivel(l);
       return l.statusNormalizado === "aprovado" && margem > 0;
     });
     const somaMargemAprovados = leadsAprovadosComMargem.reduce((acc, l) => {
-      const margem = l.retorno_margem?.valorMargemDisponivel || 0;
-      return acc + margem;
+      return acc + extrairMargemDisponivel(l);
     }, 0);
     const margemMedia = leadsAprovadosComMargem.length > 0 
       ? somaMargemAprovados / leadsAprovadosComMargem.length 
       : 0;
     const valorSimulacaoTotal = leads.reduce((acc, l) => {
-      const simulacao = l.retorno_simulacao?.requestedAmount || l.retorno_simulacao?.liquidValue || 0;
-      return acc + simulacao;
+      const simulacao = l.retorno_simulacao as any;
+      const valor = simulacao?.requestedAmount || simulacao?.liquidValue || simulacao?.details?.availableMarginValue || 0;
+      return acc + (parseFloat(valor) || 0);
     }, 0);
 
-    // Count by motivo de reprovação - extrair do JSON retorno_margem.error
+    // Count by motivo de reprovação - extrair do JSON retorno_margem.error ou retorno_simulacao.details.error
     const motivoReprovacaoCount: Record<string, number> = {};
     leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovado").forEach(l => {
       const margem = l.retorno_margem as any;
-      let motivo = margem?.error || l.tipo_reprovacao || "";
+      const simulacao = l.retorno_simulacao as any;
+      let motivo = simulacao?.details?.error || simulacao?.error || margem?.error || l.tipo_reprovacao || "";
       
       // Normaliza os motivos para agrupamento
       if (motivo.includes("timeout") || motivo.includes("cURL error")) {
         motivo = "Timeout na consulta";
       } else if (motivo.includes("Rate limit")) {
         motivo = "Limite de requisições";
-      } else if (motivo.includes("Margem indisponível") || motivo === "") {
+      } else if (!motivo || motivo === "Margem indisponível" || motivo.includes("sem margem")) {
         // Verifica se tem margem negativa ou zero
-        const valorMargem = margem?.valorMargemDisponivel || margem?.valorMargem || 0;
-        if (valorMargem < 0) {
+        const valorMargem = margem?.valorMargemDisponivel || simulacao?.details?.availableMarginValue || 0;
+        if (parseFloat(valorMargem) < 0) {
           motivo = "Margem negativa";
         } else {
           motivo = "Margem indisponível";
