@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { BarChart3, LayoutDashboard, FileText, Settings, LogOut, Users, UserPlus } from "lucide-react";
+import { BarChart3, LayoutDashboard, LogOut, Users, UserPlus, UserX, Upload, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -11,8 +11,9 @@ const DashboardSidebar = () => {
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
     { icon: Users, label: "Leads", path: "/dashboard/leads" },
-    { icon: FileText, label: "Relatórios", path: "/dashboard/reports" },
-    { icon: Settings, label: "Configurações", path: "/dashboard/settings" },
+    { icon: UserX, label: "CBOs Bloqueados", path: "/dashboard/cbos-bloqueados" },
+    { icon: Upload, label: "Importações", path: "/dashboard/importacoes" },
+    { icon: Bell, label: "Alertas", path: "/dashboard/alertas" },
   ];
 
   // Only show user management for admin
