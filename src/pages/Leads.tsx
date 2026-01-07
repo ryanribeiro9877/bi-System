@@ -306,6 +306,7 @@ const LeadsContent = () => {
                             const sim = lead.retorno_simulacao as any;
                             const valor = lead.valor || sim?.requestedAmount || sim?.liquidValue || 0;
                             const banco = lead.banco || "-";
+                            const statusNormalizado = getNormalizedStatus(lead);
 
                             return (
                               <TableRow key={lead.id} className="border-border/50 hover:bg-muted/30">
@@ -313,8 +314,12 @@ const LeadsContent = () => {
                                 <TableCell className="text-muted-foreground truncate max-w-[160px]">{nome}</TableCell>
                                 <TableCell className="text-muted-foreground">{banco}</TableCell>
                                 <TableCell className="text-muted-foreground truncate max-w-[100px]">{lead.cbo || "-"}</TableCell>
-                                <TableCell className="text-foreground">{valor > 0 ? `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-"}</TableCell>
-                                <TableCell>{getStatusBadge(getNormalizedStatus(lead))}</TableCell>
+                                <TableCell className="text-foreground">
+                                  {statusNormalizado === "aprovado" && valor > 0 
+                                    ? `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
+                                    : "-"}
+                                </TableCell>
+                                <TableCell>{getStatusBadge(statusNormalizado)}</TableCell>
                                 <TableCell className="text-muted-foreground whitespace-nowrap">{formatDateTime(lead.ultimo_log)}</TableCell>
                                 <TableCell className="text-right">
                                   <Button
