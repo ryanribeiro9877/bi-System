@@ -303,8 +303,7 @@ const LeadsContent = () => {
                           {paginatedLeads.map((lead) => {
                             const margem = lead.retorno_margem as any;
                             const nome = lead.nome || margem?.registroEmpregaticio?.nomeEmpregado || margem?.nomeEmpregado || "-";
-                            const sim = lead.retorno_simulacao as any;
-                            const valor = lead.valor || sim?.requestedAmount || sim?.liquidValue || 0;
+                            const valorMargemDisponivel = margem?.valorMargemDisponivel || 0;
                             const banco = lead.banco || "-";
                             const statusNormalizado = getNormalizedStatus(lead);
 
@@ -315,8 +314,8 @@ const LeadsContent = () => {
                                 <TableCell className="text-muted-foreground">{banco}</TableCell>
                                 <TableCell className="text-muted-foreground truncate max-w-[100px]">{lead.cbo || "-"}</TableCell>
                                 <TableCell className="text-foreground">
-                                  {statusNormalizado === "aprovado" && valor > 0 
-                                    ? `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
+                                  {statusNormalizado === "aprovado" && valorMargemDisponivel > 0 
+                                    ? `R$ ${valorMargemDisponivel.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
                                     : "-"}
                                 </TableCell>
                                 <TableCell>{getStatusBadge(statusNormalizado)}</TableCell>
