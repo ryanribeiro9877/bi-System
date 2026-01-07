@@ -18,6 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import PerfilIdealPanel from "@/components/leads/PerfilIdealPanel";
+import CBOsQueAprovamPanel from "@/components/leads/CBOsQueAprovamPanel";
 
 interface LeadStats {
   totalAprovados: number;
@@ -305,14 +306,7 @@ const Leads = () => {
             </TabsContent>
 
             <TabsContent value="cbos" className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>CBOs que Aprovam</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">Lista de CBOs com maiores taxas de aprovação.</p>
-                </CardContent>
-              </Card>
+              <CBOsQueAprovamPanel />
             </TabsContent>
 
             <TabsContent value="empresas" className="mt-6">
