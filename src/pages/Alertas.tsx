@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, BellRing, BellOff, Plus, Settings, Clock, CheckCircle2, AlertTriangle, Trash2, Pencil } from "lucide-react";
+import { Bell, BellRing, BellOff, Plus, Settings, AlertTriangle, Trash2, Pencil } from "lucide-react";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import KPICard from "@/components/dashboard/KPICard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,62 +69,6 @@ const alertasIniciais: Alerta[] = [
   },
 ];
 
-const historicoAlertas = [
-  {
-    id: 1,
-    titulo: "CBO Bloqueado - Vendedor",
-    mensagem: "O CBO 5211-10 foi bloqueado pelo Banco Pan",
-    data: "2026-01-07 09:45",
-    lido: false,
-    tipo: "warning",
-  },
-  {
-    id: 2,
-    titulo: "Taxa de reprovação alta",
-    mensagem: "Taxa de reprovação atingiu 35% no Banco Bradesco",
-    data: "2026-01-07 08:30",
-    lido: false,
-    tipo: "error",
-  },
-  {
-    id: 3,
-    titulo: "CBO Bloqueado - Motorista",
-    mensagem: "O CBO 7823-05 foi bloqueado pelo Banco Itaú",
-    data: "2026-01-06 16:20",
-    lido: true,
-    tipo: "warning",
-  },
-  {
-    id: 4,
-    titulo: "Meta de aprovação atingida",
-    mensagem: "Você atingiu 85% de aprovação no Banco Santander",
-    data: "2026-01-06 14:00",
-    lido: true,
-    tipo: "success",
-  },
-  {
-    id: 5,
-    titulo: "Novo banco disponível",
-    mensagem: "Banco C6 agora está disponível para envio de leads",
-    data: "2026-01-05 10:15",
-    lido: true,
-    tipo: "info",
-  },
-];
-
-const tipoIcone = {
-  warning: <AlertTriangle className="w-4 h-4 text-warning" />,
-  error: <AlertTriangle className="w-4 h-4 text-destructive" />,
-  success: <CheckCircle2 className="w-4 h-4 text-success" />,
-  info: <Bell className="w-4 h-4 text-primary" />,
-};
-
-const tipoBadge = {
-  warning: "bg-warning/20 text-warning border-warning/30",
-  error: "bg-destructive/20 text-destructive border-destructive/30",
-  success: "bg-success/20 text-success border-success/30",
-  info: "bg-primary/20 text-primary border-primary/30",
-};
 
 const bancosCadastrados = [
   "Todos os bancos",
@@ -152,8 +96,6 @@ const Alertas = () => {
   const [bancoFiltro, setBancoFiltro] = useState("");
 
   const alertasAtivosCount = alertas.filter(a => a.ativo).length;
-  const naoLidosCount = historicoAlertas.filter(a => !a.lido).length;
-  const totalDisparados = historicoAlertas.length;
 
   const isPercentageType = tipoAlerta === "taxa_reprovacao" || tipoAlerta === "taxa_aprovacao";
   const isVolumeType = tipoAlerta === "volume_leads";
@@ -258,17 +200,10 @@ const Alertas = () => {
               variant="success"
             />
             <KPICard
-              title="Não Lidos"
-              value={naoLidosCount}
-              subtitle="Aguardando leitura"
+              title="Total de Alertas"
+              value={alertas.length}
+              subtitle="Cadastrados"
               icon={Bell}
-              variant="warning"
-            />
-            <KPICard
-              title="Total Disparados"
-              value={totalDisparados}
-              subtitle="Últimos 30 dias"
-              icon={BellOff}
               variant="default"
             />
           </div>
@@ -560,47 +495,6 @@ const Alertas = () => {
             </CardContent>
           </Card>
 
-          {/* Histórico de Alertas */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold flex items-center gap-2">
-                <Clock className="w-5 h-5" />
-                Histórico de Alertas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[400px] pr-4">
-                <div className="space-y-3">
-                  {historicoAlertas.map((alerta) => (
-                    <div
-                      key={alerta.id}
-                      className={`p-4 rounded-lg border ${!alerta.lido ? 'bg-primary/5 border-primary/20' : 'bg-muted/20 border-muted'}`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-3">
-                          <div className={`p-2 rounded-full ${tipoBadge[alerta.tipo as keyof typeof tipoBadge]}`}>
-                            {tipoIcone[alerta.tipo as keyof typeof tipoIcone]}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm">{alerta.titulo}</span>
-                              {!alerta.lido && (
-                                <Badge variant="secondary" className="text-xs bg-primary/20 text-primary">
-                                  Novo
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-muted-foreground mt-1">{alerta.mensagem}</p>
-                          </div>
-                        </div>
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">{alerta.data}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
         </div>
       </main>
     </div>
