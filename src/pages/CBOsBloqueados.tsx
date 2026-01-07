@@ -5,6 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
+import VisaoGeralCBOsPanel from "@/components/cbos/VisaoGeralCBOsPanel";
+import PorBancoCBOsPanel from "@/components/cbos/PorBancoCBOsPanel";
+import PorSetorCBOsPanel from "@/components/cbos/PorSetorCBOsPanel";
+import ListaCompletaCBOsPanel from "@/components/cbos/ListaCompletaCBOsPanel";
 
 interface CBOStats {
   totalBloqueados: number;
@@ -165,47 +169,19 @@ const CBOsBloqueados = () => {
             </TabsList>
 
             <TabsContent value="visao-geral" className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Visão Geral</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">Resumo dos CBOs bloqueados e seu impacto.</p>
-                </CardContent>
-              </Card>
+              <VisaoGeralCBOsPanel />
             </TabsContent>
 
             <TabsContent value="por-banco" className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Por Banco</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">Distribuição de CBOs bloqueados por instituição bancária.</p>
-                </CardContent>
-              </Card>
+              <PorBancoCBOsPanel />
             </TabsContent>
 
             <TabsContent value="por-setor" className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Por Setor</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">Distribuição de CBOs bloqueados por setor de atuação.</p>
-                </CardContent>
-              </Card>
+              <PorSetorCBOsPanel />
             </TabsContent>
 
             <TabsContent value="lista-completa" className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Lista Completa</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">Lista completa de todas as ocupações bloqueadas.</p>
-                </CardContent>
-              </Card>
+              <ListaCompletaCBOsPanel />
             </TabsContent>
           </Tabs>
         </div>
