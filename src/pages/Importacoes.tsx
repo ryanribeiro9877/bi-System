@@ -476,10 +476,24 @@ const Importacoes = () => {
     try {
       let parsed: ParsedLead[];
       
+      console.log("[Importacoes] Processando arquivo:", file.name, "Extensão:", extension);
+      
       if (extension === "csv") {
         parsed = await parseCSV(file);
       } else {
         parsed = await parseExcel(file);
+      }
+
+      console.log("[Importacoes] Registros parseados:", parsed.length);
+      
+      if (parsed.length === 0) {
+        toast({
+          title: "Arquivo vazio",
+          description: "O arquivo não contém registros válidos. Verifique se há uma coluna 'cpf'.",
+          variant: "destructive",
+        });
+        setSelectedFile(null);
+        return;
       }
 
       setPreviewData(parsed.slice(0, 10));
@@ -487,10 +501,11 @@ const Importacoes = () => {
         title: "Arquivo processado",
         description: `${parsed.length} registros encontrados. Clique em "Importar" para confirmar.`,
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error("[Importacoes] Erro ao processar arquivo:", error);
       toast({
         title: "Erro ao processar arquivo",
-        description: "Verifique se o arquivo está no formato correto.",
+        description: error?.message || "Verifique se o arquivo está no formato correto.",
         variant: "destructive",
       });
       setSelectedFile(null);
