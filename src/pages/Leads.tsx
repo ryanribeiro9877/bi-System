@@ -17,6 +17,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
+import PerfilIdealPanel from "@/components/leads/PerfilIdealPanel";
 
 interface LeadStats {
   totalAprovados: number;
@@ -300,14 +301,7 @@ const Leads = () => {
             </TabsList>
 
             <TabsContent value="perfil" className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Perfil Ideal</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">Análise do perfil ideal de leads com maior chance de aprovação.</p>
-                </CardContent>
-              </Card>
+              <PerfilIdealPanel />
             </TabsContent>
 
             <TabsContent value="cbos" className="mt-6">
