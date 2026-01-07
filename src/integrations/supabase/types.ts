@@ -14,6 +14,102 @@ export type Database = {
   }
   public: {
     Tables: {
+      imports: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          error_message: string | null
+          failed_records: number | null
+          file_name: string
+          file_type: string
+          id: string
+          imported_by: string
+          status: string | null
+          successful_records: number | null
+          total_records: number | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          failed_records?: number | null
+          file_name: string
+          file_type: string
+          id?: string
+          imported_by: string
+          status?: string | null
+          successful_records?: number | null
+          total_records?: number | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          failed_records?: number | null
+          file_name?: string
+          file_type?: string
+          id?: string
+          imported_by?: string
+          status?: string | null
+          successful_records?: number | null
+          total_records?: number | null
+        }
+        Relationships: []
+      }
+      leads: {
+        Row: {
+          banco: string | null
+          cbo: string | null
+          cpf: string
+          created_at: string
+          data_envio: string | null
+          data_retorno: string | null
+          id: string
+          import_batch_id: string | null
+          imported_by: string | null
+          nome: string | null
+          observacoes: string | null
+          status: string | null
+          tipo_reprovacao: string | null
+          updated_at: string
+          valor: number | null
+        }
+        Insert: {
+          banco?: string | null
+          cbo?: string | null
+          cpf: string
+          created_at?: string
+          data_envio?: string | null
+          data_retorno?: string | null
+          id?: string
+          import_batch_id?: string | null
+          imported_by?: string | null
+          nome?: string | null
+          observacoes?: string | null
+          status?: string | null
+          tipo_reprovacao?: string | null
+          updated_at?: string
+          valor?: number | null
+        }
+        Update: {
+          banco?: string | null
+          cbo?: string | null
+          cpf?: string
+          created_at?: string
+          data_envio?: string | null
+          data_retorno?: string | null
+          id?: string
+          import_batch_id?: string | null
+          imported_by?: string | null
+          nome?: string | null
+          observacoes?: string | null
+          status?: string | null
+          tipo_reprovacao?: string | null
+          updated_at?: string
+          valor?: number | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string

@@ -1,0 +1,597 @@
+import { useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { Upload, FileSpreadsheet, FileText, Check, X, Loader2, AlertCircle, Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
+import * as XLSX from "xlsx";
+import Papa from "papaparse";
+
+interface ImportRecord {
+  id: string;
+  file_name: string;
+  file_type: string;
+  total_records: number;
+  successful_records: number;
+  failed_records: number;
+  status: string;
+  created_at: string;
+}
+
+interface ParsedLead {
+  cpf: string;
+  nome?: string;
+  banco?: string;
+  cbo?: string;
+  status?: string;
+  tipo_reprovacao?: string;
+  valor?: number;
+  data_envio?: string;
+  data_retorno?: string;
+  observacoes?: string;
+}
+
+const Importacoes = () => {
+  const navigate = useNavigate();
+  const { user, isLoading: authLoading } = useAuth();
+  const { toast } = useToast();
+  
+  const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [imports, setImports] = useState<ImportRecord[]>([]);
+  const [previewData, setPreviewData] = useState<ParsedLead[]>([]);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // Fetch import history
+  const fetchImports = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("imports")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(10);
+    
+    if (!error && data) {
+      setImports(data);
+    }
+  }, []);
+
+  // Load imports on mount
+  useState(() => {
+    if (user) {
+      fetchImports();
+    }
+  });
+
+  const normalizeColumnName = (col: string): string => {
+    const normalized = col.toLowerCase().trim()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "_");
+    
+    const mappings: Record<string, string> = {
+      "cpf": "cpf",
+      "documento": "cpf",
+      "nome": "nome",
+      "nome_completo": "nome",
+      "banco": "banco",
+      "instituicao": "banco",
+      "cbo": "cbo",
+      "ocupacao": "cbo",
+      "status": "status",
+      "situacao": "status",
+      "tipo_reprovacao": "tipo_reprovacao",
+      "motivo_reprovacao": "tipo_reprovacao",
+      "motivo": "tipo_reprovacao",
+      "valor": "valor",
+      "valor_contrato": "valor",
+      "data_envio": "data_envio",
+      "data_retorno": "data_retorno",
+      "observacoes": "observacoes",
+      "obs": "observacoes",
+    };
+
+    return mappings[normalized] || normalized;
+  };
+
+  const parseExcel = (file: File): Promise<ParsedLead[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: "array" });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false });
+          
+          const leads: ParsedLead[] = jsonData.map((row: any) => {
+            const lead: ParsedLead = { cpf: "" };
+            Object.keys(row).forEach(key => {
+              const normalizedKey = normalizeColumnName(key);
+              if (normalizedKey === "cpf") lead.cpf = String(row[key]).replace(/\D/g, "");
+              else if (normalizedKey === "nome") lead.nome = row[key];
+              else if (normalizedKey === "banco") lead.banco = row[key];
+              else if (normalizedKey === "cbo") lead.cbo = row[key];
+              else if (normalizedKey === "status") lead.status = row[key];
+              else if (normalizedKey === "tipo_reprovacao") lead.tipo_reprovacao = row[key];
+              else if (normalizedKey === "valor") lead.valor = parseFloat(row[key]) || undefined;
+              else if (normalizedKey === "data_envio") lead.data_envio = row[key];
+              else if (normalizedKey === "data_retorno") lead.data_retorno = row[key];
+              else if (normalizedKey === "observacoes") lead.observacoes = row[key];
+            });
+            return lead;
+          });
+          
+          resolve(leads.filter(l => l.cpf));
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  const parseCSV = (file: File): Promise<ParsedLead[]> => {
+    return new Promise((resolve, reject) => {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          const leads: ParsedLead[] = results.data.map((row: any) => {
+            const lead: ParsedLead = { cpf: "" };
+            Object.keys(row).forEach(key => {
+              const normalizedKey = normalizeColumnName(key);
+              if (normalizedKey === "cpf") lead.cpf = String(row[key]).replace(/\D/g, "");
+              else if (normalizedKey === "nome") lead.nome = row[key];
+              else if (normalizedKey === "banco") lead.banco = row[key];
+              else if (normalizedKey === "cbo") lead.cbo = row[key];
+              else if (normalizedKey === "status") lead.status = row[key];
+              else if (normalizedKey === "tipo_reprovacao") lead.tipo_reprovacao = row[key];
+              else if (normalizedKey === "valor") lead.valor = parseFloat(row[key]) || undefined;
+              else if (normalizedKey === "data_envio") lead.data_envio = row[key];
+              else if (normalizedKey === "data_retorno") lead.data_retorno = row[key];
+              else if (normalizedKey === "observacoes") lead.observacoes = row[key];
+            });
+            return lead;
+          });
+          
+          resolve(leads.filter(l => l.cpf));
+        },
+        error: reject,
+      });
+    });
+  };
+
+  const handleFileSelect = async (file: File) => {
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    
+    if (!["xlsx", "xls", "csv"].includes(extension || "")) {
+      toast({
+        title: "Formato inválido",
+        description: "Por favor, selecione um arquivo Excel (.xlsx, .xls) ou CSV (.csv)",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSelectedFile(file);
+    setIsProcessing(true);
+
+    try {
+      let parsed: ParsedLead[];
+      
+      if (extension === "csv") {
+        parsed = await parseCSV(file);
+      } else {
+        parsed = await parseExcel(file);
+      }
+
+      setPreviewData(parsed.slice(0, 10));
+      toast({
+        title: "Arquivo processado",
+        description: `${parsed.length} registros encontrados. Clique em "Importar" para confirmar.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Erro ao processar arquivo",
+        description: "Verifique se o arquivo está no formato correto.",
+        variant: "destructive",
+      });
+      setSelectedFile(null);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!selectedFile || !user) return;
+
+    setIsProcessing(true);
+    const extension = selectedFile.name.split(".").pop()?.toLowerCase();
+
+    try {
+      let parsed: ParsedLead[];
+      if (extension === "csv") {
+        parsed = await parseCSV(selectedFile);
+      } else {
+        parsed = await parseExcel(selectedFile);
+      }
+
+      // Create import record
+      const { data: importRecord, error: importError } = await supabase
+        .from("imports")
+        .insert({
+          file_name: selectedFile.name,
+          file_type: extension || "unknown",
+          total_records: parsed.length,
+          imported_by: user.id,
+          status: "processing",
+        })
+        .select()
+        .single();
+
+      if (importError) throw importError;
+
+      // Insert leads in batches
+      const batchSize = 100;
+      let successCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < parsed.length; i += batchSize) {
+        const batch = parsed.slice(i, i + batchSize).map(lead => ({
+          ...lead,
+          import_batch_id: importRecord.id,
+          imported_by: user.id,
+        }));
+
+        const { error } = await supabase.from("leads").insert(batch);
+        
+        if (error) {
+          failCount += batch.length;
+        } else {
+          successCount += batch.length;
+        }
+      }
+
+      // Update import record
+      await supabase
+        .from("imports")
+        .update({
+          successful_records: successCount,
+          failed_records: failCount,
+          status: failCount === 0 ? "completed" : "completed_with_errors",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", importRecord.id);
+
+      toast({
+        title: "Importação concluída",
+        description: `${successCount} registros importados com sucesso${failCount > 0 ? `, ${failCount} falharam` : ""}.`,
+      });
+
+      setSelectedFile(null);
+      setPreviewData([]);
+      fetchImports();
+    } catch (error: any) {
+      toast({
+        title: "Erro na importação",
+        description: error.message || "Ocorreu um erro ao importar os dados.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelect(file);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    navigate("/");
+    return null;
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "completed":
+        return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Concluído</Badge>;
+      case "completed_with_errors":
+        return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">Com Erros</Badge>;
+      case "processing":
+        return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">Processando</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex w-full bg-background">
+      <DashboardSidebar />
+      
+      <main className="flex-1 p-8">
+        <div className="max-w-6xl mx-auto space-y-8">
+          {/* Header */}
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Importações</h1>
+            <p className="text-muted-foreground mt-1">
+              Importe dados de leads através de arquivos Excel ou CSV
+            </p>
+          </div>
+
+          {/* Upload Area */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="w-5 h-5" />
+                Importar Arquivo
+              </CardTitle>
+              <CardDescription>
+                Arraste e solte um arquivo ou clique para selecionar. Formatos aceitos: .xlsx, .xls, .csv
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                className={`
+                  border-2 border-dashed rounded-lg p-12 text-center transition-colors cursor-pointer
+                  ${isDragging 
+                    ? "border-primary bg-primary/5" 
+                    : "border-border hover:border-primary/50 hover:bg-muted/50"
+                  }
+                `}
+                onClick={() => document.getElementById("file-input")?.click()}
+              >
+                <input
+                  id="file-input"
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFileSelect(file);
+                  }}
+                />
+                
+                {isProcessing ? (
+                  <div className="flex flex-col items-center gap-4">
+                    <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                    <p className="text-muted-foreground">Processando arquivo...</p>
+                  </div>
+                ) : selectedFile ? (
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                      {selectedFile.name.endsWith(".csv") ? (
+                        <FileText className="w-8 h-8 text-primary" />
+                      ) : (
+                        <FileSpreadsheet className="w-8 h-8 text-primary" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">{selectedFile.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {(selectedFile.size / 1024).toFixed(2)} KB
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+                      <Upload className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">
+                        Arraste um arquivo aqui ou clique para selecionar
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Suporta arquivos Excel (.xlsx, .xls) e CSV (.csv)
+                      </p>
+                    </div>
+                    <div className="flex gap-4 mt-2">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <FileSpreadsheet className="w-4 h-4" />
+                        Excel
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <FileText className="w-4 h-4" />
+                        CSV
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              {selectedFile && !isProcessing && (
+                <div className="flex justify-end gap-3 mt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedFile(null);
+                      setPreviewData([]);
+                    }}
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Cancelar
+                  </Button>
+                  <Button onClick={handleImport}>
+                    <Check className="w-4 h-4 mr-2" />
+                    Importar {previewData.length > 0 && `(${previewData.length}+ registros)`}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Preview */}
+          {previewData.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-amber-500" />
+                  Pré-visualização (primeiros 10 registros)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>CPF</TableHead>
+                        <TableHead>Nome</TableHead>
+                        <TableHead>Banco</TableHead>
+                        <TableHead>CBO</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Valor</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {previewData.map((lead, index) => (
+                        <TableRow key={index}>
+                          <TableCell className="font-mono">{lead.cpf}</TableCell>
+                          <TableCell>{lead.nome || "-"}</TableCell>
+                          <TableCell>{lead.banco || "-"}</TableCell>
+                          <TableCell>{lead.cbo || "-"}</TableCell>
+                          <TableCell>{lead.status || "-"}</TableCell>
+                          <TableCell>
+                            {lead.valor ? `R$ ${lead.valor.toLocaleString("pt-BR")}` : "-"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Import History */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Histórico de Importações</CardTitle>
+              <CardDescription>
+                Últimas importações realizadas
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {imports.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileSpreadsheet className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>Nenhuma importação realizada ainda</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Arquivo</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Registros</TableHead>
+                      <TableHead>Sucesso</TableHead>
+                      <TableHead>Falhas</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Data</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {imports.map((imp) => (
+                      <TableRow key={imp.id}>
+                        <TableCell className="font-medium">{imp.file_name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="uppercase">
+                            {imp.file_type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{imp.total_records}</TableCell>
+                        <TableCell className="text-emerald-400">{imp.successful_records}</TableCell>
+                        <TableCell className="text-red-400">{imp.failed_records}</TableCell>
+                        <TableCell>{getStatusBadge(imp.status)}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {new Date(imp.created_at).toLocaleString("pt-BR")}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Template Download */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Download className="w-5 h-5" />
+                Modelo de Arquivo
+              </CardTitle>
+              <CardDescription>
+                Baixe um modelo para garantir que seus dados estão no formato correto
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const headers = ["CPF", "Nome", "Banco", "CBO", "Status", "Tipo Reprovação", "Valor", "Data Envio", "Data Retorno", "Observações"];
+                    const ws = XLSX.utils.aoa_to_sheet([headers, ["12345678901", "João Silva", "Banco X", "Analista", "Aprovado", "", "5000", "2024-01-01", "2024-01-05", ""]]);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Modelo");
+                    XLSX.writeFile(wb, "modelo_importacao.xlsx");
+                  }}
+                >
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Baixar Modelo Excel
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const csv = "CPF,Nome,Banco,CBO,Status,Tipo Reprovação,Valor,Data Envio,Data Retorno,Observações\n12345678901,João Silva,Banco X,Analista,Aprovado,,5000,2024-01-01,2024-01-05,";
+                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                    const link = document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    link.download = "modelo_importacao.csv";
+                    link.click();
+                  }}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Baixar Modelo CSV
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default Importacoes;
