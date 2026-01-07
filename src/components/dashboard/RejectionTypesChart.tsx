@@ -56,6 +56,8 @@ const RejectionTypesChart = () => {
                 borderRadius: "8px",
                 color: "hsl(var(--foreground))",
               }}
+              labelStyle={{ color: "hsl(var(--foreground))" }}
+              itemStyle={{ color: "white" }}
               formatter={(value: number, name: string, props: any) => [value, props.payload.fullName || "Quantidade"]}
             />
             <Bar dataKey="value" radius={[4, 4, 0, 0]}>
