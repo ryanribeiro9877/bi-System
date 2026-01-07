@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { importEvents } from "@/events/importEvents";
 import { 
   LeadCompleto, 
   RetornoAutorizacao, 
@@ -88,17 +89,45 @@ const extrairCBO = (lead: Lead): string => {
   return "";
 };
 
-// Helper para extrair banco
+// Helper para extrair banco - busca em todas as fontes disponíveis
 const extrairBanco = (lead: Lead): string => {
-  if (lead.banco) return lead.banco;
+  // 1. Primeiro verifica campo direto
+  if (lead.banco && lead.banco.trim()) return lead.banco.trim();
 
   const simulacao = lead.retorno_simulacao as any;
   const autorizacao = lead.retorno_autorizacao as any;
-  const haystack = `${simulacao?.productName ?? ""} ${autorizacao?.shortUrl ?? ""}`.toLowerCase();
+  const proposta = lead.retorno_proposta as any;
+  const getProposta = lead.retorno_get_proposta as any;
+  
+  // 2. Concatenar todos os campos possíveis para buscar padrões
+  const haystack = [
+    simulacao?.productName,
+    simulacao?.productId,
+    autorizacao?.shortUrl,
+    proposta?.banco,
+    proposta?.instituicao,
+    getProposta?.banco,
+    getProposta?.instituicao,
+    // Adicionar campos personalizados se existirem
+    simulacao?.banco,
+    autorizacao?.banco,
+  ].filter(Boolean).join(" ").toLowerCase();
 
-  if (haystack.includes("presen")) return "Presença";
+  // 3. Identificar banco por padrões conhecidos
+  if (haystack.includes("presen") || haystack.includes("privado")) return "Presença";
   if (haystack.includes("uy3")) return "UY3";
   if (haystack.includes("v8")) return "V8";
+  if (haystack.includes("safra")) return "Safra";
+  if (haystack.includes("itau") || haystack.includes("itaú")) return "Itaú";
+  if (haystack.includes("santander")) return "Santander";
+  if (haystack.includes("bradesco")) return "Bradesco";
+  if (haystack.includes("caixa")) return "Caixa";
+  if (haystack.includes("bb") || haystack.includes("brasil")) return "Banco do Brasil";
+
+  // 4. Se productName existe mas não encontrou padrão, usar o próprio productName
+  if (simulacao?.productName) {
+    return simulacao.productName;
+  }
 
   return "";
 };
@@ -214,6 +243,16 @@ export const useLeadsData = (filters?: FilterState) => {
   useEffect(() => {
     fetchLeads();
   }, [filters?.dataInicial, filters?.dataFinal, filters?.banco, filters?.tipoReprovacao, filters?.status, filters?.cpf]);
+
+  // Sincronização global: refetch quando houver nova importação
+  useEffect(() => {
+    const unsubscribe = importEvents.subscribe(() => {
+      console.log('[useLeadsData] Recebido evento de importação, atualizando dados...');
+      fetchLeads();
+    });
+    
+    return unsubscribe;
+  }, []);
 
   const stats = useMemo<DashboardStats>(() => {
     if (leads.length === 0) {
