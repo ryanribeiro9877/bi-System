@@ -78,11 +78,12 @@ const LeadsPanel = () => {
   };
 
   const getStatusBadge = (status: string | null) => {
-    if (!status) return <Badge variant="secondary">-</Badge>;
+    if (!status) return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">? CPF Não Encontrado</Badge>;
     const s = status.toLowerCase();
     if (s === "aprovado") return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ Aprovado</Badge>;
     if (s === "reprovado") return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">✕ Reprovado</Badge>;
-    return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">◐ Pendente</Badge>;
+    if (s === "cpf_nao_encontrado" || s === "cpf não encontrado") return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">? CPF Não Encontrado</Badge>;
+    return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">? CPF Não Encontrado</Badge>;
   };
 
   if (stats.totalLeads === 0) {

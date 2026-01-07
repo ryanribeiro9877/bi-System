@@ -39,7 +39,7 @@ const PorBancoPanel = () => {
     name: b.banco,
     aprovados: b.aprovados,
     reprovados: b.reprovados,
-    pendentes: b.total - b.aprovados - b.reprovados,
+    cpfNaoEncontrado: b.total - b.aprovados - b.reprovados,
     taxaAprovacao: b.total > 0 ? Math.round((b.aprovados / b.total) * 100) : 0,
   }));
 
@@ -62,7 +62,7 @@ const PorBancoPanel = () => {
                 <Legend />
                 <Bar dataKey="aprovados" fill="#22c55e" name="Aprovados" stackId="a" />
                 <Bar dataKey="reprovados" fill="#ef4444" name="Reprovados" stackId="a" />
-                <Bar dataKey="pendentes" fill="#fbbf24" name="Pendentes" stackId="a" />
+                <Bar dataKey="cpfNaoEncontrado" fill="#6b7280" name="CPF Não Encontrado" stackId="a" />
               </BarChart>
             </ResponsiveContainer>
           </div>

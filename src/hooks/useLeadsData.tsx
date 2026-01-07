@@ -132,26 +132,41 @@ const extrairBanco = (lead: Lead): string => {
   return "";
 };
 
-// Helper para normalizar status - considera margem como indicador de aprovação/reprovação
+// Helper para normalizar status - apenas 3 opções: aprovado, reprovado, cpf_nao_encontrado
 const normalizarStatus = (status: string | null, lead?: Lead): string => {
   const s = (status || "").toLowerCase().trim();
   
   // Status explícitos sempre respeitados
   if (s === "aprovado" || s === "approved") return "aprovado";
   if (s === "reprovado" || s === "rejected" || s === "recusado") return "reprovado";
+  if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "cpf_nao_encontrado";
   
-  // Para status pendente ou vazio, verificar margem disponível
+  // Para outros status, verificar dados do lead
   if (lead) {
-    const margem = lead.retorno_margem?.valorMargemDisponivel;
-    // Se tem margem disponível > 0, é aprovado
-    if (margem !== undefined && margem !== null && margem > 0) {
+    const margem = lead.retorno_margem as any;
+    
+    // Se não tem retorno de margem = CPF não encontrado na base
+    if (!margem || margem === null) {
+      return "cpf_nao_encontrado";
+    }
+    
+    // Se tem erro de timeout ou rate limit = CPF não encontrado (não conseguiu verificar)
+    const erro = margem?.error || "";
+    if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
+      return "cpf_nao_encontrado";
+    }
+    
+    // Se tem margem disponível > 0 = aprovado
+    const valorMargem = margem?.valorMargemDisponivel;
+    if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
       return "aprovado";
     }
-    // Se não tem margem ou margem <= 0, é reprovado
+    
+    // Se tem retorno mas margem <= 0 ou erro de margem indisponível = reprovado
     return "reprovado";
   }
   
-  return "pendente";
+  return "cpf_nao_encontrado";
 };
 
 export const useLeadsData = (filters?: FilterState) => {
@@ -279,7 +294,7 @@ export const useLeadsData = (filters?: FilterState) => {
     
     const leadsAprovados = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "aprovado").length;
     const leadsReprovados = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovado").length;
-    const leadsPendentes = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "pendente").length;
+    const leadsPendentes = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "cpf_nao_encontrado").length;
     
     const taxaReprovacao = totalLeads > 0 ? parseFloat(((leadsReprovados / totalLeads) * 100).toFixed(2)) : 0;
     const taxaAprovacao = totalLeads > 0 ? parseFloat(((leadsAprovados / totalLeads) * 100).toFixed(2)) : 0;
@@ -359,11 +374,13 @@ export const useLeadsData = (filters?: FilterState) => {
       .map(([cbo, quantidade]) => ({ cbo, quantidade }))
       .sort((a, b) => b.quantidade - a.quantidade);
 
-    // Count by status (normalizado)
+    // Count by status (normalizado) - apenas 3 opções
     const statusCount: Record<string, number> = {};
     leadsComStatusNormalizado.forEach(l => {
       const status = l.statusNormalizado;
-      const statusLabel = status === "aprovado" ? "Aprovado" : status === "reprovado" ? "Reprovado" : "Pendente";
+      let statusLabel = "CPF Não Encontrado";
+      if (status === "aprovado") statusLabel = "Aprovado";
+      else if (status === "reprovado") statusLabel = "Reprovado";
       statusCount[statusLabel] = (statusCount[statusLabel] || 0) + 1;
     });
 
