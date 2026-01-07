@@ -19,6 +19,7 @@ import { supabase } from "@/integrations/supabase/client";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import PerfilIdealPanel from "@/components/leads/PerfilIdealPanel";
 import CBOsQueAprovamPanel from "@/components/leads/CBOsQueAprovamPanel";
+import EmpresasPanel from "@/components/leads/EmpresasPanel";
 
 interface LeadStats {
   totalAprovados: number;
@@ -310,14 +311,7 @@ const Leads = () => {
             </TabsContent>
 
             <TabsContent value="empresas" className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Empresas</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">Análise de aprovações por empresa.</p>
-                </CardContent>
-              </Card>
+              <EmpresasPanel />
             </TabsContent>
 
             <TabsContent value="banco" className="mt-6">
