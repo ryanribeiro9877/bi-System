@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { UserPlus, Trash2, Shield, User, AlertCircle, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,8 +21,7 @@ interface UserProfile {
 }
 
 const UserManagement = () => {
-  const navigate = useNavigate();
-  const { user, isAdmin, isLoading, signUp } = useAuth();
+  const { user, signUp } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -37,24 +35,8 @@ const UserManagement = () => {
   const [loadingUsers, setLoadingUsers] = useState(true);
 
   useEffect(() => {
-    if (!isLoading && !user) {
-      navigate("/");
-    }
-    if (!isLoading && user && !isAdmin) {
-      navigate("/dashboard");
-      toast({
-        title: "Acesso negado",
-        description: "Apenas administradores podem acessar esta página.",
-        variant: "destructive",
-      });
-    }
-  }, [user, isAdmin, isLoading, navigate, toast]);
-
-  useEffect(() => {
-    if (isAdmin) {
-      fetchUsers();
-    }
-  }, [isAdmin]);
+    fetchUsers();
+  }, []);
 
   const fetchUsers = async () => {
     setLoadingUsers(true);
@@ -180,14 +162,6 @@ const UserManagement = () => {
       setIsDeleting(false);
     }
   };
-
-  if (isLoading || !isAdmin) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-      </div>
-    );
-  }
 
   return (
     <div className="flex min-h-screen bg-background">
