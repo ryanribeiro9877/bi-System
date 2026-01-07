@@ -10,6 +10,7 @@ import UserManagement from "./pages/UserManagement";
 import Importacoes from "./pages/Importacoes";
 import Leads from "./pages/Leads";
 import CBOsBloqueados from "./pages/CBOsBloqueados";
+import Alertas from "./pages/Alertas";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/dashboard/importacoes" element={<Importacoes />} />
             <Route path="/dashboard/leads" element={<Leads />} />
             <Route path="/dashboard/cbos-bloqueados" element={<CBOsBloqueados />} />
+            <Route path="/dashboard/alertas" element={<Alertas />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
