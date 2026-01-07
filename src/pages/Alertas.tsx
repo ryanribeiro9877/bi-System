@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Bell, BellRing, BellOff, Plus, Settings, Clock, CheckCircle2, AlertTriangle, Trash2 } from "lucide-react";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import KPICard from "@/components/dashboard/KPICard";
@@ -5,6 +6,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const alertasAtivos = [
   {
@@ -90,10 +108,73 @@ const tipoBadge = {
   info: "bg-primary/20 text-primary border-primary/30",
 };
 
+const bancosCadastrados = [
+  "Todos os bancos",
+  "Banco Pan",
+  "Banco Bradesco",
+  "Banco Itaú",
+  "Banco Santander",
+  "Banco C6",
+  "Banco BMG",
+  "Banco Safra",
+  "Banco Inter",
+];
+
+const tiposAlerta = [
+  { value: "taxa_reprovacao", label: "Taxa de Reprovação" },
+  { value: "taxa_aprovacao", label: "Taxa de Aprovação" },
+  { value: "cbos_bloqueados", label: "Taxa de CBOs Bloqueados" },
+  { value: "volume_leads", label: "Volume de Leads" },
+];
+
 const Alertas = () => {
+  const [openDialog, setOpenDialog] = useState(false);
+  const [nomeAlerta, setNomeAlerta] = useState("");
+  const [tipoAlerta, setTipoAlerta] = useState("");
+  const [limite, setLimite] = useState("");
+  const [bancoFiltro, setBancoFiltro] = useState("");
+
   const alertasAtivosCount = alertasAtivos.filter(a => a.ativo).length;
   const naoLidosCount = historicoAlertas.filter(a => !a.lido).length;
   const totalDisparados = historicoAlertas.length;
+
+  const isPercentageType = tipoAlerta === "taxa_reprovacao" || tipoAlerta === "taxa_aprovacao" || tipoAlerta === "cbos_bloqueados";
+  const isVolumeType = tipoAlerta === "volume_leads";
+
+  const handleLimiteChange = (value: string) => {
+    if (isPercentageType) {
+      const numValue = parseInt(value);
+      if (numValue >= 0 && numValue <= 100) {
+        setLimite(value);
+      } else if (value === "") {
+        setLimite("");
+      }
+    } else if (isVolumeType) {
+      const numValue = parseInt(value);
+      if (numValue >= 100 || value === "") {
+        setLimite(value);
+      }
+    } else {
+      setLimite(value);
+    }
+  };
+
+  const handleCreateAlerta = () => {
+    // Aqui seria a lógica para criar o alerta
+    console.log({
+      nome: nomeAlerta,
+      tipo: tipoAlerta,
+      limite,
+      banco: bancoFiltro,
+    });
+    setOpenDialog(false);
+    setNomeAlerta("");
+    setTipoAlerta("");
+    setLimite("");
+    setBancoFiltro("");
+  };
+
+  const isFormValid = nomeAlerta.trim() !== "" && tipoAlerta !== "" && limite !== "" && bancoFiltro !== "";
 
   return (
     <div className="min-h-screen flex w-full bg-background">
@@ -139,10 +220,100 @@ const Alertas = () => {
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-xl font-semibold">Meus Alertas</CardTitle>
               <div className="flex gap-3">
-                <Button className="gap-2">
-                  <Plus className="w-4 h-4" />
-                  Criar Novo Alerta
-                </Button>
+                <Dialog open={openDialog} onOpenChange={setOpenDialog}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2">
+                      <Plus className="w-4 h-4" />
+                      Criar Novo Alerta
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                      <DialogTitle>Criar Novo Alerta</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="nome">Nome do Alerta *</Label>
+                        <Input
+                          id="nome"
+                          placeholder="Digite o nome do alerta"
+                          value={nomeAlerta}
+                          onChange={(e) => setNomeAlerta(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="tipo">Tipo de Alerta *</Label>
+                        <Select value={tipoAlerta} onValueChange={(value) => {
+                          setTipoAlerta(value);
+                          setLimite("");
+                        }}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione o tipo de alerta" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {tiposAlerta.map((tipo) => (
+                              <SelectItem key={tipo.value} value={tipo.value}>
+                                {tipo.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="limite">
+                          Limite * {isPercentageType && "(%)"}
+                          {isVolumeType && "(mínimo 100)"}
+                        </Label>
+                        <div className="relative">
+                          <Input
+                            id="limite"
+                            type="number"
+                            placeholder={isPercentageType ? "Ex: 30" : isVolumeType ? "Mínimo 100" : "Digite o limite"}
+                            value={limite}
+                            onChange={(e) => handleLimiteChange(e.target.value)}
+                            min={isVolumeType ? 100 : 0}
+                            max={isPercentageType ? 100 : undefined}
+                            disabled={!tipoAlerta}
+                          />
+                          {isPercentageType && limite && (
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                              %
+                            </span>
+                          )}
+                        </div>
+                        {isVolumeType && limite && parseInt(limite) < 100 && (
+                          <p className="text-xs text-destructive">O volume mínimo é 100 leads</p>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="banco">Filtrar por Banco *</Label>
+                        <Select value={bancoFiltro} onValueChange={setBancoFiltro}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione o banco" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {bancosCadastrados.map((banco) => (
+                              <SelectItem key={banco} value={banco}>
+                                {banco}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setOpenDialog(false)}>
+                        Cancelar
+                      </Button>
+                      <Button onClick={handleCreateAlerta} disabled={!isFormValid}>
+                        Criar Alerta
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
                 <Button variant="outline" className="gap-2">
                   <Settings className="w-4 h-4" />
                   Configurar Alertas
