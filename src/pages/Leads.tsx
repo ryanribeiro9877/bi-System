@@ -65,61 +65,65 @@ const LeadsContent = () => {
 
   // Helper para normalizar status do lead - verifica TODAS as fontes de dados
   const getNormalizedStatus = (lead: Lead): string => {
-    const s = (lead.status || "").toLowerCase().trim();
-    
-    // Status explícitos (exceto pendente) sempre respeitados
-    if (s === "aprovado" || s === "approved") return "aprovado";
-    if (s === "reprovado" || s === "rejected" || s === "recusado") return "reprovado";
-    if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "cpf_nao_encontrado";
-    
-    // Para status "pendente" ou vazio, analisar os dados do retorno
     const margem = lead.retorno_margem as any;
     const simulacao = lead.retorno_simulacao as any;
+    const proposta = lead.retorno_proposta as any;
     const getProposta = lead.retorno_get_proposta as any;
     
-    // === FORMATO V8 ===
-    // Verificar retorno_get_proposta primeiro (V8 aprovado tem proposta)
-    if (getProposta) {
-      const getPropostaStatus = getProposta?.status?.toUpperCase?.() || "";
-      if (getPropostaStatus === "APPROVED" || getPropostaStatus === "ACTIVE" || getPropostaStatus) {
+    // === VERIFICAR PROPOSTA PRIMEIRO (V8) ===
+    // Só é aprovado se retorno_proposta tem "status": "success" e NÃO tem "error"
+    if (proposta) {
+      // Se tem error = REPROVADO
+      if (proposta.error) {
+        return "reprovado";
+      }
+      // Se tem status = success = APROVADO
+      if (proposta.status?.toLowerCase() === "success") {
         return "aprovado";
       }
     }
     
-    // Verificar status explícito no retorno_simulacao.details (formato V8)
+    // Verificar retorno_get_proposta também
+    if (getProposta) {
+      if (getProposta.error) {
+        return "reprovado";
+      }
+      const getPropostaStatus = String(getProposta.status || "").toLowerCase();
+      if (getPropostaStatus === "success") {
+        return "aprovado";
+      }
+    }
+    
+    // === FORMATO V8 - Simulação ===
     const detailsStatus = typeof simulacao?.details?.status === 'string' 
       ? simulacao.details.status.toUpperCase() 
       : String(simulacao?.details?.status || "").toUpperCase();
     
-    if (detailsStatus === "APPROVED" || detailsStatus === "SUCCESS") return "aprovado";
-    if (detailsStatus === "REJECTED") return "reprovado";
-    if (detailsStatus === "FAILED") {
+    // Se simulação retornou erro/failed = verificar tipo
+    if (detailsStatus === "FAILED" || detailsStatus === "REJECTED") {
       const error = String(simulacao?.details?.error || simulacao?.details?.description || "");
       if (error.includes("não encontrado") || error.includes("inelegível") || error.includes("não elegível")) {
         return "cpf_nao_encontrado";
       }
-      return "cpf_nao_encontrado"; // FAILED sem detalhes = CPF não encontrado
+      return "reprovado";
     }
     
-    // Se tem availableMarginValue > 0 = aprovado (retorno_simulacao.details - formato V8)
-    const availableMargin = simulacao?.details?.availableMarginValue;
-    if (availableMargin !== undefined && availableMargin !== null && parseFloat(availableMargin) > 0) {
-      // Mas se status é REJECTED, ainda é reprovado
-      if (detailsStatus !== "REJECTED") {
-        return "aprovado";
-      }
-    }
+    // Se simulação teve margem > 0 mas NÃO gerou proposta com success = ainda não aprovado
+    // Apenas margens com proposta success são aprovados
     
     // === FORMATO PRESENÇA ===
-    // Se tem margem disponível > 0 = aprovado
+    // Se tem margem disponível > 0 = aprovado (Presença não usa retorno_proposta)
     const valorMargem = margem?.valorMargemDisponivel;
     if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
       return "aprovado";
     }
     
-    // Se tem retorno_margem mas com erro = reprovado (ex: "Margem indisponível")
+    // Se tem retorno_margem mas com erro = reprovado
     const erroMargem = margem?.error || "";
     if (erroMargem) {
+      if (erroMargem.includes("timeout") || erroMargem.includes("cURL error") || erroMargem.includes("Rate limit")) {
+        return "cpf_nao_encontrado";
+      }
       return "reprovado";
     }
     
@@ -129,12 +133,12 @@ const LeadsContent = () => {
     }
     
     // Se não tem nenhum retorno = CPF não encontrado
-    if (!margem && !simulacao && !getProposta) {
+    if (!margem && !simulacao && !proposta && !getProposta) {
       return "cpf_nao_encontrado";
     }
     
     // Se tem erro de timeout ou rate limit = CPF não encontrado
-    const erro = margem?.error || simulacao?.error || "";
+    const erro = simulacao?.error || "";
     if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
       return "cpf_nao_encontrado";
     }
