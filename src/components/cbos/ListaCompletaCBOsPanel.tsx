@@ -3,100 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Ban, Search, Download } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-
-const cbosData = [
-  { 
-    codigo: "717020", 
-    descricao: "Servente de Obras", 
-    setor: "Construção Civil", 
-    leadsAfetados: 245, 
-    margemPerdida: 125000, 
-    bancos: ["UY3", "Presença", "V8"] 
-  },
-  { 
-    codigo: "521105", 
-    descricao: "Vendedor em Comércio Atacadista", 
-    setor: "Comércio", 
-    leadsAfetados: 189, 
-    margemPerdida: 98500, 
-    bancos: ["UY3", "Presença"] 
-  },
-  { 
-    codigo: "513435", 
-    descricao: "Atendente de Lanchonete", 
-    setor: "Alimentação", 
-    leadsAfetados: 156, 
-    margemPerdida: 72000, 
-    bancos: ["UY3", "Presença", "V8"] 
-  },
-  { 
-    codigo: "514320", 
-    descricao: "Faxineiro", 
-    setor: "Serviços Gerais", 
-    leadsAfetados: 134, 
-    margemPerdida: 65000, 
-    bancos: ["UY3", "V8"] 
-  },
-  { 
-    codigo: "422105", 
-    descricao: "Recepcionista em Geral", 
-    setor: "Administrativo", 
-    leadsAfetados: 98, 
-    margemPerdida: 48000, 
-    bancos: ["Presença"] 
-  },
-  { 
-    codigo: "784205", 
-    descricao: "Alimentador de Linha de Produção", 
-    setor: "Indústria", 
-    leadsAfetados: 87, 
-    margemPerdida: 42000, 
-    bancos: ["UY3"] 
-  },
-  { 
-    codigo: "782510", 
-    descricao: "Motorista de Caminhão", 
-    setor: "Transporte", 
-    leadsAfetados: 76, 
-    margemPerdida: 38000, 
-    bancos: ["V8"] 
-  },
-  { 
-    codigo: "411010", 
-    descricao: "Auxiliar de Escritório", 
-    setor: "Administrativo", 
-    leadsAfetados: 65, 
-    margemPerdida: 32000, 
-    bancos: ["Presença", "V8"] 
-  },
-];
-
-const getBancoColor = (banco: string) => {
-  const colors: Record<string, string> = {
-    "UY3": "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    "Presença": "bg-purple-500/20 text-purple-400 border-purple-500/30",
-    "V8": "bg-pink-500/20 text-pink-400 border-pink-500/30",
-  };
-  return colors[banco] || "bg-muted text-muted-foreground";
-};
+import { Ban, Search, Download, Upload } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const ListaCompletaCBOsPanel = () => {
   const [search, setSearch] = useState("");
-
-  const filteredData = cbosData.filter(
-    (cbo) =>
-      cbo.codigo.includes(search) ||
-      cbo.descricao.toLowerCase().includes(search.toLowerCase())
-  );
+  const navigate = useNavigate();
 
   return (
     <Card className="bg-card border-border">
@@ -111,8 +23,8 @@ const ListaCompletaCBOsPanel = () => {
               Todas as ocupações que bloqueiam aprovações nos bancos
             </p>
           </div>
-          <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
-            {cbosData.length} CBOs
+          <Badge className="bg-muted text-muted-foreground border-border">
+            0 CBOs
           </Badge>
         </div>
 
@@ -142,54 +54,24 @@ const ListaCompletaCBOsPanel = () => {
             <option value="industria">Indústria</option>
             <option value="transporte">Transporte</option>
           </select>
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2" disabled>
             <Download className="w-4 h-4" />
             Exportar
           </Button>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border hover:bg-transparent">
-                <TableHead className="text-muted-foreground">Código</TableHead>
-                <TableHead className="text-muted-foreground">Descrição</TableHead>
-                <TableHead className="text-muted-foreground">Setor</TableHead>
-                <TableHead className="text-muted-foreground text-right">Leads Afetados</TableHead>
-                <TableHead className="text-muted-foreground text-right">Margem Perdida</TableHead>
-                <TableHead className="text-muted-foreground">Bancos</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredData.map((cbo) => (
-                <TableRow key={cbo.codigo} className="border-border/50 hover:bg-muted/30">
-                  <TableCell className="font-mono text-foreground">{cbo.codigo}</TableCell>
-                  <TableCell className="font-medium text-foreground">{cbo.descricao}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="bg-muted/50">
-                      {cbo.setor}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right text-orange-400 font-medium">
-                    {cbo.leadsAfetados}
-                  </TableCell>
-                  <TableCell className="text-right text-amber-400 font-medium">
-                    R$ {cbo.margemPerdida.toLocaleString("pt-BR")}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1 flex-wrap">
-                      {cbo.bancos.map((banco) => (
-                        <Badge key={banco} variant="outline" className={getBancoColor(banco)}>
-                          {banco}
-                        </Badge>
-                      ))}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <div className="py-12 text-center">
+          <Ban className="w-16 h-16 text-muted-foreground/50 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-foreground mb-2">Nenhum CBO bloqueado</h3>
+          <p className="text-muted-foreground mb-4 max-w-md mx-auto">
+            Importe seus leads para identificar os CBOs que estão bloqueando 
+            aprovações nos bancos.
+          </p>
+          <Button onClick={() => navigate("/dashboard/importacoes")} className="gap-2">
+            <Upload className="w-4 h-4" />
+            Ir para Importações
+          </Button>
         </div>
       </CardContent>
     </Card>

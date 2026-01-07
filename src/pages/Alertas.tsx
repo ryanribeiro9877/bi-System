@@ -36,40 +36,6 @@ interface Alerta {
   criadoEm: string;
 }
 
-const alertasIniciais: Alerta[] = [
-  {
-    id: 1,
-    nome: "CBO Bloqueado - Vendedor",
-    descricao: "Alerta quando CBO de vendedor for bloqueado",
-    tipo: "cbos_bloqueados",
-    limite: "10",
-    banco: "Todos os bancos",
-    ativo: true,
-    criadoEm: "2026-01-05",
-  },
-  {
-    id: 2,
-    nome: "Reprovação acima de 30%",
-    descricao: "Alerta quando taxa de reprovação ultrapassar 30%",
-    tipo: "taxa_reprovacao",
-    limite: "30",
-    banco: "Presença",
-    ativo: true,
-    criadoEm: "2026-01-03",
-  },
-  {
-    id: 3,
-    nome: "Novo banco disponível",
-    descricao: "Alerta quando novo banco entrar na plataforma",
-    tipo: "volume_leads",
-    limite: "500",
-    banco: "UY3",
-    ativo: false,
-    criadoEm: "2026-01-01",
-  },
-];
-
-
 const bancosCadastrados = [
   "Todos os bancos",
   "Presença",
@@ -85,7 +51,7 @@ const tiposAlerta = [
 ];
 
 const Alertas = () => {
-  const [alertas, setAlertas] = useState<Alerta[]>(alertasIniciais);
+  const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
   const [openConfigDialog, setOpenConfigDialog] = useState(false);
   const [editingAlerta, setEditingAlerta] = useState<Alerta | null>(null);
@@ -335,8 +301,8 @@ const Alertas = () => {
                     </DialogHeader>
                     {alertas.length === 0 ? (
                       <div className="py-8 text-center">
-                        <AlertTriangle className="w-12 h-12 text-destructive mx-auto mb-4" />
-                        <p className="text-destructive font-medium">Nenhum alerta encontrado</p>
+                        <AlertTriangle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                        <p className="text-muted-foreground font-medium">Nenhum alerta encontrado</p>
                         <p className="text-sm text-muted-foreground mt-2">
                           Crie um alerta primeiro para poder configurá-lo.
                         </p>
@@ -441,15 +407,24 @@ const Alertas = () => {
                                   </div>
                                   <p className="text-xs text-muted-foreground">{alerta.descricao}</p>
                                 </div>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="gap-1"
-                                  onClick={() => handleEditAlerta(alerta)}
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                  Editar
-                                </Button>
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => handleEditAlerta(alerta)}
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive hover:text-destructive"
+                                    onClick={() => handleDeleteAlerta(alerta.id)}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -461,59 +436,58 @@ const Alertas = () => {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {alertas.map((alerta) => (
-                  <Card key={alerta.id} className={`border ${alerta.ativo ? 'border-success/30 bg-success/5' : 'border-muted bg-muted/20'}`}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <BellRing className={`w-4 h-4 ${alerta.ativo ? 'text-success' : 'text-muted-foreground'}`} />
-                          <span className="font-medium text-sm">{alerta.nome}</span>
+              {alertas.length === 0 ? (
+                <div className="py-12 text-center">
+                  <Bell className="w-16 h-16 text-muted-foreground/50 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-foreground mb-2">Nenhum alerta configurado</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Crie alertas para ser notificado sobre mudanças importantes nos seus leads.
+                  </p>
+                  <Button onClick={() => setOpenDialog(true)} className="gap-2">
+                    <Plus className="w-4 h-4" />
+                    Criar Primeiro Alerta
+                  </Button>
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <div className="space-y-4">
+                    {alertas.map((alerta) => (
+                      <div
+                        key={alerta.id}
+                        className="p-4 rounded-lg border bg-muted/20 hover:bg-muted/30 transition-colors"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            {alerta.ativo ? (
+                              <BellRing className="w-5 h-5 text-success" />
+                            ) : (
+                              <BellOff className="w-5 h-5 text-muted-foreground" />
+                            )}
+                            <h3 className="font-semibold text-foreground">{alerta.nome}</h3>
+                            <Badge variant={alerta.ativo ? "default" : "secondary"}>
+                              {alerta.ativo ? "Ativo" : "Inativo"}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Clock className="w-4 h-4" />
+                            {alerta.criadoEm}
+                          </div>
                         </div>
-                        <Badge variant={alerta.ativo ? "default" : "secondary"} className="text-xs">
-                          {alerta.ativo ? "Ativo" : "Inativo"}
-                        </Badge>
+                        <p className="text-muted-foreground text-sm mb-3">{alerta.descricao}</p>
+                        <div className="flex gap-2">
+                          <Badge variant="outline">
+                            {tiposAlerta.find(t => t.value === alerta.tipo)?.label}
+                          </Badge>
+                          <Badge variant="outline">Limite: {alerta.limite}</Badge>
+                          <Badge variant="outline">{alerta.banco}</Badge>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground mb-3">{alerta.descricao}</p>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">
-                          Criado em {new Date(alerta.criadoEm).toLocaleDateString('pt-BR')}
-                        </span>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-7 px-2 text-destructive hover:text-destructive"
-                          onClick={() => handleDeleteAlerta(alerta.id)}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
             </CardContent>
           </Card>
-
-          {/* Histórico de Alertas */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold flex items-center gap-2">
-                <Clock className="w-5 h-5" />
-                Histórico de Alertas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <BellOff className="w-12 h-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground font-medium">Nenhum alerta disparado ainda</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Quando seus alertas forem acionados, eles aparecerão aqui.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
         </div>
       </main>
     </div>
