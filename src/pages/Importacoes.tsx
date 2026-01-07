@@ -91,56 +91,16 @@ const extrairCBODoJson = (margem: any, simulacao?: any, getProposta?: any, propo
   return fontes.find(v => v && String(v).trim().length > 0)?.toString();
 };
 
-// Função para determinar o banco baseado em TODAS as fontes JSON disponíveis
-const extrairBancoDoJson = (simulacao: any, autorizacao?: any, proposta?: any, getProposta?: any, margem?: any): string | undefined => {
-  // Concatenar todos os campos possíveis para buscar padrões
-  const haystack = [
-    // retorno_simulacao
-    simulacao?.productName,
-    simulacao?.productId,
-    simulacao?.banco,
-    simulacao?.details?.partnerId,
-    simulacao?.details?.provider,
-    simulacao?.provider,
-    // retorno_autorizacao
-    autorizacao?.shortUrl,
-    autorizacao?.banco,
-    autorizacao?.provider,
-    // retorno_proposta
-    proposta?.banco,
-    proposta?.instituicao,
-    proposta?.provider,
-    // retorno_get_proposta
-    getProposta?.banco,
-    getProposta?.instituicao,
-    getProposta?.provider,
-    getProposta?.user?.partnerId,
-    // retorno_margem
-    margem?.banco,
-    margem?.instituicao,
-    margem?.provider,
-  ].filter(Boolean).join(" ").toLowerCase();
-
-  // Identificar banco por padrões conhecidos
-  if (haystack.includes("v8") && haystack.includes("clt")) return "V8 CLT";
-  if (haystack.includes("v8-clt")) return "V8 CLT";
-  if (haystack.includes("presen") || haystack.includes("privado")) return "Presença";
-  if (haystack.includes("uy3")) return "UY3";
-  if (haystack.includes("v8")) return "V8";
-  if (haystack.includes("safra")) return "Safra";
-  if (haystack.includes("itau") || haystack.includes("itaú")) return "Itaú";
-  if (haystack.includes("santander")) return "Santander";
-  if (haystack.includes("bradesco")) return "Bradesco";
-  if (haystack.includes("caixa")) return "Caixa";
-  if (haystack.includes("bb") || haystack.includes("brasil")) return "Banco do Brasil";
-  if (haystack.includes("d1231") || haystack.includes("10253")) return "D1231";
-
-  // Se productName existe mas não encontrou padrão, usar o próprio productName
-  if (simulacao?.productName) {
-    return simulacao.productName;
-  }
-
-  return undefined;
+// Função para extrair o banco do NOME DO ARQUIVO importado
+// Os bancos possíveis são: V8, UY3 e PRESENÇA
+const extrairBancoDoNomeArquivo = (fileName: string): string => {
+  const nomeNormalizado = fileName.toLowerCase();
+  
+  if (nomeNormalizado.includes("v8")) return "V8";
+  if (nomeNormalizado.includes("uy3")) return "UY3";
+  if (nomeNormalizado.includes("presen") || nomeNormalizado.includes("presença")) return "Presença";
+  
+  return "Não Informado";
 };
 
 // Função para extrair tipo de reprovação - busca em TODAS as colunas
@@ -410,15 +370,8 @@ const Importacoes = () => {
             if (!lead.cbo) {
               lead.cbo = extrairCBODoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
             }
-            if (!lead.banco) {
-              lead.banco = extrairBancoDoJson(
-                lead.retorno_simulacao, 
-                lead.retorno_autorizacao, 
-                lead.retorno_proposta, 
-                lead.retorno_get_proposta,
-                lead.retorno_margem
-              );
-            }
+            // O banco é SEMPRE definido pelo nome do arquivo
+            lead.banco = extrairBancoDoNomeArquivo(file.name);
             if (!lead.status) {
               lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem);
             }
@@ -499,15 +452,8 @@ const Importacoes = () => {
             if (!lead.cbo) {
               lead.cbo = extrairCBODoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
             }
-            if (!lead.banco) {
-              lead.banco = extrairBancoDoJson(
-                lead.retorno_simulacao, 
-                lead.retorno_autorizacao, 
-                lead.retorno_proposta, 
-                lead.retorno_get_proposta,
-                lead.retorno_margem
-              );
-            }
+            // O banco é SEMPRE definido pelo nome do arquivo
+            lead.banco = extrairBancoDoNomeArquivo(file.name);
             if (!lead.status) {
               lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem);
             }

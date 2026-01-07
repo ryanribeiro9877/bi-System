@@ -130,65 +130,12 @@ const extrairCBO = (lead: Lead): string => {
   return found ? String(found) : "";
 };
 
-// Helper para extrair banco - busca em TODAS as fontes disponíveis
+// Helper para extrair banco - agora usa o campo banco que vem do nome do arquivo importado
 const extrairBanco = (lead: Lead): string => {
-  // 1. Primeiro verifica campo direto
+  // O banco é definido pelo nome do arquivo na importação
+  // Se não tiver, retorna "Não Informado"
   if (lead.banco && lead.banco.trim()) return lead.banco.trim();
-
-  const simulacao = lead.retorno_simulacao as any;
-  const autorizacao = lead.retorno_autorizacao as any;
-  const proposta = lead.retorno_proposta as any;
-  const getProposta = lead.retorno_get_proposta as any;
-  const margem = lead.retorno_margem as any;
-  
-  // 2. Concatenar todos os campos possíveis para buscar padrões
-  const haystack = [
-    // retorno_simulacao
-    simulacao?.productName,
-    simulacao?.productId,
-    simulacao?.banco,
-    simulacao?.details?.partnerId,
-    simulacao?.details?.provider,
-    simulacao?.provider,
-    // retorno_autorizacao
-    autorizacao?.shortUrl,
-    autorizacao?.banco,
-    autorizacao?.provider,
-    // retorno_proposta
-    proposta?.banco,
-    proposta?.instituicao,
-    proposta?.provider,
-    // retorno_get_proposta
-    getProposta?.banco,
-    getProposta?.instituicao,
-    getProposta?.provider,
-    getProposta?.user?.partnerId,
-    // retorno_margem
-    margem?.banco,
-    margem?.instituicao,
-    margem?.provider,
-  ].filter(Boolean).join(" ").toLowerCase();
-
-  // 3. Identificar banco por padrões conhecidos
-  if (haystack.includes("v8") && haystack.includes("clt")) return "V8 CLT";
-  if (haystack.includes("v8-clt")) return "V8 CLT";
-  if (haystack.includes("presen") || haystack.includes("privado")) return "Presença";
-  if (haystack.includes("uy3")) return "UY3";
-  if (haystack.includes("v8")) return "V8";
-  if (haystack.includes("safra")) return "Safra";
-  if (haystack.includes("itau") || haystack.includes("itaú")) return "Itaú";
-  if (haystack.includes("santander")) return "Santander";
-  if (haystack.includes("bradesco")) return "Bradesco";
-  if (haystack.includes("caixa")) return "Caixa";
-  if (haystack.includes("bb") || haystack.includes("brasil")) return "Banco do Brasil";
-  if (haystack.includes("d1231") || haystack.includes("10253")) return "D1231";
-
-  // 4. Se productName existe mas não encontrou padrão, usar o próprio productName
-  if (simulacao?.productName) {
-    return simulacao.productName;
-  }
-
-  return "";
+  return "Não Informado";
 };
 
 // Helper para normalizar status - apenas 3 opções: aprovado, reprovado, cpf_nao_encontrado
