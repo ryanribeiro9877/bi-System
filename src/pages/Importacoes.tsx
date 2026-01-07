@@ -44,46 +44,81 @@ interface ParsedLead {
   ultimo_log?: string;
 }
 
-// Função para extrair nome do JSON - suporta múltiplos formatos
-const extrairNomeDoJson = (margem: any, simulacao?: any, getProposta?: any): string | undefined => {
-  // Tenta do retorno_get_proposta primeiro (formato V8 CLT)
-  if (getProposta?.name) return getProposta.name;
+// Função para extrair nome do JSON - busca em TODAS as colunas disponíveis
+const extrairNomeDoJson = (margem: any, simulacao?: any, getProposta?: any, proposta?: any, autorizacao?: any): string | undefined => {
+  // Busca em todas as fontes possíveis
+  const fontes = [
+    // retorno_get_proposta
+    getProposta?.name,
+    // retorno_margem
+    margem?.registroEmpregaticio?.nomeEmpregado,
+    margem?.nomeEmpregado,
+    margem?.nome,
+    // retorno_simulacao
+    simulacao?.details?.name,
+    simulacao?.name,
+    simulacao?.nomeCliente,
+    // retorno_proposta
+    proposta?.name,
+    proposta?.nomeCliente,
+    proposta?.nome,
+    // retorno_autorizacao
+    autorizacao?.name,
+    autorizacao?.nomeCliente,
+  ];
   
-  // Primeiro tenta do retorno_margem (formato Presença)
-  if (margem) {
-    if (margem.registroEmpregaticio?.nomeEmpregado) return margem.registroEmpregaticio.nomeEmpregado;
-    if (margem.nomeEmpregado) return margem.nomeEmpregado;
-  }
-  // Tenta do retorno_simulacao.details (novo formato)
-  if (simulacao?.details?.name) return simulacao.details.name;
-  if (simulacao?.name) return simulacao.name;
-  return undefined;
+  return fontes.find(v => v && typeof v === 'string' && v.trim().length > 0);
 };
 
-// Função para extrair CBO do JSON - suporta múltiplos formatos
-const extrairCBODoJson = (margem: any): string | undefined => {
-  if (!margem) return undefined;
-  if (margem.registroEmpregaticio?.cbo) return margem.registroEmpregaticio.cbo;
-  if (margem.cbo) return margem.cbo;
-  return undefined;
+// Função para extrair CBO do JSON - busca em TODAS as colunas disponíveis
+const extrairCBODoJson = (margem: any, simulacao?: any, getProposta?: any, proposta?: any, autorizacao?: any): string | undefined => {
+  const fontes = [
+    // retorno_margem
+    margem?.registroEmpregaticio?.cbo,
+    margem?.cbo,
+    // retorno_simulacao
+    simulacao?.details?.cbo,
+    simulacao?.cbo,
+    // retorno_get_proposta
+    getProposta?.cbo,
+    getProposta?.occupation,
+    // retorno_proposta
+    proposta?.cbo,
+    // retorno_autorizacao
+    autorizacao?.cbo,
+  ];
+  
+  return fontes.find(v => v && String(v).trim().length > 0)?.toString();
 };
 
-// Função para determinar o banco baseado em todas as fontes JSON disponíveis
-const extrairBancoDoJson = (simulacao: any, autorizacao?: any, proposta?: any, getProposta?: any): string | undefined => {
+// Função para determinar o banco baseado em TODAS as fontes JSON disponíveis
+const extrairBancoDoJson = (simulacao: any, autorizacao?: any, proposta?: any, getProposta?: any, margem?: any): string | undefined => {
   // Concatenar todos os campos possíveis para buscar padrões
   const haystack = [
+    // retorno_simulacao
     simulacao?.productName,
     simulacao?.productId,
     simulacao?.banco,
     simulacao?.details?.partnerId,
+    simulacao?.details?.provider,
+    simulacao?.provider,
+    // retorno_autorizacao
     autorizacao?.shortUrl,
     autorizacao?.banco,
+    autorizacao?.provider,
+    // retorno_proposta
     proposta?.banco,
     proposta?.instituicao,
+    proposta?.provider,
+    // retorno_get_proposta
     getProposta?.banco,
     getProposta?.instituicao,
-    getProposta?.provider, // V8 CLT usa "provider" para identificar o banco
-    getProposta?.user?.partnerId, // V8 CLT também tem partnerId no user
+    getProposta?.provider,
+    getProposta?.user?.partnerId,
+    // retorno_margem
+    margem?.banco,
+    margem?.instituicao,
+    margem?.provider,
   ].filter(Boolean).join(" ").toLowerCase();
 
   // Identificar banco por padrões conhecidos
@@ -108,27 +143,52 @@ const extrairBancoDoJson = (simulacao: any, autorizacao?: any, proposta?: any, g
   return undefined;
 };
 
-// Função para extrair tipo de reprovação
-const extrairTipoReprovacao = (simulacao: any, margem: any): string | undefined => {
-  // Tenta do retorno_simulacao.details (novo formato)
-  if (simulacao?.details?.error) return simulacao.details.error;
-  if (simulacao?.error) return simulacao.error;
-  // Tenta do retorno_margem
-  if (margem?.error) return margem.error;
-  return undefined;
+// Função para extrair tipo de reprovação - busca em TODAS as colunas
+const extrairTipoReprovacao = (simulacao: any, margem: any, getProposta?: any, proposta?: any, autorizacao?: any): string | undefined => {
+  const fontes = [
+    // retorno_simulacao
+    simulacao?.details?.error,
+    simulacao?.details?.description,
+    simulacao?.error,
+    simulacao?.motivo,
+    // retorno_margem
+    margem?.error,
+    margem?.motivo,
+    // retorno_get_proposta
+    getProposta?.error,
+    getProposta?.statusDescription,
+    // retorno_proposta
+    proposta?.error,
+    proposta?.motivo,
+    // retorno_autorizacao
+    autorizacao?.error,
+  ];
+  
+  return fontes.find(v => v && String(v).trim().length > 0)?.toString();
 };
 
-// Função para extrair valor de margem disponível
-const extrairValorMargem = (simulacao: any, margem: any): number | undefined => {
-  // Tenta do retorno_margem
-  if (margem?.valorMargemDisponivel !== undefined && margem?.valorMargemDisponivel !== null) {
-    return parseFloat(margem.valorMargemDisponivel);
-  }
-  // Tenta do retorno_simulacao.details (novo formato)
-  if (simulacao?.details?.availableMarginValue !== undefined && simulacao?.details?.availableMarginValue !== null) {
-    return parseFloat(simulacao.details.availableMarginValue);
-  }
-  return undefined;
+// Função para extrair valor de margem disponível - busca em TODAS as colunas
+const extrairValorMargem = (simulacao: any, margem: any, getProposta?: any, proposta?: any): number | undefined => {
+  const fontes = [
+    // retorno_margem
+    margem?.valorMargemDisponivel,
+    margem?.margemDisponivel,
+    margem?.valor,
+    // retorno_simulacao
+    simulacao?.details?.availableMarginValue,
+    simulacao?.availableMarginValue,
+    simulacao?.valor,
+    // retorno_get_proposta
+    getProposta?.issueAmount,
+    getProposta?.disbursedIssueAmount,
+    getProposta?.valor,
+    // retorno_proposta
+    proposta?.valor,
+    proposta?.valorContrato,
+  ];
+  
+  const valor = fontes.find(v => v !== undefined && v !== null && v !== 0);
+  return valor !== undefined ? parseFloat(String(valor)) : undefined;
 };
 
 // Função para determinar status baseado nos retornos - suporta múltiplos formatos
@@ -345,17 +405,18 @@ const Importacoes = () => {
             
             // Extrair dados adicionais dos JSONs se não foram preenchidos diretamente
             if (!lead.nome) {
-              lead.nome = extrairNomeDoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta);
+              lead.nome = extrairNomeDoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
             }
             if (!lead.cbo) {
-              lead.cbo = extrairCBODoJson(lead.retorno_margem);
+              lead.cbo = extrairCBODoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
             }
             if (!lead.banco) {
               lead.banco = extrairBancoDoJson(
                 lead.retorno_simulacao, 
                 lead.retorno_autorizacao, 
                 lead.retorno_proposta, 
-                lead.retorno_get_proposta
+                lead.retorno_get_proposta,
+                lead.retorno_margem
               );
             }
             if (!lead.status) {
@@ -363,11 +424,11 @@ const Importacoes = () => {
             }
             // Extrair tipo de reprovação se status for reprovado
             if (!lead.tipo_reprovacao && lead.status === "reprovado") {
-              lead.tipo_reprovacao = extrairTipoReprovacao(lead.retorno_simulacao, lead.retorno_margem);
+              lead.tipo_reprovacao = extrairTipoReprovacao(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
             }
             // Extrair valor da margem disponível
             if (!lead.valor) {
-              lead.valor = extrairValorMargem(lead.retorno_simulacao, lead.retorno_margem);
+              lead.valor = extrairValorMargem(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta);
             }
             
             return lead;
@@ -433,17 +494,18 @@ const Importacoes = () => {
             
             // Extrair dados adicionais dos JSONs
             if (!lead.nome) {
-              lead.nome = extrairNomeDoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta);
+              lead.nome = extrairNomeDoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
             }
             if (!lead.cbo) {
-              lead.cbo = extrairCBODoJson(lead.retorno_margem);
+              lead.cbo = extrairCBODoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
             }
             if (!lead.banco) {
               lead.banco = extrairBancoDoJson(
                 lead.retorno_simulacao, 
                 lead.retorno_autorizacao, 
                 lead.retorno_proposta, 
-                lead.retorno_get_proposta
+                lead.retorno_get_proposta,
+                lead.retorno_margem
               );
             }
             if (!lead.status) {
@@ -451,11 +513,11 @@ const Importacoes = () => {
             }
             // Extrair tipo de reprovação se status for reprovado
             if (!lead.tipo_reprovacao && lead.status === "reprovado") {
-              lead.tipo_reprovacao = extrairTipoReprovacao(lead.retorno_simulacao, lead.retorno_margem);
+              lead.tipo_reprovacao = extrairTipoReprovacao(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
             }
             // Extrair valor da margem disponível
             if (!lead.valor) {
-              lead.valor = extrairValorMargem(lead.retorno_simulacao, lead.retorno_margem);
+              lead.valor = extrairValorMargem(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta);
             }
             
             return lead;

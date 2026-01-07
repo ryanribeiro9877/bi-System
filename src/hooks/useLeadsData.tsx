@@ -66,43 +66,71 @@ export interface DashboardStats {
   valorSimulacaoTotal: number;
 }
 
-// Helper para extrair nome do lead
+// Helper para extrair nome do lead - busca em TODAS as colunas
 const extrairNome = (lead: Lead): string => {
   if (lead.nome) return lead.nome;
 
   const margem = lead.retorno_margem as any;
   const simulacao = lead.retorno_simulacao as any;
   const getProposta = lead.retorno_get_proposta as any;
-  const registro = margem?.registroEmpregaticio;
+  const proposta = lead.retorno_proposta as any;
+  const autorizacao = lead.retorno_autorizacao as any;
 
-  // Tenta do retorno_get_proposta primeiro (formato V8 CLT)
-  if (getProposta?.name) return getProposta.name;
-
-  // Tenta do retorno_margem (formato Presença)
-  if (registro && typeof registro === "object" && registro.nomeEmpregado) {
-    return registro.nomeEmpregado;
-  }
-  if (margem?.nomeEmpregado) return margem.nomeEmpregado;
+  // Busca em todas as fontes possíveis
+  const fontes = [
+    // retorno_get_proposta
+    getProposta?.name,
+    // retorno_margem
+    margem?.registroEmpregaticio?.nomeEmpregado,
+    margem?.nomeEmpregado,
+    margem?.nome,
+    // retorno_simulacao
+    simulacao?.details?.name,
+    simulacao?.name,
+    simulacao?.nomeCliente,
+    // retorno_proposta
+    proposta?.name,
+    proposta?.nomeCliente,
+    proposta?.nome,
+    // retorno_autorizacao
+    autorizacao?.name,
+    autorizacao?.nomeCliente,
+  ];
   
-  // Tenta do retorno_simulacao.details (novo formato)
-  if (simulacao?.details?.name) return simulacao.details.name;
-  if (simulacao?.name) return simulacao.name;
-  
-  return "";
+  return fontes.find(v => v && typeof v === 'string' && v.trim().length > 0) || "";
 };
 
-// Helper para extrair CBO
+// Helper para extrair CBO - busca em TODAS as colunas
 const extrairCBO = (lead: Lead): string => {
   if (lead.cbo) return lead.cbo;
   
   const margem = lead.retorno_margem as any;
-  if (margem?.registroEmpregaticio?.cbo) return margem.registroEmpregaticio.cbo;
-  if (margem?.cbo) return margem.cbo;
+  const simulacao = lead.retorno_simulacao as any;
+  const getProposta = lead.retorno_get_proposta as any;
+  const proposta = lead.retorno_proposta as any;
+  const autorizacao = lead.retorno_autorizacao as any;
+
+  const fontes = [
+    // retorno_margem
+    margem?.registroEmpregaticio?.cbo,
+    margem?.cbo,
+    // retorno_simulacao
+    simulacao?.details?.cbo,
+    simulacao?.cbo,
+    // retorno_get_proposta
+    getProposta?.cbo,
+    getProposta?.occupation,
+    // retorno_proposta
+    proposta?.cbo,
+    // retorno_autorizacao
+    autorizacao?.cbo,
+  ];
   
-  return "";
+  const found = fontes.find(v => v && String(v).trim().length > 0);
+  return found ? String(found) : "";
 };
 
-// Helper para extrair banco - busca em todas as fontes disponíveis
+// Helper para extrair banco - busca em TODAS as fontes disponíveis
 const extrairBanco = (lead: Lead): string => {
   // 1. Primeiro verifica campo direto
   if (lead.banco && lead.banco.trim()) return lead.banco.trim();
@@ -111,22 +139,34 @@ const extrairBanco = (lead: Lead): string => {
   const autorizacao = lead.retorno_autorizacao as any;
   const proposta = lead.retorno_proposta as any;
   const getProposta = lead.retorno_get_proposta as any;
+  const margem = lead.retorno_margem as any;
   
   // 2. Concatenar todos os campos possíveis para buscar padrões
   const haystack = [
+    // retorno_simulacao
     simulacao?.productName,
     simulacao?.productId,
+    simulacao?.banco,
     simulacao?.details?.partnerId,
+    simulacao?.details?.provider,
+    simulacao?.provider,
+    // retorno_autorizacao
     autorizacao?.shortUrl,
+    autorizacao?.banco,
+    autorizacao?.provider,
+    // retorno_proposta
     proposta?.banco,
     proposta?.instituicao,
+    proposta?.provider,
+    // retorno_get_proposta
     getProposta?.banco,
     getProposta?.instituicao,
-    getProposta?.provider, // V8 CLT usa "provider" para identificar o banco
-    getProposta?.user?.partnerId, // V8 CLT também tem partnerId no user
-    // Adicionar campos personalizados se existirem
-    simulacao?.banco,
-    autorizacao?.banco,
+    getProposta?.provider,
+    getProposta?.user?.partnerId,
+    // retorno_margem
+    margem?.banco,
+    margem?.instituicao,
+    margem?.provider,
   ].filter(Boolean).join(" ").toLowerCase();
 
   // 3. Identificar banco por padrões conhecidos
