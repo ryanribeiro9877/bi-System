@@ -131,11 +131,14 @@ const determinarStatus = (simulacao: any, proposta: any, getProposta: any, marge
   if (getProposta && Object.keys(getProposta).length > 0) return "aprovado";
   
   // Verificar status explícito no retorno_simulacao.details (novo formato)
-  const detailsStatus = simulacao?.details?.status?.toUpperCase();
+  const detailsStatus = typeof simulacao?.details?.status === 'string' 
+    ? simulacao.details.status.toUpperCase() 
+    : String(simulacao?.details?.status || "").toUpperCase();
+  
   if (detailsStatus === "APPROVED" || detailsStatus === "SUCCESS") return "aprovado";
   if (detailsStatus === "REJECTED" || detailsStatus === "FAILED") {
     // Verificar se é CPF não encontrado ou reprovado por margem
-    const error = simulacao?.details?.error || "";
+    const error = String(simulacao?.details?.error || simulacao?.details?.description || "");
     if (error.includes("não encontrado") || error.includes("inelegível") || error.includes("não elegível")) {
       return "cpf_nao_encontrado";
     }
