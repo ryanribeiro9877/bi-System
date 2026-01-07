@@ -63,25 +63,58 @@ const LeadsContent = () => {
   const [detailOpen, setDetailOpen] = useState(false);
   const leadsPerPage = 15;
 
-  // Helper para normalizar status do lead
+  // Helper para normalizar status do lead - verifica TODAS as fontes de dados
   const getNormalizedStatus = (lead: Lead): string => {
-    const margem = lead.retorno_margem as any;
+    const s = (lead.status || "").toLowerCase().trim();
     
-    // Se não tem retorno de margem = CPF não encontrado
-    if (!margem || margem === null) {
+    // Status explícitos sempre respeitados
+    if (s === "aprovado" || s === "approved") return "aprovado";
+    if (s === "reprovado" || s === "rejected" || s === "recusado") return "reprovado";
+    if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "cpf_nao_encontrado";
+    
+    const margem = lead.retorno_margem as any;
+    const simulacao = lead.retorno_simulacao as any;
+    const getProposta = lead.retorno_get_proposta as any;
+    
+    // Verificar status explícito no retorno_simulacao.details (formato V8)
+    const detailsStatus = typeof simulacao?.details?.status === 'string' 
+      ? simulacao.details.status.toUpperCase() 
+      : String(simulacao?.details?.status || "").toUpperCase();
+    
+    if (detailsStatus === "APPROVED" || detailsStatus === "SUCCESS") return "aprovado";
+    if (detailsStatus === "REJECTED" || detailsStatus === "FAILED") {
+      const error = String(simulacao?.details?.error || simulacao?.details?.description || "");
+      if (error.includes("não encontrado") || error.includes("inelegível") || error.includes("não elegível")) {
+        return "cpf_nao_encontrado";
+      }
+      return "reprovado";
+    }
+    
+    // Verificar status no retorno_get_proposta (formato V8)
+    const getPropostaStatus = getProposta?.status?.toUpperCase?.() || "";
+    if (getPropostaStatus === "APPROVED" || getPropostaStatus === "ACTIVE") return "aprovado";
+    
+    // Se tem margem disponível > 0 = aprovado (retorno_margem - formato Presença)
+    const valorMargem = margem?.valorMargemDisponivel;
+    if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
+      return "aprovado";
+    }
+    
+    // Se tem availableMarginValue > 0 = aprovado (retorno_simulacao.details - formato V8)
+    const availableMargin = simulacao?.details?.availableMarginValue;
+    if (availableMargin !== undefined && availableMargin !== null && parseFloat(availableMargin) > 0) {
+      return "aprovado";
+    }
+    
+    // Se não tem margem e não tem details = CPF não encontrado
+    if (!margem && !simulacao?.details && !getProposta) {
       return "cpf_nao_encontrado";
     }
     
     // Se tem erro de timeout ou rate limit = CPF não encontrado
-    const erro = margem?.error || "";
+    const erro = margem?.error || simulacao?.error || "";
     if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
       return "cpf_nao_encontrado";
-    }
-    
-    // Se tem margem disponível > 0 = aprovado
-    const valorMargem = margem?.valorMargemDisponivel;
-    if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
-      return "aprovado";
     }
     
     // Se tem retorno mas margem <= 0 = reprovado
