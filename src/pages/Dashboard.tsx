@@ -8,6 +8,15 @@ import { useAuth } from "@/hooks/useAuth";
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, isLoading } = useAuth();
+  
+  const [filters, setFilters] = useState<FilterState>({
+    dataInicial: undefined,
+    dataFinal: undefined,
+    banco: "",
+    tipoReprovacao: "",
+    status: "",
+    cpf: "",
+  });
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -22,15 +31,6 @@ const Dashboard = () => {
       </div>
     );
   }
-
-  const [filters, setFilters] = useState<FilterState>({
-    dataInicial: undefined,
-    dataFinal: undefined,
-    banco: "",
-    tipoReprovacao: "",
-    status: "",
-    cpf: "",
-  });
 
   if (!user) {
     return null;
