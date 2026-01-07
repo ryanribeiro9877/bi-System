@@ -261,38 +261,38 @@ const Leads = () => {
 
           {/* Topic Tabs */}
           <Tabs defaultValue="lista" className="w-full">
-            <TabsList className="w-full justify-start bg-muted/50 border border-border rounded-lg p-1 h-auto flex-wrap">
+            <TabsList className="w-full grid grid-cols-5 bg-muted/50 border border-border rounded-lg p-1 h-auto">
               <TabsTrigger 
                 value="perfil" 
-                className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-6 py-2.5 rounded-md"
+                className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
               >
                 <Settings className="w-4 h-4" />
                 Perfil Ideal
               </TabsTrigger>
               <TabsTrigger 
                 value="cbos" 
-                className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-6 py-2.5 rounded-md"
+                className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
               >
                 <BarChart3 className="w-4 h-4" />
                 CBOs que Aprovam
               </TabsTrigger>
               <TabsTrigger 
                 value="empresas" 
-                className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-6 py-2.5 rounded-md"
+                className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
               >
                 <Building2 className="w-4 h-4" />
                 Empresas
               </TabsTrigger>
               <TabsTrigger 
                 value="banco" 
-                className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-6 py-2.5 rounded-md"
+                className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
               >
                 <Zap className="w-4 h-4" />
                 Por Banco
               </TabsTrigger>
               <TabsTrigger 
                 value="lista" 
-                className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-6 py-2.5 rounded-md"
+                className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
               >
                 <Users className="w-4 h-4" />
                 Lista de Leads
