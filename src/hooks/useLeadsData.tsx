@@ -132,33 +132,23 @@ const extrairBanco = (lead: Lead): string => {
   return "";
 };
 
-// Helper para normalizar status - considera margem indisponível como reprovado apenas para pendentes
+// Helper para normalizar status - considera margem como indicador de aprovação/reprovação
 const normalizarStatus = (status: string | null, lead?: Lead): string => {
-  if (!status) {
-    // Se pendente e margem indisponível, é reprovado
-    if (lead) {
-      const margem = lead.retorno_margem?.valorMargemDisponivel;
-      if (margem === undefined || margem === null || margem <= 0) {
-        return "reprovado";
-      }
-    }
-    return "pendente";
-  }
+  const s = (status || "").toLowerCase().trim();
   
-  const s = status.toLowerCase().trim();
-  
-  // Leads aprovados SEMPRE permanecem aprovados
+  // Status explícitos sempre respeitados
   if (s === "aprovado" || s === "approved") return "aprovado";
-  
-  // Leads reprovados SEMPRE permanecem reprovados
   if (s === "reprovado" || s === "rejected" || s === "recusado") return "reprovado";
   
-  // Para outros status (pendente), verificar margem
+  // Para status pendente ou vazio, verificar margem disponível
   if (lead) {
     const margem = lead.retorno_margem?.valorMargemDisponivel;
-    if (margem === undefined || margem === null || margem <= 0) {
-      return "reprovado";
+    // Se tem margem disponível > 0, é aprovado
+    if (margem !== undefined && margem !== null && margem > 0) {
+      return "aprovado";
     }
+    // Se não tem margem ou margem <= 0, é reprovado
+    return "reprovado";
   }
   
   return "pendente";
