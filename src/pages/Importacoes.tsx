@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
+import { importEvents } from "@/events/importEvents";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import { parseJsonSafe } from "@/types/lead";
@@ -51,14 +52,37 @@ const extrairNomeDoJson = (margem: any): string | undefined => {
   return undefined;
 };
 
-// Função para determinar o banco baseado na simulação
-const extrairBancoDoJson = (simulacao: any): string | undefined => {
-  if (!simulacao) return undefined;
-  // Pode ser extraído do productName ou outros campos
-  const productName = simulacao.productName || "";
-  if (productName.toLowerCase().includes("presença")) return "Presença";
-  if (productName.toLowerCase().includes("uy3")) return "UY3";
-  if (productName.toLowerCase().includes("v8")) return "V8";
+// Função para determinar o banco baseado em todas as fontes JSON disponíveis
+const extrairBancoDoJson = (simulacao: any, autorizacao?: any, proposta?: any, getProposta?: any): string | undefined => {
+  // Concatenar todos os campos possíveis para buscar padrões
+  const haystack = [
+    simulacao?.productName,
+    simulacao?.productId,
+    simulacao?.banco,
+    autorizacao?.shortUrl,
+    autorizacao?.banco,
+    proposta?.banco,
+    proposta?.instituicao,
+    getProposta?.banco,
+    getProposta?.instituicao,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  // Identificar banco por padrões conhecidos
+  if (haystack.includes("presen") || haystack.includes("privado")) return "Presença";
+  if (haystack.includes("uy3")) return "UY3";
+  if (haystack.includes("v8")) return "V8";
+  if (haystack.includes("safra")) return "Safra";
+  if (haystack.includes("itau") || haystack.includes("itaú")) return "Itaú";
+  if (haystack.includes("santander")) return "Santander";
+  if (haystack.includes("bradesco")) return "Bradesco";
+  if (haystack.includes("caixa")) return "Caixa";
+  if (haystack.includes("bb") || haystack.includes("brasil")) return "Banco do Brasil";
+
+  // Se productName existe mas não encontrou padrão, usar o próprio productName
+  if (simulacao?.productName) {
+    return simulacao.productName;
+  }
+
   return undefined;
 };
 
@@ -240,8 +264,13 @@ const Importacoes = () => {
             if (!lead.nome && lead.retorno_margem) {
               lead.nome = extrairNomeDoJson(lead.retorno_margem);
             }
-            if (!lead.banco && lead.retorno_simulacao) {
-              lead.banco = extrairBancoDoJson(lead.retorno_simulacao);
+            if (!lead.banco) {
+              lead.banco = extrairBancoDoJson(
+                lead.retorno_simulacao, 
+                lead.retorno_autorizacao, 
+                lead.retorno_proposta, 
+                lead.retorno_get_proposta
+              );
             }
             if (!lead.status) {
               lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta);
@@ -316,8 +345,13 @@ const Importacoes = () => {
             if (!lead.nome && lead.retorno_margem) {
               lead.nome = extrairNomeDoJson(lead.retorno_margem);
             }
-            if (!lead.banco && lead.retorno_simulacao) {
-              lead.banco = extrairBancoDoJson(lead.retorno_simulacao);
+            if (!lead.banco) {
+              lead.banco = extrairBancoDoJson(
+                lead.retorno_simulacao, 
+                lead.retorno_autorizacao, 
+                lead.retorno_proposta, 
+                lead.retorno_get_proposta
+              );
             }
             if (!lead.status) {
               lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta);
@@ -458,6 +492,10 @@ const Importacoes = () => {
         title: "Importação concluída",
         description: `${successCount} registros importados com sucesso${failCount > 0 ? `, ${failCount} falharam` : ""}.`,
       });
+
+      // Emitir evento para sincronização global
+      console.log('[Importacoes] Emitindo evento de importação concluída...');
+      importEvents.emit();
 
       setSelectedFile(null);
       setPreviewData([]);
