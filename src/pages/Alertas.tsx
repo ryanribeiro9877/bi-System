@@ -1,0 +1,229 @@
+import { Bell, BellRing, BellOff, Plus, Settings, Clock, CheckCircle2, AlertTriangle, Trash2 } from "lucide-react";
+import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
+import KPICard from "@/components/dashboard/KPICard";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+const alertasAtivos = [
+  {
+    id: 1,
+    nome: "CBO Bloqueado - Vendedor",
+    descricao: "Alerta quando CBO de vendedor for bloqueado",
+    tipo: "cbo",
+    ativo: true,
+    criadoEm: "2026-01-05",
+  },
+  {
+    id: 2,
+    nome: "Reprovação acima de 30%",
+    descricao: "Alerta quando taxa de reprovação ultrapassar 30%",
+    tipo: "taxa",
+    ativo: true,
+    criadoEm: "2026-01-03",
+  },
+  {
+    id: 3,
+    nome: "Novo banco disponível",
+    descricao: "Alerta quando novo banco entrar na plataforma",
+    tipo: "banco",
+    ativo: false,
+    criadoEm: "2026-01-01",
+  },
+];
+
+const historicoAlertas = [
+  {
+    id: 1,
+    titulo: "CBO Bloqueado - Vendedor",
+    mensagem: "O CBO 5211-10 foi bloqueado pelo Banco Pan",
+    data: "2026-01-07 09:45",
+    lido: false,
+    tipo: "warning",
+  },
+  {
+    id: 2,
+    titulo: "Taxa de reprovação alta",
+    mensagem: "Taxa de reprovação atingiu 35% no Banco Bradesco",
+    data: "2026-01-07 08:30",
+    lido: false,
+    tipo: "error",
+  },
+  {
+    id: 3,
+    titulo: "CBO Bloqueado - Motorista",
+    mensagem: "O CBO 7823-05 foi bloqueado pelo Banco Itaú",
+    data: "2026-01-06 16:20",
+    lido: true,
+    tipo: "warning",
+  },
+  {
+    id: 4,
+    titulo: "Meta de aprovação atingida",
+    mensagem: "Você atingiu 85% de aprovação no Banco Santander",
+    data: "2026-01-06 14:00",
+    lido: true,
+    tipo: "success",
+  },
+  {
+    id: 5,
+    titulo: "Novo banco disponível",
+    mensagem: "Banco C6 agora está disponível para envio de leads",
+    data: "2026-01-05 10:15",
+    lido: true,
+    tipo: "info",
+  },
+];
+
+const tipoIcone = {
+  warning: <AlertTriangle className="w-4 h-4 text-warning" />,
+  error: <AlertTriangle className="w-4 h-4 text-destructive" />,
+  success: <CheckCircle2 className="w-4 h-4 text-success" />,
+  info: <Bell className="w-4 h-4 text-primary" />,
+};
+
+const tipoBadge = {
+  warning: "bg-warning/20 text-warning border-warning/30",
+  error: "bg-destructive/20 text-destructive border-destructive/30",
+  success: "bg-success/20 text-success border-success/30",
+  info: "bg-primary/20 text-primary border-primary/30",
+};
+
+const Alertas = () => {
+  const alertasAtivosCount = alertasAtivos.filter(a => a.ativo).length;
+  const naoLidosCount = historicoAlertas.filter(a => !a.lido).length;
+  const totalDisparados = historicoAlertas.length;
+
+  return (
+    <div className="min-h-screen flex w-full bg-background">
+      <DashboardSidebar />
+      
+      <main className="flex-1 p-8">
+        <div className="max-w-7xl mx-auto space-y-8">
+          {/* Header */}
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Alertas</h1>
+            <p className="text-muted-foreground mt-1">
+              Configure e gerencie seus alertas personalizados
+            </p>
+          </div>
+
+          {/* KPIs */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <KPICard
+              title="Alertas Ativos"
+              value={alertasAtivosCount}
+              subtitle="Monitorando"
+              icon={BellRing}
+              variant="success"
+            />
+            <KPICard
+              title="Não Lidos"
+              value={naoLidosCount}
+              subtitle="Aguardando leitura"
+              icon={Bell}
+              variant="warning"
+            />
+            <KPICard
+              title="Total Disparados"
+              value={totalDisparados}
+              subtitle="Últimos 30 dias"
+              icon={BellOff}
+              variant="default"
+            />
+          </div>
+
+          {/* Área de Gerenciamento de Alertas */}
+          <Card className="glass-card">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-xl font-semibold">Meus Alertas</CardTitle>
+              <div className="flex gap-3">
+                <Button className="gap-2">
+                  <Plus className="w-4 h-4" />
+                  Criar Novo Alerta
+                </Button>
+                <Button variant="outline" className="gap-2">
+                  <Settings className="w-4 h-4" />
+                  Configurar Alertas
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {alertasAtivos.map((alerta) => (
+                  <Card key={alerta.id} className={`border ${alerta.ativo ? 'border-success/30 bg-success/5' : 'border-muted bg-muted/20'}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <BellRing className={`w-4 h-4 ${alerta.ativo ? 'text-success' : 'text-muted-foreground'}`} />
+                          <span className="font-medium text-sm">{alerta.nome}</span>
+                        </div>
+                        <Badge variant={alerta.ativo ? "default" : "secondary"} className="text-xs">
+                          {alerta.ativo ? "Ativo" : "Inativo"}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-3">{alerta.descricao}</p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">
+                          Criado em {new Date(alerta.criadoEm).toLocaleDateString('pt-BR')}
+                        </span>
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive">
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Histórico de Alertas */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold flex items-center gap-2">
+                <Clock className="w-5 h-5" />
+                Histórico de Alertas
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-[400px] pr-4">
+                <div className="space-y-3">
+                  {historicoAlertas.map((alerta) => (
+                    <div
+                      key={alerta.id}
+                      className={`p-4 rounded-lg border ${!alerta.lido ? 'bg-primary/5 border-primary/20' : 'bg-muted/20 border-muted'}`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-3">
+                          <div className={`p-2 rounded-full ${tipoBadge[alerta.tipo as keyof typeof tipoBadge]}`}>
+                            {tipoIcone[alerta.tipo as keyof typeof tipoIcone]}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm">{alerta.titulo}</span>
+                              {!alerta.lido && (
+                                <Badge variant="secondary" className="text-xs bg-primary/20 text-primary">
+                                  Novo
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground mt-1">{alerta.mensagem}</p>
+                          </div>
+                        </div>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">{alerta.data}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default Alertas;
