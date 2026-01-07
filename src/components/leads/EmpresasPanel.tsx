@@ -11,23 +11,42 @@ const EmpresasPanel = () => {
   const navigate = useNavigate();
   const { leads, stats } = useDashboard();
 
+  // Função para normalizar status baseado em valorMargemDisponivel
+  const getNormalizedStatus = (lead: any): string => {
+    const margem = lead.retorno_margem as any;
+    if (!margem) return "cpf_nao_encontrado";
+    const erro = margem?.error || "";
+    if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
+      return "cpf_nao_encontrado";
+    }
+    const valorMargem = margem?.valorMargemDisponivel;
+    if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
+      return "aprovado";
+    }
+    return "reprovado";
+  };
+
   // Agrupa por CNPJ do empregador (retorno_margem.cnpjEmpregador)
   const empresas = useMemo(() => {
     const map: Record<string, { cnpj: string; razao: string; aprovados: number; reprovados: number; total: number }> = {};
 
     leads.forEach((lead) => {
       const margem = lead.retorno_margem as any;
-      const cnpj = margem?.cnpjEmpregador || margem?.registroEmpregaticio?.cnpjEmpregador || "";
-      const razao = margem?.registroEmpregaticio?.razaoSocial || margem?.razaoSocial || "";
+      // CNPJ está diretamente em retorno_margem.cnpjEmpregador
+      const cnpj = margem?.cnpjEmpregador || "";
+      // Razão social pode estar em registroEmpregaticio ou diretamente
+      const razao = margem?.registroEmpregaticio?.razaoSocial || margem?.razaoSocial || margem?.registroEmpregaticio || "";
 
       if (!cnpj) return;
 
       const key = cnpj;
       if (!map[key]) {
-        map[key] = { cnpj, razao, aprovados: 0, reprovados: 0, total: 0 };
+        map[key] = { cnpj, razao: typeof razao === 'string' ? razao : "", aprovados: 0, reprovados: 0, total: 0 };
       }
       map[key].total++;
-      const status = lead.status?.toLowerCase();
+      
+      // Usa status normalizado baseado em valorMargemDisponivel
+      const status = getNormalizedStatus(lead);
       if (status === "aprovado") map[key].aprovados++;
       if (status === "reprovado") map[key].reprovados++;
     });
