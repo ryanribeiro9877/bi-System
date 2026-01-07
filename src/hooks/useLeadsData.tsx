@@ -103,8 +103,16 @@ const extrairBanco = (lead: Lead): string => {
   return "";
 };
 
-// Helper para normalizar status
-const normalizarStatus = (status: string | null): string => {
+// Helper para normalizar status - considera margem indisponível como reprovado
+const normalizarStatus = (status: string | null, lead?: Lead): string => {
+  // Se margem indisponível (null, 0 ou negativa), é reprovado automaticamente
+  if (lead) {
+    const margem = lead.retorno_margem?.valorMargemDisponivel;
+    if (margem === undefined || margem === null || margem <= 0) {
+      return "reprovado";
+    }
+  }
+  
   if (!status) return "pendente";
   const s = status.toLowerCase().trim();
   if (s === "aprovado" || s === "approved") return "aprovado";
@@ -222,7 +230,7 @@ export const useLeadsData = (filters?: FilterState) => {
     // Normalizar status para contagem
     const leadsComStatusNormalizado = leads.map(l => ({
       ...l,
-      statusNormalizado: normalizarStatus(l.status)
+      statusNormalizado: normalizarStatus(l.status, l)
     }));
     
     const leadsAprovados = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "aprovado").length;
