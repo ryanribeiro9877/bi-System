@@ -72,9 +72,13 @@ const extrairNome = (lead: Lead): string => {
 
   const margem = lead.retorno_margem as any;
   const simulacao = lead.retorno_simulacao as any;
+  const getProposta = lead.retorno_get_proposta as any;
   const registro = margem?.registroEmpregaticio;
 
-  // Tenta do retorno_margem
+  // Tenta do retorno_get_proposta primeiro (formato V8 CLT)
+  if (getProposta?.name) return getProposta.name;
+
+  // Tenta do retorno_margem (formato Presença)
   if (registro && typeof registro === "object" && registro.nomeEmpregado) {
     return registro.nomeEmpregado;
   }
@@ -118,12 +122,16 @@ const extrairBanco = (lead: Lead): string => {
     proposta?.instituicao,
     getProposta?.banco,
     getProposta?.instituicao,
+    getProposta?.provider, // V8 CLT usa "provider" para identificar o banco
+    getProposta?.user?.partnerId, // V8 CLT também tem partnerId no user
     // Adicionar campos personalizados se existirem
     simulacao?.banco,
     autorizacao?.banco,
   ].filter(Boolean).join(" ").toLowerCase();
 
   // 3. Identificar banco por padrões conhecidos
+  if (haystack.includes("v8") && haystack.includes("clt")) return "V8 CLT";
+  if (haystack.includes("v8-clt")) return "V8 CLT";
   if (haystack.includes("presen") || haystack.includes("privado")) return "Presença";
   if (haystack.includes("uy3")) return "UY3";
   if (haystack.includes("v8")) return "V8";
