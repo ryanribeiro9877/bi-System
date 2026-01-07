@@ -1,20 +1,27 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { BarChart3, LayoutDashboard, FileText, Settings, LogOut, Users } from "lucide-react";
+import { BarChart3, LayoutDashboard, FileText, Settings, LogOut, Users, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
-  { icon: Users, label: "Leads", path: "/dashboard/leads" },
-  { icon: FileText, label: "Relatórios", path: "/dashboard/reports" },
-  { icon: Settings, label: "Configurações", path: "/dashboard/settings" },
-];
+import { useAuth } from "@/hooks/useAuth";
 
 const DashboardSidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { signOut, isAdmin, user } = useAuth();
 
-  const handleLogout = () => {
-    localStorage.removeItem("isAuthenticated");
+  const menuItems = [
+    { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
+    { icon: Users, label: "Leads", path: "/dashboard/leads" },
+    { icon: FileText, label: "Relatórios", path: "/dashboard/reports" },
+    { icon: Settings, label: "Configurações", path: "/dashboard/settings" },
+  ];
+
+  // Only show user management for admin
+  if (isAdmin) {
+    menuItems.push({ icon: UserPlus, label: "Gerenciar Usuários", path: "/dashboard/users" });
+  }
+
+  const handleLogout = async () => {
+    await signOut();
     navigate("/");
   };
 
@@ -28,9 +35,17 @@ const DashboardSidebar = () => {
           </div>
           <div>
             <h1 className="font-bold text-sidebar-foreground">BI Leads CLT</h1>
-            <p className="text-xs text-muted-foreground">Dashboard</p>
+            <p className="text-xs text-muted-foreground">
+              {isAdmin ? "Admin" : "Usuário"}
+            </p>
           </div>
         </div>
+      </div>
+
+      {/* User Info */}
+      <div className="px-6 py-4 border-b border-sidebar-border">
+        <p className="text-xs text-muted-foreground">Logado como:</p>
+        <p className="text-sm text-sidebar-foreground truncate">{user?.email}</p>
       </div>
 
       {/* Navigation */}
