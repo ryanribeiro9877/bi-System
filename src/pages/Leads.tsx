@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle, TrendingUp, DollarSign, Clock, Eye, ChevronLeft, ChevronRight, Loader2, Search, Settings, BarChart3, Building2, Zap, Users } from "lucide-react";
+import { CheckCircle, TrendingUp, DollarSign, Clock, Eye, ChevronLeft, ChevronRight, Loader2, Search, Settings, BarChart3, Building2, Zap, Users, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -320,35 +320,63 @@ const Leads = () => {
             </TabsContent>
 
             <TabsContent value="lista" className="mt-6">
-              <Card>
+              <Card className="bg-card border-border">
                 <CardHeader className="pb-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <CardTitle className="text-lg font-semibold">
-                      Lista de Leads ({stats.totalLeads.toLocaleString("pt-BR")})
-                    </CardTitle>
-                    <div className="relative w-full sm:w-64">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <Users className="w-5 h-5" />
+                        Lista de Leads
+                      </CardTitle>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Visualize e filtre todos os leads cadastrados
+                      </p>
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      {stats.totalLeads} leads
+                    </span>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row gap-3 mt-4">
+                    <div className="relative flex-1">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
-                        placeholder="Buscar por CPF..."
+                        placeholder="Buscar por CPF, nome ou empresa..."
                         value={searchCpf}
                         onChange={(e) => {
                           setSearchCpf(e.target.value);
                           setCurrentPage(1);
                         }}
-                        className="pl-9"
+                        className="pl-9 bg-background"
                       />
                     </div>
+                    <select 
+                      className="h-10 px-3 rounded-md border border-input bg-background text-sm"
+                      defaultValue="aprovados"
+                    >
+                      <option value="todos">Todos</option>
+                      <option value="aprovados">Aprovados</option>
+                      <option value="reprovados">Reprovados</option>
+                      <option value="pendentes">Pendentes</option>
+                    </select>
+                    <Button variant="outline" className="gap-2">
+                      <Download className="w-4 h-4" />
+                      Exportar
+                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
                   {isLoading ? (
-                    <div className="flex items-center justify-center py-12">
+                    <div className="flex items-center justify-center py-20">
                       <Loader2 className="w-8 h-8 animate-spin text-primary" />
                     </div>
                   ) : leads.length === 0 ? (
-                    <div className="text-center py-12 text-muted-foreground">
-                      <p>Nenhum lead encontrado</p>
-                      <p className="text-sm mt-1">Importe dados para visualizar os leads aqui</p>
+                    <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+                      <Users className="w-12 h-12 mb-4 opacity-50" />
+                      <p className="text-lg font-medium text-foreground">Nenhum lead encontrado</p>
+                      <p className="text-sm mt-1">
+                        Importe dados usando o botão "Importar Excel" no dashboard
+                      </p>
                     </div>
                   ) : (
                     <>
