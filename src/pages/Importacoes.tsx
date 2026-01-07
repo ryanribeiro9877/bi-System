@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Upload, FileSpreadsheet, FileText, Check, X, Loader2, AlertCircle, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
+import { parseJsonSafe } from "@/types/lead";
 
 interface ImportRecord {
   id: string;
@@ -34,7 +35,43 @@ interface ParsedLead {
   data_envio?: string;
   data_retorno?: string;
   observacoes?: string;
+  // Novos campos JSONB
+  retorno_autorizacao?: any;
+  retorno_margem?: any;
+  retorno_simulacao?: any;
+  retorno_proposta?: any;
+  retorno_get_proposta?: any;
+  ultimo_log?: string;
 }
+
+// Função para extrair nome do JSON de margem
+const extrairNomeDoJson = (margem: any): string | undefined => {
+  if (!margem) return undefined;
+  if (margem.registroEmpregaticio?.nomeEmpregado) return margem.registroEmpregaticio.nomeEmpregado;
+  if (margem.nomeEmpregado) return margem.nomeEmpregado;
+  return undefined;
+};
+
+// Função para determinar o banco baseado na simulação
+const extrairBancoDoJson = (simulacao: any): string | undefined => {
+  if (!simulacao) return undefined;
+  // Pode ser extraído do productName ou outros campos
+  const productName = simulacao.productName || "";
+  if (productName.toLowerCase().includes("presença")) return "Presença";
+  if (productName.toLowerCase().includes("uy3")) return "UY3";
+  if (productName.toLowerCase().includes("v8")) return "V8";
+  return undefined;
+};
+
+// Função para determinar status baseado nos retornos
+const determinarStatus = (simulacao: any, proposta: any, getProposta: any): string => {
+  // Se tem proposta, provavelmente foi aprovado
+  if (proposta && Object.keys(proposta).length > 0) return "aprovado";
+  if (getProposta && Object.keys(getProposta).length > 0) return "aprovado";
+  // Se tem simulação mas sem proposta, pode ser reprovado ou pendente
+  if (simulacao && simulacao.id) return "pendente";
+  return "pendente";
+};
 
 const Importacoes = () => {
   const navigate = useNavigate();
@@ -61,11 +98,11 @@ const Importacoes = () => {
   }, []);
 
   // Load imports on mount
-  useState(() => {
+  useEffect(() => {
     if (user) {
       fetchImports();
     }
-  });
+  }, [user, fetchImports]);
 
   const normalizeColumnName = (col: string): string => {
     const normalized = col.toLowerCase().trim()
@@ -73,6 +110,7 @@ const Importacoes = () => {
       .replace(/[^a-z0-9]/g, "_");
     
     const mappings: Record<string, string> = {
+      // Mapeamentos originais
       "cpf": "cpf",
       "documento": "cpf",
       "nome": "nome",
@@ -92,6 +130,13 @@ const Importacoes = () => {
       "data_retorno": "data_retorno",
       "observacoes": "observacoes",
       "obs": "observacoes",
+      // Novos mapeamentos para os campos JSON
+      "retorno_autorizacao": "retorno_autorizacao",
+      "retorno_margem": "retorno_margem",
+      "retorno_simulacao": "retorno_simulacao",
+      "retorno_proposta": "retorno_proposta",
+      "retorno_get_proposta": "retorno_get_proposta",
+      "ultimo_log": "ultimo_log",
     };
 
     return mappings[normalized] || normalized;
@@ -110,19 +155,62 @@ const Importacoes = () => {
           
           const leads: ParsedLead[] = jsonData.map((row: any) => {
             const lead: ParsedLead = { cpf: "" };
+            
+            // Processar cada coluna
             Object.keys(row).forEach(key => {
               const normalizedKey = normalizeColumnName(key);
-              if (normalizedKey === "cpf") lead.cpf = String(row[key]).replace(/\D/g, "");
-              else if (normalizedKey === "nome") lead.nome = row[key];
-              else if (normalizedKey === "banco") lead.banco = row[key];
-              else if (normalizedKey === "cbo") lead.cbo = row[key];
-              else if (normalizedKey === "status") lead.status = row[key];
-              else if (normalizedKey === "tipo_reprovacao") lead.tipo_reprovacao = row[key];
-              else if (normalizedKey === "valor") lead.valor = parseFloat(row[key]) || undefined;
-              else if (normalizedKey === "data_envio") lead.data_envio = row[key];
-              else if (normalizedKey === "data_retorno") lead.data_retorno = row[key];
-              else if (normalizedKey === "observacoes") lead.observacoes = row[key];
+              const value = row[key];
+              
+              if (normalizedKey === "cpf") {
+                lead.cpf = String(value).replace(/\D/g, "");
+              } else if (normalizedKey === "nome") {
+                lead.nome = value;
+              } else if (normalizedKey === "banco") {
+                lead.banco = value;
+              } else if (normalizedKey === "cbo") {
+                lead.cbo = value;
+              } else if (normalizedKey === "status") {
+                lead.status = value;
+              } else if (normalizedKey === "tipo_reprovacao") {
+                lead.tipo_reprovacao = value;
+              } else if (normalizedKey === "valor") {
+                lead.valor = parseFloat(value) || undefined;
+              } else if (normalizedKey === "data_envio") {
+                lead.data_envio = value;
+              } else if (normalizedKey === "data_retorno") {
+                lead.data_retorno = value;
+              } else if (normalizedKey === "observacoes") {
+                lead.observacoes = value;
+              } else if (normalizedKey === "retorno_autorizacao") {
+                lead.retorno_autorizacao = parseJsonSafe(value);
+              } else if (normalizedKey === "retorno_margem") {
+                lead.retorno_margem = parseJsonSafe(value);
+              } else if (normalizedKey === "retorno_simulacao") {
+                lead.retorno_simulacao = parseJsonSafe(value);
+              } else if (normalizedKey === "retorno_proposta") {
+                lead.retorno_proposta = parseJsonSafe(value);
+              } else if (normalizedKey === "retorno_get_proposta") {
+                lead.retorno_get_proposta = parseJsonSafe(value);
+              } else if (normalizedKey === "ultimo_log") {
+                lead.ultimo_log = value;
+              }
             });
+            
+            // Extrair dados adicionais dos JSONs se não foram preenchidos diretamente
+            if (!lead.nome && lead.retorno_margem) {
+              lead.nome = extrairNomeDoJson(lead.retorno_margem);
+            }
+            if (!lead.banco && lead.retorno_simulacao) {
+              lead.banco = extrairBancoDoJson(lead.retorno_simulacao);
+            }
+            if (!lead.status) {
+              lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta);
+            }
+            // Extrair valor da simulação se não preenchido
+            if (!lead.valor && lead.retorno_simulacao) {
+              lead.valor = lead.retorno_simulacao.requestedAmount || lead.retorno_simulacao.liquidValue;
+            }
+            
             return lead;
           });
           
@@ -144,19 +232,60 @@ const Importacoes = () => {
         complete: (results) => {
           const leads: ParsedLead[] = results.data.map((row: any) => {
             const lead: ParsedLead = { cpf: "" };
+            
             Object.keys(row).forEach(key => {
               const normalizedKey = normalizeColumnName(key);
-              if (normalizedKey === "cpf") lead.cpf = String(row[key]).replace(/\D/g, "");
-              else if (normalizedKey === "nome") lead.nome = row[key];
-              else if (normalizedKey === "banco") lead.banco = row[key];
-              else if (normalizedKey === "cbo") lead.cbo = row[key];
-              else if (normalizedKey === "status") lead.status = row[key];
-              else if (normalizedKey === "tipo_reprovacao") lead.tipo_reprovacao = row[key];
-              else if (normalizedKey === "valor") lead.valor = parseFloat(row[key]) || undefined;
-              else if (normalizedKey === "data_envio") lead.data_envio = row[key];
-              else if (normalizedKey === "data_retorno") lead.data_retorno = row[key];
-              else if (normalizedKey === "observacoes") lead.observacoes = row[key];
+              const value = row[key];
+              
+              if (normalizedKey === "cpf") {
+                lead.cpf = String(value).replace(/\D/g, "");
+              } else if (normalizedKey === "nome") {
+                lead.nome = value;
+              } else if (normalizedKey === "banco") {
+                lead.banco = value;
+              } else if (normalizedKey === "cbo") {
+                lead.cbo = value;
+              } else if (normalizedKey === "status") {
+                lead.status = value;
+              } else if (normalizedKey === "tipo_reprovacao") {
+                lead.tipo_reprovacao = value;
+              } else if (normalizedKey === "valor") {
+                lead.valor = parseFloat(value) || undefined;
+              } else if (normalizedKey === "data_envio") {
+                lead.data_envio = value;
+              } else if (normalizedKey === "data_retorno") {
+                lead.data_retorno = value;
+              } else if (normalizedKey === "observacoes") {
+                lead.observacoes = value;
+              } else if (normalizedKey === "retorno_autorizacao") {
+                lead.retorno_autorizacao = parseJsonSafe(value);
+              } else if (normalizedKey === "retorno_margem") {
+                lead.retorno_margem = parseJsonSafe(value);
+              } else if (normalizedKey === "retorno_simulacao") {
+                lead.retorno_simulacao = parseJsonSafe(value);
+              } else if (normalizedKey === "retorno_proposta") {
+                lead.retorno_proposta = parseJsonSafe(value);
+              } else if (normalizedKey === "retorno_get_proposta") {
+                lead.retorno_get_proposta = parseJsonSafe(value);
+              } else if (normalizedKey === "ultimo_log") {
+                lead.ultimo_log = value;
+              }
             });
+            
+            // Extrair dados adicionais dos JSONs
+            if (!lead.nome && lead.retorno_margem) {
+              lead.nome = extrairNomeDoJson(lead.retorno_margem);
+            }
+            if (!lead.banco && lead.retorno_simulacao) {
+              lead.banco = extrairBancoDoJson(lead.retorno_simulacao);
+            }
+            if (!lead.status) {
+              lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta);
+            }
+            if (!lead.valor && lead.retorno_simulacao) {
+              lead.valor = lead.retorno_simulacao.requestedAmount || lead.retorno_simulacao.liquidValue;
+            }
+            
             return lead;
           });
           
@@ -244,7 +373,22 @@ const Importacoes = () => {
 
       for (let i = 0; i < parsed.length; i += batchSize) {
         const batch = parsed.slice(i, i + batchSize).map(lead => ({
-          ...lead,
+          cpf: lead.cpf,
+          nome: lead.nome,
+          banco: lead.banco,
+          cbo: lead.cbo,
+          status: lead.status,
+          tipo_reprovacao: lead.tipo_reprovacao,
+          valor: lead.valor,
+          data_envio: lead.data_envio,
+          data_retorno: lead.data_retorno,
+          observacoes: lead.observacoes,
+          retorno_autorizacao: lead.retorno_autorizacao,
+          retorno_margem: lead.retorno_margem,
+          retorno_simulacao: lead.retorno_simulacao,
+          retorno_proposta: lead.retorno_proposta,
+          retorno_get_proposta: lead.retorno_get_proposta,
+          ultimo_log: lead.ultimo_log,
           import_batch_id: importRecord.id,
           imported_by: user.id,
         }));
@@ -252,6 +396,7 @@ const Importacoes = () => {
         const { error } = await supabase.from("leads").insert(batch);
         
         if (error) {
+          console.error("Erro ao inserir batch:", error);
           failCount += batch.length;
         } else {
           successCount += batch.length;
@@ -330,6 +475,10 @@ const Importacoes = () => {
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
+  };
+
+  const formatCpf = (cpf: string) => {
+    return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
 
   return (
@@ -469,21 +618,39 @@ const Importacoes = () => {
                         <TableHead>CPF</TableHead>
                         <TableHead>Nome</TableHead>
                         <TableHead>Banco</TableHead>
-                        <TableHead>CBO</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Valor</TableHead>
+                        <TableHead>Valor Margem</TableHead>
+                        <TableHead>Valor Simulação</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {previewData.map((lead, index) => (
                         <TableRow key={index}>
-                          <TableCell className="font-mono">{lead.cpf}</TableCell>
+                          <TableCell className="font-mono">{formatCpf(lead.cpf)}</TableCell>
                           <TableCell>{lead.nome || "-"}</TableCell>
                           <TableCell>{lead.banco || "-"}</TableCell>
-                          <TableCell>{lead.cbo || "-"}</TableCell>
-                          <TableCell>{lead.status || "-"}</TableCell>
                           <TableCell>
-                            {lead.valor ? `R$ ${lead.valor.toLocaleString("pt-BR")}` : "-"}
+                            <Badge 
+                              className={
+                                lead.status === "aprovado" 
+                                  ? "bg-emerald-500/20 text-emerald-400" 
+                                  : lead.status === "reprovado"
+                                  ? "bg-red-500/20 text-red-400"
+                                  : "bg-amber-500/20 text-amber-400"
+                              }
+                            >
+                              {lead.status || "Pendente"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {lead.retorno_margem?.valorMargemDisponivel 
+                              ? `R$ ${Number(lead.retorno_margem.valorMargemDisponivel).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
+                              : "-"}
+                          </TableCell>
+                          <TableCell>
+                            {lead.retorno_simulacao?.requestedAmount || lead.retorno_simulacao?.liquidValue
+                              ? `R$ ${Number(lead.retorno_simulacao.requestedAmount || lead.retorno_simulacao.liquidValue).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
+                              : "-"}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -561,8 +728,25 @@ const Importacoes = () => {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    const headers = ["CPF", "Nome", "Banco", "CBO", "Status", "Tipo Reprovação", "Valor", "Data Envio", "Data Retorno", "Observações"];
-                    const ws = XLSX.utils.aoa_to_sheet([headers, ["12345678901", "João Silva", "Banco X", "Analista", "Aprovado", "", "5000", "2024-01-01", "2024-01-05", ""]]);
+                    const headers = [
+                      "CPF", 
+                      "RETORNO AUTORIZACAO", 
+                      "RETORNO MARGEM", 
+                      "RETORNO SIMULACAO", 
+                      "RETORNO PROPOSTA", 
+                      "RETORNO GET PROPOSTA", 
+                      "ULTIMO LOG"
+                    ];
+                    const sampleRow = [
+                      "12345678901", 
+                      '{"autorizacaoId":"xxx","shortUrl":"https://..."}',
+                      '{"valorMargemDisponivel":1000,"registroEmpregaticio":{"nomeEmpregado":"João"}}',
+                      '{"requestedAmount":5000,"numberOfPayments":24}',
+                      "",
+                      "",
+                      "2024-01-01 10:00:00"
+                    ];
+                    const ws = XLSX.utils.aoa_to_sheet([headers, sampleRow]);
                     const wb = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(wb, ws, "Modelo");
                     XLSX.writeFile(wb, "modelo_importacao.xlsx");
@@ -574,7 +758,8 @@ const Importacoes = () => {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    const csv = "CPF,Nome,Banco,CBO,Status,Tipo Reprovação,Valor,Data Envio,Data Retorno,Observações\n12345678901,João Silva,Banco X,Analista,Aprovado,,5000,2024-01-01,2024-01-05,";
+                    const csv = `CPF,RETORNO AUTORIZACAO,RETORNO MARGEM,RETORNO SIMULACAO,RETORNO PROPOSTA,RETORNO GET PROPOSTA,ULTIMO LOG
+12345678901,"{""autorizacaoId"":""xxx""}","{""valorMargemDisponivel"":1000}","{""requestedAmount"":5000}","","","2024-01-01 10:00:00"`;
                     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
                     const link = document.createElement("a");
                     link.href = URL.createObjectURL(blob);
