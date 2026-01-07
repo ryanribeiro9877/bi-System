@@ -61,7 +61,7 @@ export interface DashboardStats {
   reprovacoesPorTipo: { tipo: string; quantidade: number }[];
   leadsPorStatus: { status: string; quantidade: number }[];
   // Novos campos extraídos
-  valorMargemTotal: number;
+  margemMedia: number;
   valorSimulacaoTotal: number;
 }
 
@@ -212,7 +212,7 @@ export const useLeadsData = (filters?: FilterState) => {
         reprovacoesPorCBO: [],
         reprovacoesPorTipo: [],
         leadsPorStatus: [],
-        valorMargemTotal: 0,
+        margemMedia: 0,
         valorSimulacaoTotal: 0,
       };
     }
@@ -234,10 +234,18 @@ export const useLeadsData = (filters?: FilterState) => {
     
     // Calcular valores
     const valorTotal = leads.reduce((acc, l) => acc + (l.valor || 0), 0);
-    const valorMargemTotal = leads.reduce((acc, l) => {
+    // Calcular Margem Média dos leads aprovados
+    const leadsAprovadosComMargem = leadsComStatusNormalizado.filter(l => {
+      const margem = l.retorno_margem?.valorMargemDisponivel || 0;
+      return l.statusNormalizado === "aprovado" && margem > 0;
+    });
+    const somaMargemAprovados = leadsAprovadosComMargem.reduce((acc, l) => {
       const margem = l.retorno_margem?.valorMargemDisponivel || 0;
       return acc + margem;
     }, 0);
+    const margemMedia = leadsAprovadosComMargem.length > 0 
+      ? somaMargemAprovados / leadsAprovadosComMargem.length 
+      : 0;
     const valorSimulacaoTotal = leads.reduce((acc, l) => {
       const simulacao = l.retorno_simulacao?.requestedAmount || l.retorno_simulacao?.liquidValue || 0;
       return acc + simulacao;
@@ -337,7 +345,7 @@ export const useLeadsData = (filters?: FilterState) => {
       reprovacoesPorCBO,
       reprovacoesPorTipo: tiposReprovacao,
       leadsPorStatus,
-      valorMargemTotal,
+      margemMedia,
       valorSimulacaoTotal,
     };
   }, [leads]);

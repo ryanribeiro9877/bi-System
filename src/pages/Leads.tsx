@@ -99,9 +99,9 @@ const LeadsContent = () => {
       iconBg: "bg-purple-500/20",
     },
     {
-      title: "Margem Total",
-      value: `R$ ${stats.valorMargemTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      subtitle: "Soma das margens disponíveis",
+      title: "Margem Média",
+      value: `R$ ${stats.margemMedia.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      subtitle: "Média dos leads aprovados",
       icon: DollarSign,
       borderColor: "border-l-amber-500",
       textColor: "text-amber-400",
