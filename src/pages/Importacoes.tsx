@@ -86,14 +86,31 @@ const extrairBancoDoJson = (simulacao: any, autorizacao?: any, proposta?: any, g
   return undefined;
 };
 
-// Função para determinar status baseado nos retornos
-const determinarStatus = (simulacao: any, proposta: any, getProposta: any): string => {
+// Função para determinar status baseado nos retornos e margem
+const determinarStatus = (simulacao: any, proposta: any, getProposta: any, margem: any): string => {
   // Se tem proposta, provavelmente foi aprovado
   if (proposta && Object.keys(proposta).length > 0) return "aprovado";
   if (getProposta && Object.keys(getProposta).length > 0) return "aprovado";
-  // Se tem simulação mas sem proposta, pode ser reprovado ou pendente
-  if (simulacao && simulacao.id) return "pendente";
-  return "pendente";
+  
+  // Se tem margem disponível > 0 = aprovado
+  const valorMargem = margem?.valorMargemDisponivel;
+  if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
+    return "aprovado";
+  }
+  
+  // Se não tem margem ou tem erro = CPF não encontrado ou reprovado
+  if (!margem || margem === null) {
+    return "cpf_nao_encontrado";
+  }
+  
+  // Se tem erro de timeout ou rate limit = CPF não encontrado
+  const erro = margem?.error || "";
+  if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
+    return "cpf_nao_encontrado";
+  }
+  
+  // Se tem margem <= 0 ou erro de margem indisponível = reprovado
+  return "reprovado";
 };
 
 const Importacoes = () => {
@@ -273,7 +290,7 @@ const Importacoes = () => {
               );
             }
             if (!lead.status) {
-              lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta);
+              lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem);
             }
             // Extrair valor da simulação se não preenchido
             if (!lead.valor && lead.retorno_simulacao) {
@@ -354,7 +371,7 @@ const Importacoes = () => {
               );
             }
             if (!lead.status) {
-              lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta);
+              lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem);
             }
             if (!lead.valor && lead.retorno_simulacao) {
               lead.valor = lead.retorno_simulacao.requestedAmount || lead.retorno_simulacao.liquidValue;

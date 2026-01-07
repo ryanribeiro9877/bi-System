@@ -43,7 +43,11 @@ const tiposReprovacao = [
   "Empresa Nova",
   "Requisitos da Empresa",
 ];
-const statusOptions = ["Aprovado", "Reprovado", "Pendente"];
+const statusOptions = [
+  { value: "aprovado", label: "Aprovado" },
+  { value: "reprovado", label: "Reprovado" },
+  { value: "cpf_nao_encontrado", label: "CPF Não Encontrado" },
+];
 
 const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) => {
   const updateFilter = <K extends keyof FilterState>(key: K, value: FilterState[K]) => {
@@ -160,13 +164,13 @@ const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) =
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground">Status</label>
           <Select value={filters.status} onValueChange={(value) => updateFilter("status", value)}>
-            <SelectTrigger className="w-[130px] h-9">
+            <SelectTrigger className="w-[180px] h-9">
               <SelectValue placeholder="Todos" />
             </SelectTrigger>
             <SelectContent>
               {statusOptions.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status}
+                <SelectItem key={status.value} value={status.value}>
+                  {status.label}
                 </SelectItem>
               ))}
             </SelectContent>

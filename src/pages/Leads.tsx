@@ -63,6 +63,31 @@ const LeadsContent = () => {
   const [detailOpen, setDetailOpen] = useState(false);
   const leadsPerPage = 15;
 
+  // Helper para normalizar status do lead
+  const getNormalizedStatus = (lead: Lead): string => {
+    const margem = lead.retorno_margem as any;
+    
+    // Se não tem retorno de margem = CPF não encontrado
+    if (!margem || margem === null) {
+      return "cpf_nao_encontrado";
+    }
+    
+    // Se tem erro de timeout ou rate limit = CPF não encontrado
+    const erro = margem?.error || "";
+    if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
+      return "cpf_nao_encontrado";
+    }
+    
+    // Se tem margem disponível > 0 = aprovado
+    const valorMargem = margem?.valorMargemDisponivel;
+    if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
+      return "aprovado";
+    }
+    
+    // Se tem retorno mas margem <= 0 = reprovado
+    return "reprovado";
+  };
+
   // Filtra e pagina os leads
   const filteredLeads = useMemo(() => {
     let list = leads;
@@ -73,7 +98,7 @@ const LeadsContent = () => {
     }
 
     if (statusFilter !== "todos") {
-      list = list.filter((l) => l.status?.toLowerCase() === statusFilter);
+      list = list.filter((l) => getNormalizedStatus(l) === statusFilter);
     }
 
     return list;
@@ -93,11 +118,12 @@ const LeadsContent = () => {
   };
 
   const getStatusBadge = (status: string | null) => {
-    if (!status) return <Badge variant="secondary">-</Badge>;
+    if (!status) return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">? CPF Não Encontrado</Badge>;
     const s = status.toLowerCase();
     if (s === "aprovado") return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ Aprovado</Badge>;
     if (s === "reprovado") return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">✕ Reprovado</Badge>;
-    return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">◐ Pendente</Badge>;
+    if (s === "cpf_nao_encontrado" || s === "cpf não encontrado") return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">? CPF Não Encontrado</Badge>;
+    return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">? CPF Não Encontrado</Badge>;
   };
 
   const kpiCards = [
@@ -242,7 +268,7 @@ const LeadsContent = () => {
                     <option value="todos">Todos</option>
                     <option value="aprovado">Aprovados</option>
                     <option value="reprovado">Reprovados</option>
-                    <option value="pendente">Pendentes</option>
+                    <option value="cpf_nao_encontrado">CPF Não Encontrado</option>
                   </select>
                   <Button variant="outline" className="gap-2" disabled>
                     <Download className="w-4 h-4" />
@@ -288,7 +314,7 @@ const LeadsContent = () => {
                                 <TableCell className="text-muted-foreground">{banco}</TableCell>
                                 <TableCell className="text-muted-foreground truncate max-w-[100px]">{lead.cbo || "-"}</TableCell>
                                 <TableCell className="text-foreground">{valor > 0 ? `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-"}</TableCell>
-                                <TableCell>{getStatusBadge(lead.status)}</TableCell>
+                                <TableCell>{getStatusBadge(getNormalizedStatus(lead))}</TableCell>
                                 <TableCell className="text-muted-foreground whitespace-nowrap">{formatDateTime(lead.ultimo_log)}</TableCell>
                                 <TableCell className="text-right">
                                   <Button
