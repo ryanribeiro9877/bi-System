@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Ban, Users, DollarSign, Building2, Loader2 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Ban, Users, DollarSign, Building2, Loader2, LayoutGrid, Zap, Factory, List } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 
@@ -129,6 +130,84 @@ const CBOsBloqueados = () => {
               </Card>
             ))}
           </div>
+
+          {/* Tabs */}
+          <Tabs defaultValue="visao-geral" className="w-full">
+            <TabsList className="w-full grid grid-cols-4 bg-muted/50 border border-border rounded-lg p-1 h-auto">
+              <TabsTrigger 
+                value="visao-geral" 
+                className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
+              >
+                <LayoutGrid className="w-4 h-4" />
+                Visão Geral
+              </TabsTrigger>
+              <TabsTrigger 
+                value="por-banco" 
+                className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
+              >
+                <Zap className="w-4 h-4" />
+                Por Banco
+              </TabsTrigger>
+              <TabsTrigger 
+                value="por-setor" 
+                className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
+              >
+                <Factory className="w-4 h-4" />
+                Por Setor
+              </TabsTrigger>
+              <TabsTrigger 
+                value="lista-completa" 
+                className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
+              >
+                <List className="w-4 h-4" />
+                Lista Completa
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="visao-geral" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Visão Geral</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground">Resumo dos CBOs bloqueados e seu impacto.</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="por-banco" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Por Banco</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground">Distribuição de CBOs bloqueados por instituição bancária.</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="por-setor" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Por Setor</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground">Distribuição de CBOs bloqueados por setor de atuação.</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="lista-completa" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Lista Completa</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground">Lista completa de todas as ocupações bloqueadas.</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </main>
     </div>
