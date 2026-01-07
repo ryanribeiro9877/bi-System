@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle, TrendingUp, DollarSign, Clock, Eye, ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react";
+import { CheckCircle, TrendingUp, DollarSign, Clock, Eye, ChevronLeft, ChevronRight, Loader2, Search, Settings, BarChart3, Building2, Zap, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -258,125 +259,211 @@ const Leads = () => {
             ))}
           </div>
 
-          {/* Search */}
-          <Card>
-            <CardHeader className="pb-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <CardTitle className="text-lg font-semibold">
-                  Lista de Leads ({stats.totalLeads.toLocaleString("pt-BR")})
-                </CardTitle>
-                <div className="relative w-full sm:w-64">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar por CPF..."
-                    value={searchCpf}
-                    onChange={(e) => {
-                      setSearchCpf(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="pl-9"
-                  />
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                </div>
-              ) : leads.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <p>Nenhum lead encontrado</p>
-                  <p className="text-sm mt-1">Importe dados para visualizar os leads aqui</p>
-                </div>
-              ) : (
-                <>
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="border-border hover:bg-transparent">
-                          <TableHead className="text-muted-foreground">CPF</TableHead>
-                          <TableHead className="text-muted-foreground">Nome</TableHead>
-                          <TableHead className="text-muted-foreground">Banco</TableHead>
-                          <TableHead className="text-muted-foreground">CBO</TableHead>
-                          <TableHead className="text-muted-foreground">Valor</TableHead>
-                          <TableHead className="text-muted-foreground">Status</TableHead>
-                          <TableHead className="text-muted-foreground">Data</TableHead>
-                          <TableHead className="text-muted-foreground text-right">Ações</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {leads.map((lead) => (
-                          <TableRow key={lead.id} className="border-border/50 hover:bg-muted/30">
-                            <TableCell className="font-mono text-foreground">
-                              {formatCpf(lead.cpf)}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {lead.nome || "-"}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {lead.banco || "-"}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {lead.cbo || "-"}
-                            </TableCell>
-                            <TableCell className="text-foreground">
-                              {lead.valor 
-                                ? `R$ ${lead.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
-                                : "-"
-                              }
-                            </TableCell>
-                            <TableCell>{getStatusBadge(lead.status)}</TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {new Date(lead.created_at).toLocaleString("pt-BR")}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+          {/* Topic Tabs */}
+          <Tabs defaultValue="lista" className="w-full">
+            <TabsList className="w-full justify-start bg-muted/50 border border-border rounded-lg p-1 h-auto flex-wrap">
+              <TabsTrigger 
+                value="perfil" 
+                className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-6 py-2.5 rounded-md"
+              >
+                <Settings className="w-4 h-4" />
+                Perfil Ideal
+              </TabsTrigger>
+              <TabsTrigger 
+                value="cbos" 
+                className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-6 py-2.5 rounded-md"
+              >
+                <BarChart3 className="w-4 h-4" />
+                CBOs que Aprovam
+              </TabsTrigger>
+              <TabsTrigger 
+                value="empresas" 
+                className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-6 py-2.5 rounded-md"
+              >
+                <Building2 className="w-4 h-4" />
+                Empresas
+              </TabsTrigger>
+              <TabsTrigger 
+                value="banco" 
+                className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-6 py-2.5 rounded-md"
+              >
+                <Zap className="w-4 h-4" />
+                Por Banco
+              </TabsTrigger>
+              <TabsTrigger 
+                value="lista" 
+                className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-6 py-2.5 rounded-md"
+              >
+                <Users className="w-4 h-4" />
+                Lista de Leads
+              </TabsTrigger>
+            </TabsList>
 
-                  {/* Pagination */}
-                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
-                    <span className="text-sm text-muted-foreground">
-                      Mostrando {(currentPage - 1) * leadsPerPage + 1} a{" "}
-                      {Math.min(currentPage * leadsPerPage, stats.totalLeads)} de{" "}
-                      {stats.totalLeads.toLocaleString("pt-BR")}
-                    </span>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        disabled={currentPage === 1}
-                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        disabled={currentPage === totalPages || totalPages === 0}
-                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
+            <TabsContent value="perfil" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Perfil Ideal</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground">Análise do perfil ideal de leads com maior chance de aprovação.</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="cbos" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>CBOs que Aprovam</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground">Lista de CBOs com maiores taxas de aprovação.</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="empresas" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Empresas</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground">Análise de aprovações por empresa.</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="banco" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Por Banco</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground">Distribuição de aprovações por instituição bancária.</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="lista" className="mt-6">
+              <Card>
+                <CardHeader className="pb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <CardTitle className="text-lg font-semibold">
+                      Lista de Leads ({stats.totalLeads.toLocaleString("pt-BR")})
+                    </CardTitle>
+                    <div className="relative w-full sm:w-64">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar por CPF..."
+                        value={searchCpf}
+                        onChange={(e) => {
+                          setSearchCpf(e.target.value);
+                          setCurrentPage(1);
+                        }}
+                        className="pl-9"
+                      />
                     </div>
                   </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+                </CardHeader>
+                <CardContent>
+                  {isLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                    </div>
+                  ) : leads.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <p>Nenhum lead encontrado</p>
+                      <p className="text-sm mt-1">Importe dados para visualizar os leads aqui</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="border-border hover:bg-transparent">
+                              <TableHead className="text-muted-foreground">CPF</TableHead>
+                              <TableHead className="text-muted-foreground">Nome</TableHead>
+                              <TableHead className="text-muted-foreground">Banco</TableHead>
+                              <TableHead className="text-muted-foreground">CBO</TableHead>
+                              <TableHead className="text-muted-foreground">Valor</TableHead>
+                              <TableHead className="text-muted-foreground">Status</TableHead>
+                              <TableHead className="text-muted-foreground">Data</TableHead>
+                              <TableHead className="text-muted-foreground text-right">Ações</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {leads.map((lead) => (
+                              <TableRow key={lead.id} className="border-border/50 hover:bg-muted/30">
+                                <TableCell className="font-mono text-foreground">
+                                  {formatCpf(lead.cpf)}
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {lead.nome || "-"}
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {lead.banco || "-"}
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {lead.cbo || "-"}
+                                </TableCell>
+                                <TableCell className="text-foreground">
+                                  {lead.valor 
+                                    ? `R$ ${lead.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                                    : "-"
+                                  }
+                                </TableCell>
+                                <TableCell>{getStatusBadge(lead.status)}</TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {new Date(lead.created_at).toLocaleString("pt-BR")}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      {/* Pagination */}
+                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
+                        <span className="text-sm text-muted-foreground">
+                          Mostrando {(currentPage - 1) * leadsPerPage + 1} a{" "}
+                          {Math.min(currentPage * leadsPerPage, stats.totalLeads)} de{" "}
+                          {stats.totalLeads.toLocaleString("pt-BR")}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={currentPage === totalPages || totalPages === 0}
+                            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </main>
     </div>
