@@ -22,6 +22,27 @@ import EmpresasPanel from "@/components/leads/EmpresasPanel";
 import PorBancoPanel from "@/components/leads/PorBancoPanel";
 import { DashboardProvider, useDashboard } from "@/contexts/DashboardContext";
 
+// Formata data como dd/mm/aaaa - hh:nn:ss
+const formatDateTime = (dateString: string | null): string => {
+  if (!dateString) return "-";
+  
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "-";
+    
+    const day = date.getDate().toString().padStart(2, "0");
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const year = date.getFullYear();
+    const hours = date.getHours().toString().padStart(2, "0");
+    const minutes = date.getMinutes().toString().padStart(2, "0");
+    const seconds = date.getSeconds().toString().padStart(2, "0");
+    
+    return `${day}/${month}/${year} - ${hours}:${minutes}:${seconds}`;
+  } catch {
+    return "-";
+  }
+};
+
 interface LeadSummary {
   id: string;
   cpf: string;
@@ -268,7 +289,7 @@ const LeadsContent = () => {
                                 <TableCell className="text-muted-foreground truncate max-w-[100px]">{lead.cbo || "-"}</TableCell>
                                 <TableCell className="text-foreground">{valor > 0 ? `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-"}</TableCell>
                                 <TableCell>{getStatusBadge(lead.status)}</TableCell>
-                                <TableCell className="text-muted-foreground">{new Date(lead.created_at).toLocaleString("pt-BR")}</TableCell>
+                                <TableCell className="text-muted-foreground whitespace-nowrap">{formatDateTime(lead.ultimo_log)}</TableCell>
                                 <TableCell className="text-right">
                                   <Button
                                     variant="ghost"
