@@ -45,8 +45,11 @@ interface ParsedLead {
 }
 
 // Função para extrair nome do JSON - suporta múltiplos formatos
-const extrairNomeDoJson = (margem: any, simulacao?: any): string | undefined => {
-  // Primeiro tenta do retorno_margem
+const extrairNomeDoJson = (margem: any, simulacao?: any, getProposta?: any): string | undefined => {
+  // Tenta do retorno_get_proposta primeiro (formato V8 CLT)
+  if (getProposta?.name) return getProposta.name;
+  
+  // Primeiro tenta do retorno_margem (formato Presença)
   if (margem) {
     if (margem.registroEmpregaticio?.nomeEmpregado) return margem.registroEmpregaticio.nomeEmpregado;
     if (margem.nomeEmpregado) return margem.nomeEmpregado;
@@ -79,9 +82,13 @@ const extrairBancoDoJson = (simulacao: any, autorizacao?: any, proposta?: any, g
     proposta?.instituicao,
     getProposta?.banco,
     getProposta?.instituicao,
+    getProposta?.provider, // V8 CLT usa "provider" para identificar o banco
+    getProposta?.user?.partnerId, // V8 CLT também tem partnerId no user
   ].filter(Boolean).join(" ").toLowerCase();
 
   // Identificar banco por padrões conhecidos
+  if (haystack.includes("v8") && haystack.includes("clt")) return "V8 CLT";
+  if (haystack.includes("v8-clt")) return "V8 CLT";
   if (haystack.includes("presen") || haystack.includes("privado")) return "Presença";
   if (haystack.includes("uy3")) return "UY3";
   if (haystack.includes("v8")) return "V8";
@@ -338,7 +345,7 @@ const Importacoes = () => {
             
             // Extrair dados adicionais dos JSONs se não foram preenchidos diretamente
             if (!lead.nome) {
-              lead.nome = extrairNomeDoJson(lead.retorno_margem, lead.retorno_simulacao);
+              lead.nome = extrairNomeDoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta);
             }
             if (!lead.cbo) {
               lead.cbo = extrairCBODoJson(lead.retorno_margem);
@@ -426,7 +433,7 @@ const Importacoes = () => {
             
             // Extrair dados adicionais dos JSONs
             if (!lead.nome) {
-              lead.nome = extrairNomeDoJson(lead.retorno_margem, lead.retorno_simulacao);
+              lead.nome = extrairNomeDoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta);
             }
             if (!lead.cbo) {
               lead.cbo = extrairCBODoJson(lead.retorno_margem);
