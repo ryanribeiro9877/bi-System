@@ -69,8 +69,14 @@ export type Database = {
           imported_by: string | null
           nome: string | null
           observacoes: string | null
+          retorno_autorizacao: Json | null
+          retorno_get_proposta: Json | null
+          retorno_margem: Json | null
+          retorno_proposta: Json | null
+          retorno_simulacao: Json | null
           status: string | null
           tipo_reprovacao: string | null
+          ultimo_log: string | null
           updated_at: string
           valor: number | null
         }
@@ -86,8 +92,14 @@ export type Database = {
           imported_by?: string | null
           nome?: string | null
           observacoes?: string | null
+          retorno_autorizacao?: Json | null
+          retorno_get_proposta?: Json | null
+          retorno_margem?: Json | null
+          retorno_proposta?: Json | null
+          retorno_simulacao?: Json | null
           status?: string | null
           tipo_reprovacao?: string | null
+          ultimo_log?: string | null
           updated_at?: string
           valor?: number | null
         }
@@ -103,8 +115,14 @@ export type Database = {
           imported_by?: string | null
           nome?: string | null
           observacoes?: string | null
+          retorno_autorizacao?: Json | null
+          retorno_get_proposta?: Json | null
+          retorno_margem?: Json | null
+          retorno_proposta?: Json | null
+          retorno_simulacao?: Json | null
           status?: string | null
           tipo_reprovacao?: string | null
+          ultimo_log?: string | null
           updated_at?: string
           valor?: number | null
         }
