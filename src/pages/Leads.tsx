@@ -143,13 +143,56 @@ const LeadsContent = () => {
     return "reprovado";
   };
 
+  // Extrai nome de todas as fontes possíveis
+  const extrairNome = (lead: Lead): string => {
+    if (lead.nome) return lead.nome;
+    const margem = lead.retorno_margem as any;
+    const simulacao = lead.retorno_simulacao as any;
+    const getProposta = lead.retorno_get_proposta as any;
+    return margem?.nome || simulacao?.details?.name || getProposta?.name || "";
+  };
+
+  // Extrai banco de todas as fontes possíveis
+  const extrairBanco = (lead: Lead): string => {
+    if (lead.banco) return lead.banco;
+    const simulacao = lead.retorno_simulacao as any;
+    return simulacao?.bank || simulacao?.details?.bank || "";
+  };
+
+  // Extrai CBO de todas as fontes possíveis
+  const extrairCBO = (lead: Lead): string => {
+    if (lead.cbo) return lead.cbo;
+    const margem = lead.retorno_margem as any;
+    const simulacao = lead.retorno_simulacao as any;
+    return margem?.cbo || margem?.codigoCBO || simulacao?.details?.cbo || "";
+  };
+
   // Filtra e pagina os leads
   const filteredLeads = useMemo(() => {
     let list = leads;
 
     if (searchCpf) {
-      const q = searchCpf.replace(/\D/g, "").toLowerCase();
-      list = list.filter((l) => l.cpf.includes(q) || (l.nome ?? "").toLowerCase().includes(searchCpf.toLowerCase()));
+      const searchLower = searchCpf.toLowerCase().trim();
+      const searchClean = searchCpf.replace(/\D/g, ""); // CPF sem formatação
+      
+      list = list.filter((l) => {
+        // Busca por CPF (com ou sem formatação)
+        if (l.cpf.includes(searchClean)) return true;
+        
+        // Busca por nome (todas as fontes)
+        const nome = extrairNome(l).toLowerCase();
+        if (nome.includes(searchLower)) return true;
+        
+        // Busca por banco
+        const banco = extrairBanco(l).toLowerCase();
+        if (banco.includes(searchLower)) return true;
+        
+        // Busca por CBO
+        const cbo = extrairCBO(l).toLowerCase();
+        if (cbo.includes(searchLower)) return true;
+        
+        return false;
+      });
     }
 
     if (statusFilter !== "todos") {
