@@ -318,15 +318,33 @@ export const useLeadsData = (filters?: FilterState) => {
       return acc + simulacao;
     }, 0);
 
-    // Count by tipo_reprovacao
-    const tipoReprovacaoCount: Record<string, number> = {};
-    leads.forEach(l => {
-      if (l.tipo_reprovacao) {
-        tipoReprovacaoCount[l.tipo_reprovacao] = (tipoReprovacaoCount[l.tipo_reprovacao] || 0) + 1;
+    // Count by motivo de reprovação - extrair do JSON retorno_margem.error
+    const motivoReprovacaoCount: Record<string, number> = {};
+    leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovado").forEach(l => {
+      const margem = l.retorno_margem as any;
+      let motivo = margem?.error || l.tipo_reprovacao || "";
+      
+      // Normaliza os motivos para agrupamento
+      if (motivo.includes("timeout") || motivo.includes("cURL error")) {
+        motivo = "Timeout na consulta";
+      } else if (motivo.includes("Rate limit")) {
+        motivo = "Limite de requisições";
+      } else if (motivo.includes("Margem indisponível") || motivo === "") {
+        // Verifica se tem margem negativa ou zero
+        const valorMargem = margem?.valorMargemDisponivel || margem?.valorMargem || 0;
+        if (valorMargem < 0) {
+          motivo = "Margem negativa";
+        } else {
+          motivo = "Margem indisponível";
+        }
+      }
+      
+      if (motivo) {
+        motivoReprovacaoCount[motivo] = (motivoReprovacaoCount[motivo] || 0) + 1;
       }
     });
 
-    const tiposReprovacao = Object.entries(tipoReprovacaoCount)
+    const tiposReprovacao = Object.entries(motivoReprovacaoCount)
       .map(([tipo, quantidade]) => ({ tipo, quantidade }))
       .sort((a, b) => b.quantidade - a.quantidade);
 
