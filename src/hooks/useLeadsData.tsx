@@ -412,7 +412,7 @@ export const useLeadsData = (filters?: FilterState) => {
         .map(l => extrairCBO(l))
         .filter(Boolean)
     ).size;
-    const tiposReprovacaoUnicos = new Set(leads.filter(l => l.tipo_reprovacao).map(l => l.tipo_reprovacao)).size;
+    const tiposReprovacaoUnicos = tiposReprovacao.length;
 
     return {
       totalLeads,
