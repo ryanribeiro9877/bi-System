@@ -23,6 +23,7 @@ export interface Lead {
   data_retorno: string | null;
   observacoes: string | null;
   created_at: string;
+  updated_at: string;
   // Campos JSONB
   retorno_autorizacao: RetornoAutorizacao | null;
   retorno_margem: RetornoMargem | null;

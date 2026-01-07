@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { CheckCircle, TrendingUp, DollarSign, Clock, Eye, ChevronLeft, ChevronRight, Loader2, Search, Settings, BarChart3, Building2, Zap, Users, Download } from "lucide-react";
+import LeadDetailDialog from "@/components/leads/LeadDetailDialog";
+import { Lead } from "@/hooks/useLeadsData";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +38,8 @@ const LeadsContent = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchCpf, setSearchCpf] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const leadsPerPage = 15;
 
   // Filtra e pagina os leads
@@ -266,7 +270,15 @@ const LeadsContent = () => {
                                 <TableCell>{getStatusBadge(lead.status)}</TableCell>
                                 <TableCell className="text-muted-foreground">{new Date(lead.created_at).toLocaleString("pt-BR")}</TableCell>
                                 <TableCell className="text-right">
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                    onClick={() => {
+                                      setSelectedLead(lead);
+                                      setDetailOpen(true);
+                                    }}
+                                  >
                                     <Eye className="h-4 w-4" />
                                   </Button>
                                 </TableCell>
@@ -298,6 +310,9 @@ const LeadsContent = () => {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Lead Detail Dialog */}
+        <LeadDetailDialog lead={selectedLead} open={detailOpen} onOpenChange={setDetailOpen} />
       </div>
     </main>
   );
