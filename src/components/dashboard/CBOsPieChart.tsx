@@ -1,14 +1,6 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-const data = [
-  { name: "Servente de Obras", value: 26.5 },
-  { name: "Vendedor Atacadista", value: 22.1 },
-  { name: "Atendente de Lanchonete", value: 17.6 },
-  { name: "Faxineiro", value: 14.7 },
-  { name: "Recepcionista", value: 11.8 },
-  { name: "Alimentador de Linha", value: 7.4 },
-];
+import { useDashboard } from "@/contexts/DashboardContext";
 
 const COLORS = [
   "hsl(var(--chart-1))",
@@ -16,10 +8,34 @@ const COLORS = [
   "hsl(var(--chart-2))",
   "hsl(var(--chart-5))",
   "hsl(var(--chart-3))",
-  "hsl(var(--chart-6))",
+  "hsl(142 71% 55%)",
 ];
 
 const CBOsPieChart = () => {
+  const { stats } = useDashboard();
+
+  const totalReprovacoes = stats.reprovacoesPorCBO.reduce((acc, item) => acc + item.quantidade, 0);
+  
+  const data = stats.reprovacoesPorCBO.slice(0, 6).map(item => ({
+    name: item.cbo,
+    value: totalReprovacoes > 0 ? Math.round((item.quantidade / totalReprovacoes) * 100 * 10) / 10 : 0,
+  }));
+
+  if (data.length === 0) {
+    return (
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold text-foreground">
+            Distribuição de CBOs Bloqueados
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center h-[300px]">
+          <p className="text-muted-foreground">Nenhum dado disponível</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="glass-card">
       <CardHeader>
@@ -38,7 +54,7 @@ const CBOsPieChart = () => {
               innerRadius={40}
               paddingAngle={2}
               dataKey="value"
-              label={({ name, value }) => `${value}%`}
+              label={({ value }) => `${value}%`}
               labelLine={false}
             >
               {data.map((_, index) => (
