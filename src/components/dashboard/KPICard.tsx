@@ -1,5 +1,6 @@
-import { LucideIcon } from "lucide-react";
+import { LucideIcon, Maximize2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 interface KPICardProps {
   title: string;
@@ -11,6 +12,8 @@ interface KPICardProps {
     isPositive: boolean;
   };
   variant?: "default" | "success" | "warning" | "danger";
+  expandable?: boolean;
+  onExpand?: () => void;
 }
 
 const variantStyles = {
@@ -27,14 +30,14 @@ const iconStyles = {
   danger: "bg-destructive/20 text-destructive",
 };
 
-const KPICard = ({ title, value, subtitle, icon: Icon, trend, variant = "default" }: KPICardProps) => {
+const KPICard = ({ title, value, subtitle, icon: Icon, trend, variant = "default", expandable, onExpand }: KPICardProps) => {
   return (
     <Card className={`glass-card bg-gradient-to-br ${variantStyles[variant]} overflow-hidden group hover:scale-[1.02] transition-transform duration-300`}>
       <CardContent className="p-6">
         <div className="flex items-start justify-between">
-          <div className="space-y-2">
+          <div className="space-y-2 flex-1 min-w-0">
             <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-3xl font-bold text-foreground">{value}</p>
+            <p className="text-3xl font-bold text-foreground truncate">{value}</p>
             {subtitle && (
               <p className="text-sm text-muted-foreground">{subtitle}</p>
             )}
@@ -45,8 +48,20 @@ const KPICard = ({ title, value, subtitle, icon: Icon, trend, variant = "default
               </div>
             )}
           </div>
-          <div className={`p-3 rounded-xl ${iconStyles[variant]} transition-transform group-hover:scale-110`}>
-            <Icon className="w-6 h-6" />
+          <div className="flex flex-col items-end gap-2">
+            <div className={`p-3 rounded-xl ${iconStyles[variant]} transition-transform group-hover:scale-110`}>
+              <Icon className="w-6 h-6" />
+            </div>
+            {expandable && onExpand && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={onExpand}
+              >
+                <Maximize2 className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         </div>
       </CardContent>

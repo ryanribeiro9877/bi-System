@@ -52,6 +52,7 @@ export interface DashboardStats {
   taxaAprovacao: number;
   valorTotal: number;
   principalMotivo: string;
+  principalMotivoCompleto: string;
   principalMotivoPercentual: number;
   bancoMaiorReprovacao: string;
   bancoMaiorReprovacaoPercentual: number;
@@ -298,6 +299,7 @@ export const useLeadsData = (filters?: FilterState) => {
         taxaAprovacao: 0,
         valorTotal: 0,
         principalMotivo: "-",
+        principalMotivoCompleto: "-",
         principalMotivoPercentual: 0,
         bancoMaiorReprovacao: "-",
         bancoMaiorReprovacaoPercentual: 0,
@@ -420,6 +422,8 @@ export const useLeadsData = (filters?: FilterState) => {
 
     // Count by motivo de reprovação - extrair do JSON retorno_margem.error ou retorno_simulacao.details.error
     const motivoReprovacaoCount: Record<string, number> = {};
+    const motivoOriginais: Record<string, string> = {}; // Mapeia motivo resumido -> primeiro motivo original encontrado
+    
     leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovado").forEach(l => {
       const margem = l.retorno_margem as any;
       const simulacao = l.retorno_simulacao as any;
@@ -440,6 +444,10 @@ export const useLeadsData = (filters?: FilterState) => {
       
       if (motivo) {
         motivoReprovacaoCount[motivo] = (motivoReprovacaoCount[motivo] || 0) + 1;
+        // Guarda o primeiro motivo original encontrado para este resumo
+        if (!motivoOriginais[motivo]) {
+          motivoOriginais[motivo] = motivoOriginal;
+        }
       }
     });
 
@@ -448,6 +456,7 @@ export const useLeadsData = (filters?: FilterState) => {
       .sort((a, b) => b.quantidade - a.quantidade);
 
     const principalMotivo = tiposReprovacao[0]?.tipo || "-";
+    const principalMotivoCompleto = motivoOriginais[principalMotivo] || principalMotivo;
     const principalMotivoPercentual = tiposReprovacao[0] && leadsReprovados > 0
       ? Math.round((tiposReprovacao[0].quantidade / leadsReprovados) * 100) 
       : 0;
@@ -522,6 +531,7 @@ export const useLeadsData = (filters?: FilterState) => {
       taxaAprovacao,
       valorTotal,
       principalMotivo,
+      principalMotivoCompleto,
       principalMotivoPercentual,
       bancoMaiorReprovacao,
       bancoMaiorReprovacaoPercentual,
