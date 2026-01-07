@@ -39,6 +39,15 @@ const DashboardContent = () => {
   );
 };
 
+const DashboardLayout = () => {
+  return (
+    <div className="flex min-h-screen bg-background">
+      <DashboardSidebar />
+      <DashboardContent />
+    </div>
+  );
+};
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, isLoading } = useAuth();
@@ -62,12 +71,9 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <DashboardProvider>
-        <DashboardSidebar />
-        <DashboardContent />
-      </DashboardProvider>
-    </div>
+    <DashboardProvider>
+      <DashboardLayout />
+    </DashboardProvider>
   );
 };
 
