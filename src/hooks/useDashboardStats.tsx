@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { importEvents } from "@/events/importEvents";
+import { normalizarStatusLead } from "@/lib/leadStatusUtils";
+import { parseJsonSafe, RetornoMargem, RetornoSimulacao } from "@/types/lead";
 
 export interface DashboardStatsOptimized {
   totalLeads: number;
@@ -11,11 +13,12 @@ export interface DashboardStatsOptimized {
   taxaAprovacao: number;
   margemMedia: number;
   bancos: string[];
+  reprovacoesPorBanco: { banco: string; aprovados: number; reprovados: number; pendentes: number; total: number; taxaAprovacao: number; taxaReprovacao: number }[];
 }
 
 /**
- * Hook otimizado que busca estatísticas diretamente do banco usando COUNT
- * em vez de carregar todos os leads para o frontend
+ * Hook otimizado que busca estatísticas do banco
+ * Usa a mesma lógica de normalização de status do frontend para consistência
  */
 export const useDashboardStats = () => {
   const [stats, setStats] = useState<DashboardStatsOptimized>({
@@ -27,6 +30,7 @@ export const useDashboardStats = () => {
     taxaAprovacao: 0,
     margemMedia: 0,
     bancos: [],
+    reprovacoesPorBanco: [],
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,41 +40,85 @@ export const useDashboardStats = () => {
     setError(null);
 
     try {
-      // Executa todas as queries de contagem em paralelo
-      const [
-        totalResult,
-        aprovadosResult,
-        reprovadosResult,
-        pendentesResult,
-        bancosResult,
-      ] = await Promise.all([
-        // Total de leads
-        supabase.from("leads").select("*", { count: "exact", head: true }),
-        // Leads aprovados
-        supabase.from("leads").select("*", { count: "exact", head: true }).eq("status", "aprovado"),
-        // Leads reprovados
-        supabase.from("leads").select("*", { count: "exact", head: true }).eq("status", "reprovado"),
-        // Leads pendentes
-        supabase.from("leads").select("*", { count: "exact", head: true }).eq("status", "pendente"),
-        // Lista de bancos únicos
-        supabase.from("leads").select("banco").not("banco", "is", null),
-      ]);
+      // Buscar todos os leads com campos necessários para normalização
+      // Usamos paginação para não estourar o limite de 1000
+      const pageSize = 1000;
+      let allLeads: any[] = [];
+      let page = 0;
+      let hasMore = true;
 
-      const total = totalResult.count || 0;
-      const aprovados = aprovadosResult.count || 0;
-      const reprovados = reprovadosResult.count || 0;
-      const pendentes = pendentesResult.count || 0;
+      while (hasMore) {
+        const { data, error: fetchError } = await supabase
+          .from("leads")
+          .select("id,banco,status,retorno_autorizacao,retorno_margem,retorno_simulacao,retorno_proposta,retorno_get_proposta")
+          .range(page * pageSize, (page + 1) * pageSize - 1);
 
-      // Extrai bancos únicos
-      const bancosUnicos = [...new Set(
-        (bancosResult.data || [])
-          .map(b => b.banco)
-          .filter(Boolean)
-      )] as string[];
+        if (fetchError) throw fetchError;
+
+        if (data && data.length > 0) {
+          allLeads = allLeads.concat(data);
+          hasMore = data.length === pageSize;
+          page++;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      // Normalizar status de cada lead usando a mesma lógica do frontend
+      const leadsNormalizados = allLeads.map((lead: any) => {
+        const leadParsed = {
+          ...lead,
+          retorno_autorizacao: parseJsonSafe(lead.retorno_autorizacao),
+          retorno_margem: parseJsonSafe<RetornoMargem>(lead.retorno_margem),
+          retorno_simulacao: parseJsonSafe<RetornoSimulacao>(lead.retorno_simulacao),
+          retorno_proposta: parseJsonSafe(lead.retorno_proposta),
+          retorno_get_proposta: parseJsonSafe(lead.retorno_get_proposta),
+        };
+        return {
+          ...leadParsed,
+          statusNormalizado: normalizarStatusLead(leadParsed),
+          banco: lead.banco || "Não Informado",
+        };
+      });
+
+      // Calcular estatísticas
+      const total = leadsNormalizados.length;
+      const aprovados = leadsNormalizados.filter(l => l.statusNormalizado === "aprovado").length;
+      const reprovados = leadsNormalizados.filter(l => l.statusNormalizado === "reprovado").length;
+      const pendentes = leadsNormalizados.filter(l => l.statusNormalizado === "pendente").length;
 
       // Calcula taxas
       const taxaReprovacao = total > 0 ? parseFloat(((reprovados / total) * 100).toFixed(2)) : 0;
       const taxaAprovacao = total > 0 ? parseFloat(((aprovados / total) * 100).toFixed(2)) : 0;
+
+      // Extrai bancos únicos
+      const bancosUnicos = [...new Set(leadsNormalizados.map(l => l.banco))] as string[];
+
+      // Calcular estatísticas por banco
+      const bancoStats: Record<string, { aprovados: number; reprovados: number; pendentes: number; total: number }> = {};
+      leadsNormalizados.forEach(l => {
+        const banco = l.banco;
+        if (!bancoStats[banco]) {
+          bancoStats[banco] = { aprovados: 0, reprovados: 0, pendentes: 0, total: 0 };
+        }
+        bancoStats[banco].total++;
+        if (l.statusNormalizado === "aprovado") {
+          bancoStats[banco].aprovados++;
+        } else if (l.statusNormalizado === "reprovado") {
+          bancoStats[banco].reprovados++;
+        } else {
+          bancoStats[banco].pendentes++;
+        }
+      });
+
+      const reprovacoesPorBanco = Object.entries(bancoStats)
+        .map(([banco, stats]) => ({
+          banco,
+          ...stats,
+          taxaAprovacao: stats.total > 0 ? parseFloat(((stats.aprovados / stats.total) * 100).toFixed(2)) : 0,
+          taxaReprovacao: stats.total > 0 ? parseFloat(((stats.reprovados / stats.total) * 100).toFixed(2)) : 0,
+        }))
+        .sort((a, b) => b.total - a.total);
 
       // Busca margem média apenas dos aprovados (amostra de 100 para performance)
       let margemMedia = 0;
@@ -85,7 +133,7 @@ export const useDashboardStats = () => {
         if (margensData && margensData.length > 0) {
           const margens = margensData
             .map((l: any) => {
-              const margem = l.retorno_margem as any;
+              const margem = parseJsonSafe<RetornoMargem>(l.retorno_margem) as any;
               return margem?.valorMargemDisponivel || 0;
             })
             .filter((v: number) => v > 0);
@@ -105,6 +153,7 @@ export const useDashboardStats = () => {
         taxaAprovacao,
         margemMedia,
         bancos: bancosUnicos,
+        reprovacoesPorBanco,
       });
     } catch (err: any) {
       console.error("Error fetching stats:", err);
