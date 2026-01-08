@@ -2,6 +2,7 @@ import { memo, useMemo } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useDashboard } from "@/contexts/DashboardContext";
+import { extrairCBO, extrairTodosDados } from "@/lib/leadDataExtractor";
 
 const COLORS = [
   "hsl(var(--chart-1))",
@@ -13,15 +14,42 @@ const COLORS = [
 ];
 
 const CBOsPieChart = memo(() => {
-  const { stats } = useDashboard();
+  const { leads } = useDashboard();
 
   const data = useMemo(() => {
-    const totalReprovacoes = stats.reprovacoesPorCBO.reduce((acc, item) => acc + item.quantidade, 0);
-    return stats.reprovacoesPorCBO.slice(0, 6).map(item => ({
-      name: item.cbo,
-      value: totalReprovacoes > 0 ? Math.round((item.quantidade / totalReprovacoes) * 100 * 10) / 10 : 0,
+    // Agrupa CBOs bloqueados (leads reprovados com CBO identificado)
+    const cboCount: Record<string, { descricao: string; quantidade: number }> = {};
+    
+    leads.forEach(lead => {
+      const dados = extrairTodosDados(lead);
+      
+      // Só conta CBOs de leads reprovados
+      if (dados.statusNormalizado !== "reprovado") return;
+      
+      const cbo = extrairCBO(lead);
+      if (!cbo || (!cbo.codigo && !cbo.descricao)) return;
+      
+      const key = cbo.codigo || cbo.descricao;
+      const descricao = cbo.descricao || cbo.codigo;
+      
+      if (!cboCount[key]) {
+        cboCount[key] = { descricao, quantidade: 0 };
+      }
+      cboCount[key].quantidade++;
+    });
+    
+    const sorted = Object.values(cboCount)
+      .sort((a, b) => b.quantidade - a.quantidade)
+      .slice(0, 6);
+    
+    const total = sorted.reduce((acc, item) => acc + item.quantidade, 0);
+    
+    return sorted.map(item => ({
+      name: item.descricao.length > 30 ? item.descricao.substring(0, 27) + "..." : item.descricao,
+      value: total > 0 ? Math.round((item.quantidade / total) * 100 * 10) / 10 : 0,
+      count: item.quantidade,
     }));
-  }, [stats.reprovacoesPorCBO]);
+  }, [leads]);
 
   if (data.length === 0) {
     return (
@@ -32,7 +60,7 @@ const CBOsPieChart = memo(() => {
           </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center h-[300px]">
-          <p className="text-muted-foreground">Nenhum dado disponível</p>
+          <p className="text-muted-foreground">Nenhum CBO bloqueado identificado</p>
         </CardContent>
       </Card>
     );
@@ -70,7 +98,10 @@ const CBOsPieChart = memo(() => {
                 borderRadius: "8px",
                 color: "hsl(var(--foreground))",
               }}
-              formatter={(value: number) => [`${value}%`]}
+              formatter={(value: number, name: string, entry: any) => [
+                `${value}% (${entry.payload.count} leads)`,
+                name
+              ]}
             />
             <Legend
               formatter={(value) => <span className="text-foreground text-xs">{value}</span>}

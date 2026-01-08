@@ -5,119 +5,81 @@ import { useNavigate } from "react-router-dom";
 import { useDashboard } from "@/contexts/DashboardContext";
 import { useMemo } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from "recharts";
-
-// Função para normalizar status baseado em valorMargemDisponivel
-const getNormalizedStatus = (lead: any): string => {
-  const margem = lead.retorno_margem as any;
-  if (!margem) return "pendente";
-  const erro = margem?.error || "";
-  if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
-    return "pendente";
-  }
-  const valorMargem = margem?.valorMargemDisponivel;
-  if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
-    return "aprovado";
-  }
-  return "reprovado";
-};
+import { extrairTodosDados } from "@/lib/leadDataExtractor";
 
 const PerfilIdealPanel = () => {
   const navigate = useNavigate();
   const { leads, stats } = useDashboard();
 
   const perfil = useMemo(() => {
-    const aprovados = leads.filter((l) => getNormalizedStatus(l) === "aprovado");
-    const reprovados = leads.filter((l) => getNormalizedStatus(l) === "reprovado");
+    // Extrai dados de todos os leads
+    const leadsProcessados = leads.map(lead => extrairTodosDados(lead));
+    
+    const aprovados = leadsProcessados.filter(l => l.statusNormalizado === "aprovado");
+    const reprovados = leadsProcessados.filter(l => l.statusNormalizado === "reprovado");
 
     if (aprovados.length === 0) return null;
 
-    // Extrai dados dos aprovados
-    const dadosAprovados = aprovados.map((l) => {
-      const margem = l.retorno_margem as any;
-      const dataNasc = margem?.dataNascimento;
-      const dataAdm = margem?.dataAdmissao;
-      
-      const idade = dataNasc ? Math.floor((Date.now() - new Date(dataNasc).getTime()) / (1000 * 60 * 60 * 24 * 365)) : null;
-      const tempoVinculo = dataAdm ? Math.floor((Date.now() - new Date(dataAdm).getTime()) / (1000 * 60 * 60 * 24 * 30)) : null;
-      
-      return {
-        margem: margem?.valorMargemDisponivel || 0,
-        margemBase: margem?.valorMargemBase || 0,
-        totalDevido: margem?.valorTotalDevido || 0,
-        sexo: margem?.sexo || null,
-        idade,
-        tempoVinculo,
-      };
-    });
-
     // Calcula médias dos aprovados
-    const margens = dadosAprovados.filter(d => d.margem > 0).map(d => d.margem);
-    const margensBase = dadosAprovados.filter(d => d.margemBase > 0).map(d => d.margemBase);
-    const dividas = dadosAprovados.filter(d => d.totalDevido > 0).map(d => d.totalDevido);
-    const idades = dadosAprovados.filter(d => d.idade && d.idade > 0).map(d => d.idade!);
-    const temposVinculo = dadosAprovados.filter(d => d.tempoVinculo && d.tempoVinculo > 0).map(d => d.tempoVinculo!);
+    const margens = aprovados.filter(d => d.margemDisponivel > 0).map(d => d.margemDisponivel);
+    const margensBase = aprovados.filter(d => d.margemBase > 0).map(d => d.margemBase);
+    const idades = aprovados.filter(d => d.idade && d.idade > 0).map(d => d.idade!);
+    const temposVinculo = aprovados.filter(d => d.tempoVinculoMeses && d.tempoVinculoMeses > 0).map(d => d.tempoVinculoMeses!);
     
-    const masculino = dadosAprovados.filter(d => d.sexo === 'M').length;
-    const feminino = dadosAprovados.filter(d => d.sexo === 'F').length;
+    const masculino = aprovados.filter(d => d.sexo === 'M').length;
+    const feminino = aprovados.filter(d => d.sexo === 'F').length;
 
     const margemMedia = margens.length > 0 ? margens.reduce((a, b) => a + b, 0) / margens.length : 0;
     const margemBaseMedia = margensBase.length > 0 ? margensBase.reduce((a, b) => a + b, 0) / margensBase.length : 0;
-    const dividaMedia = dividas.length > 0 ? dividas.reduce((a, b) => a + b, 0) / dividas.length : 0;
     const idadeMedia = idades.length > 0 ? Math.round(idades.reduce((a, b) => a + b, 0) / idades.length) : 0;
     const tempoMedioVinculo = temposVinculo.length > 0 ? Math.round(temposVinculo.reduce((a, b) => a + b, 0) / temposVinculo.length) : 0;
 
     // Agrupa por faixa etária
     const faixasEtarias = [
-      { faixa: '18-30', aprovados: 0, reprovados: 0 },
-      { faixa: '31-40', aprovados: 0, reprovados: 0 },
-      { faixa: '41-50', aprovados: 0, reprovados: 0 },
-      { faixa: '51-60', aprovados: 0, reprovados: 0 },
-      { faixa: '60+', aprovados: 0, reprovados: 0 },
+      { faixa: '18-30', aprovados: 0 },
+      { faixa: '31-40', aprovados: 0 },
+      { faixa: '41-50', aprovados: 0 },
+      { faixa: '51-60', aprovados: 0 },
+      { faixa: '60+', aprovados: 0 },
     ];
 
     aprovados.forEach(l => {
-      const margem = l.retorno_margem as any;
-      const dataNasc = margem?.dataNascimento;
-      if (!dataNasc) return;
-      const idade = Math.floor((Date.now() - new Date(dataNasc).getTime()) / (1000 * 60 * 60 * 24 * 365));
-      if (idade >= 18 && idade <= 30) faixasEtarias[0].aprovados++;
-      else if (idade >= 31 && idade <= 40) faixasEtarias[1].aprovados++;
-      else if (idade >= 41 && idade <= 50) faixasEtarias[2].aprovados++;
-      else if (idade >= 51 && idade <= 60) faixasEtarias[3].aprovados++;
-      else if (idade > 60) faixasEtarias[4].aprovados++;
+      if (!l.idade) return;
+      if (l.idade >= 18 && l.idade <= 30) faixasEtarias[0].aprovados++;
+      else if (l.idade >= 31 && l.idade <= 40) faixasEtarias[1].aprovados++;
+      else if (l.idade >= 41 && l.idade <= 50) faixasEtarias[2].aprovados++;
+      else if (l.idade >= 51 && l.idade <= 60) faixasEtarias[3].aprovados++;
+      else if (l.idade > 60) faixasEtarias[4].aprovados++;
     });
 
     // Agrupa por tempo de vínculo
     const faixasVinculo = [
-      { faixa: '0-12 meses', aprovados: 0, total: 0 },
-      { faixa: '1-3 anos', aprovados: 0, total: 0 },
-      { faixa: '3-5 anos', aprovados: 0, total: 0 },
-      { faixa: '5-10 anos', aprovados: 0, total: 0 },
-      { faixa: '10+ anos', aprovados: 0, total: 0 },
+      { faixa: '0-12 meses', aprovados: 0 },
+      { faixa: '1-3 anos', aprovados: 0 },
+      { faixa: '3-5 anos', aprovados: 0 },
+      { faixa: '5-10 anos', aprovados: 0 },
+      { faixa: '10+ anos', aprovados: 0 },
     ];
 
     aprovados.forEach(l => {
-      const margem = l.retorno_margem as any;
-      const dataAdm = margem?.dataAdmissao;
-      if (!dataAdm) return;
-      const meses = Math.floor((Date.now() - new Date(dataAdm).getTime()) / (1000 * 60 * 60 * 24 * 30));
-      if (meses <= 12) { faixasVinculo[0].aprovados++; faixasVinculo[0].total++; }
-      else if (meses <= 36) { faixasVinculo[1].aprovados++; faixasVinculo[1].total++; }
-      else if (meses <= 60) { faixasVinculo[2].aprovados++; faixasVinculo[2].total++; }
-      else if (meses <= 120) { faixasVinculo[3].aprovados++; faixasVinculo[3].total++; }
-      else { faixasVinculo[4].aprovados++; faixasVinculo[4].total++; }
+      if (!l.tempoVinculoMeses) return;
+      if (l.tempoVinculoMeses <= 12) faixasVinculo[0].aprovados++;
+      else if (l.tempoVinculoMeses <= 36) faixasVinculo[1].aprovados++;
+      else if (l.tempoVinculoMeses <= 60) faixasVinculo[2].aprovados++;
+      else if (l.tempoVinculoMeses <= 120) faixasVinculo[3].aprovados++;
+      else faixasVinculo[4].aprovados++;
     });
 
-    // Calcula % de utilização da margem (margem disponível / margem base)
+    // Calcula % de utilização da margem
     const utilizacaoMargem = margemBaseMedia > 0 ? Math.round((margemMedia / margemBaseMedia) * 100) : 0;
 
-    // Radar chart data - características do perfil ideal
+    // Radar chart data
     const radarData = [
       { caracteristica: 'Margem Disponível', valor: Math.min(100, (margemMedia / 2000) * 100), fullMark: 100 },
       { caracteristica: 'Tempo Vínculo', valor: Math.min(100, (tempoMedioVinculo / 120) * 100), fullMark: 100 },
       { caracteristica: 'Idade Ideal', valor: idadeMedia > 35 && idadeMedia < 50 ? 90 : 60, fullMark: 100 },
       { caracteristica: 'Margem Base', valor: Math.min(100, (margemBaseMedia / 6000) * 100), fullMark: 100 },
-      { caracteristica: 'Baixo Endividamento', valor: Math.max(0, 100 - Math.min(100, (dividaMedia / 100000) * 100)), fullMark: 100 },
+      { caracteristica: 'Estabilidade', valor: tempoMedioVinculo > 24 ? 85 : Math.min(100, (tempoMedioVinculo / 24) * 85), fullMark: 100 },
     ];
 
     return {
@@ -126,7 +88,6 @@ const PerfilIdealPanel = () => {
       taxaAprovacao: stats.taxaAprovacao,
       margemMedia,
       margemBaseMedia,
-      dividaMedia,
       idadeMedia,
       tempoMedioVinculo,
       masculino,
@@ -179,11 +140,10 @@ const PerfilIdealPanel = () => {
     );
   }
 
-  const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#6366f1', '#ec4899'];
   const sexoData = [
     { name: 'Masculino', value: perfil.masculino, color: '#3b82f6' },
     { name: 'Feminino', value: perfil.feminino, color: '#ec4899' },
-  ];
+  ].filter(d => d.value > 0);
 
   const kpiCards = [
     {
@@ -196,7 +156,7 @@ const PerfilIdealPanel = () => {
     },
     {
       title: "Idade Média",
-      value: `${perfil.idadeMedia} anos`,
+      value: perfil.idadeMedia > 0 ? `${perfil.idadeMedia} anos` : "N/D",
       icon: Calendar,
       color: "text-blue-400",
       bg: "bg-blue-500/10",
@@ -204,7 +164,7 @@ const PerfilIdealPanel = () => {
     },
     {
       title: "Tempo de Vínculo",
-      value: perfil.tempoMedioVinculo > 12 ? `${Math.round(perfil.tempoMedioVinculo / 12)} anos` : `${perfil.tempoMedioVinculo} meses`,
+      value: perfil.tempoMedioVinculo > 12 ? `${Math.round(perfil.tempoMedioVinculo / 12)} anos` : perfil.tempoMedioVinculo > 0 ? `${perfil.tempoMedioVinculo} meses` : "N/D",
       icon: Briefcase,
       color: "text-purple-400",
       bg: "bg-purple-500/10",
@@ -212,7 +172,7 @@ const PerfilIdealPanel = () => {
     },
     {
       title: "Utilização da Margem",
-      value: `${perfil.utilizacaoMargem}%`,
+      value: perfil.utilizacaoMargem > 0 ? `${perfil.utilizacaoMargem}%` : "N/D",
       icon: TrendingUp,
       color: "text-amber-400",
       bg: "bg-amber-500/10",
@@ -251,7 +211,7 @@ const PerfilIdealPanel = () => {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Radar Chart - Características do Perfil */}
+        {/* Radar Chart */}
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -285,29 +245,30 @@ const PerfilIdealPanel = () => {
           </CardHeader>
           <CardContent>
             <div className="h-[300px] flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={sexoData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={5}
-                    dataKey="value"
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {sexoData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                    labelStyle={{ color: '#f3f4f6' }}
-                  />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
+              {sexoData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={sexoData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={5}
+                      dataKey="value"
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {sexoData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-muted-foreground">Dados de gênero não disponíveis</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -322,21 +283,23 @@ const PerfilIdealPanel = () => {
               <Calendar className="w-4 h-4 text-purple-400" />
               Aprovados por Faixa Etária
             </CardTitle>
-            <p className="text-xs text-muted-foreground">Distribuição de aprovados por idade</p>
           </CardHeader>
           <CardContent>
             <div className="h-[280px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={perfil.faixasEtarias} layout="vertical">
-                  <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                  <YAxis dataKey="faixa" type="category" tick={{ fill: '#9ca3af', fontSize: 11 }} width={60} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                    labelStyle={{ color: '#f3f4f6' }}
-                  />
-                  <Bar dataKey="aprovados" fill="#10b981" radius={[0, 4, 4, 0]} name="Aprovados" />
-                </BarChart>
-              </ResponsiveContainer>
+              {perfil.faixasEtarias.some(f => f.aprovados > 0) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={perfil.faixasEtarias} layout="vertical">
+                    <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                    <YAxis dataKey="faixa" type="category" tick={{ fill: '#9ca3af', fontSize: 11 }} width={60} />
+                    <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }} />
+                    <Bar dataKey="aprovados" fill="#10b981" radius={[0, 4, 4, 0]} name="Aprovados" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  Dados de idade não disponíveis
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -348,21 +311,23 @@ const PerfilIdealPanel = () => {
               <Briefcase className="w-4 h-4 text-amber-400" />
               Aprovados por Tempo de Vínculo
             </CardTitle>
-            <p className="text-xs text-muted-foreground">Tempo no emprego atual</p>
           </CardHeader>
           <CardContent>
             <div className="h-[280px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={perfil.faixasVinculo} layout="vertical">
-                  <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                  <YAxis dataKey="faixa" type="category" tick={{ fill: '#9ca3af', fontSize: 11 }} width={80} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                    labelStyle={{ color: '#f3f4f6' }}
-                  />
-                  <Bar dataKey="aprovados" fill="#f59e0b" radius={[0, 4, 4, 0]} name="Aprovados" />
-                </BarChart>
-              </ResponsiveContainer>
+              {perfil.faixasVinculo.some(f => f.aprovados > 0) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={perfil.faixasVinculo} layout="vertical">
+                    <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                    <YAxis dataKey="faixa" type="category" tick={{ fill: '#9ca3af', fontSize: 11 }} width={80} />
+                    <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }} />
+                    <Bar dataKey="aprovados" fill="#f59e0b" radius={[0, 4, 4, 0]} name="Aprovados" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  Dados de vínculo não disponíveis
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -379,47 +344,22 @@ const PerfilIdealPanel = () => {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-              <h4 className="font-medium text-emerald-400 mb-2">✓ Idade Ideal</h4>
+              <h4 className="font-medium text-emerald-400 mb-2">✓ Margem Disponível</h4>
               <p className="text-sm text-muted-foreground">
-                Leads entre <span className="text-foreground font-medium">35-50 anos</span> têm maior taxa de aprovação. 
-                A idade média dos aprovados é {perfil.idadeMedia} anos.
+                Leads aprovados têm margem média de <span className="text-foreground font-medium">R$ {perfil.margemMedia.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>.
               </p>
             </div>
             <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
-              <h4 className="font-medium text-blue-400 mb-2">✓ Estabilidade</h4>
+              <h4 className="font-medium text-blue-400 mb-2">✓ Total Aprovados</h4>
               <p className="text-sm text-muted-foreground">
-                Tempo médio de vínculo de <span className="text-foreground font-medium">{Math.round(perfil.tempoMedioVinculo / 12)} anos</span> no emprego. 
-                Quanto maior o tempo, maior a chance de aprovação.
+                <span className="text-foreground font-medium">{perfil.totalAprovados}</span> leads aprovados de {perfil.totalAprovados + perfil.totalReprovados} analisados ({stats.taxaAprovacao}% taxa de aprovação).
               </p>
             </div>
             <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
-              <h4 className="font-medium text-purple-400 mb-2">✓ Gênero</h4>
+              <h4 className="font-medium text-purple-400 mb-2">✓ Perfil Demográfico</h4>
               <p className="text-sm text-muted-foreground">
-                <span className="text-foreground font-medium">{Math.round((perfil.masculino / (perfil.masculino + perfil.feminino)) * 100)}% masculino</span> e 
-                <span className="text-foreground font-medium"> {Math.round((perfil.feminino / (perfil.masculino + perfil.feminino)) * 100)}% feminino</span>. 
-                Ambos os gêneros são aprovados.
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
-              <h4 className="font-medium text-amber-400 mb-2">✓ Margem Disponível</h4>
-              <p className="text-sm text-muted-foreground">
-                Margem média de <span className="text-foreground font-medium">R$ {perfil.margemMedia.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>. 
-                Representa {perfil.utilizacaoMargem}% da margem base.
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
-              <h4 className="font-medium text-red-400 mb-2">⚠ O que evitar</h4>
-              <p className="text-sm text-muted-foreground">
-                Leads <span className="text-foreground font-medium">sem dados de empregador</span> ou com 
-                <span className="text-foreground font-medium"> margem negativa</span> são automaticamente reprovados.
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
-              <h4 className="font-medium text-cyan-400 mb-2">💡 Dica</h4>
-              <p className="text-sm text-muted-foreground">
-                Priorize leads com <span className="text-foreground font-medium">CNPJ válido</span>, 
-                <span className="text-foreground font-medium"> tempo de vínculo &gt; 1 ano</span> e 
-                <span className="text-foreground font-medium"> idade entre 35-50</span>.
+                {perfil.idadeMedia > 0 ? `Idade média de ${perfil.idadeMedia} anos. ` : ""}
+                {perfil.tempoMedioVinculo > 0 ? `Tempo médio de vínculo: ${perfil.tempoMedioVinculo > 12 ? Math.round(perfil.tempoMedioVinculo / 12) + " anos" : perfil.tempoMedioVinculo + " meses"}.` : ""}
               </p>
             </div>
           </div>
