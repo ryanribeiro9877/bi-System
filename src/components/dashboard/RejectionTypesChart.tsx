@@ -10,13 +10,64 @@ const getBarColor = (value: number, max: number) => {
   return "hsl(var(--success))";
 };
 
+// Função para criar resumos inteligentes de mensagens de erro longas
+const summarizeRejectionReason = (fullText: string): string => {
+  const lowerText = fullText.toLowerCase();
+  
+  // Mapeia padrões comuns para resumos curtos
+  if (lowerText.includes("valor solicitado") && lowerText.includes("maior")) {
+    return "Valor acima do limite";
+  }
+  if (lowerText.includes("record_not_exists") || lowerText.includes("produto não encontrado")) {
+    return "Produto não encontrado";
+  }
+  if (lowerText.includes("missing_permission") || lowerText.includes("permissão de acesso")) {
+    return "Sem permissão de acesso";
+  }
+  if (lowerText.includes("requisição falhou") && lowerText.includes("status 400")) {
+    return "Erro na requisição (400)";
+  }
+  if (lowerText.includes("registro inferior") || lowerText.includes("meses de carteira")) {
+    return "Tempo de registro insuficiente";
+  }
+  if (lowerText.includes("margem")) {
+    return "Problema com margem";
+  }
+  if (lowerText.includes("idade")) {
+    return "Restrição de idade";
+  }
+  if (lowerText.includes("cpf") && (lowerText.includes("inválido") || lowerText.includes("irregular"))) {
+    return "CPF inválido/irregular";
+  }
+  if (lowerText.includes("negativado") || lowerText.includes("restrição")) {
+    return "Cliente com restrição";
+  }
+  
+  // Se não encontrar padrão, trunca de forma inteligente
+  if (fullText.length > 25) {
+    // Tenta pegar até o primeiro ":" ou "." ou limite de caracteres
+    const colonIndex = fullText.indexOf(":");
+    const dotIndex = fullText.indexOf(".");
+    
+    if (colonIndex > 0 && colonIndex < 30) {
+      return fullText.substring(0, colonIndex);
+    }
+    if (dotIndex > 0 && dotIndex < 30) {
+      return fullText.substring(0, dotIndex);
+    }
+    return fullText.substring(0, 22) + "...";
+  }
+  
+  return fullText;
+};
+
 const RejectionTypesChart = () => {
   const { stats } = useDashboard();
 
   const maxValue = Math.max(...stats.reprovacoesPorTipo.map(item => item.quantidade), 1);
   
   const data = stats.reprovacoesPorTipo.slice(0, 8).map(item => ({
-    name: item.tipo,
+    name: summarizeRejectionReason(item.tipoCompleto || item.tipo),
     value: item.quantidade,
     fullName: item.tipoCompleto || item.tipo,
   }));
