@@ -111,15 +111,53 @@ const isErroConexao = (erro: string): boolean => {
 };
 
 /**
+ * Verifica se há dados válidos na margem (não é erro/vazio)
+ */
+const hasValidMargemData = (margem: any): boolean => {
+  if (!margem) return false;
+  if (margem.error) return false;
+  // Se tem campos de dados reais da margem (não apenas erro)
+  return (
+    margem.valorMargemDisponivel !== undefined ||
+    margem.valorMargemBase !== undefined ||
+    margem.dataNascimento !== undefined ||
+    margem.cnpjEmpregador !== undefined
+  );
+};
+
+/**
+ * Verifica se há dados válidos na simulação (não é erro/vazio)
+ */
+const hasValidSimulacaoData = (simulacao: any): boolean => {
+  if (!simulacao) return false;
+  if (simulacao.error) return false;
+  // Se tem campos de dados reais da simulação (não apenas erro)
+  return (
+    simulacao.id !== undefined ||
+    simulacao.productId !== undefined ||
+    simulacao.productName !== undefined ||
+    simulacao.liquidValue !== undefined
+  );
+};
+
+/**
  * Verifica se o lead está pendente por erro de limite/conexão
  */
 const isPendente = (lead: LeadData): boolean => {
   const autorizacao = lead.retorno_autorizacao as any;
   const margem = lead.retorno_margem as any;
   const simulacao = lead.retorno_simulacao as any;
+  const banco = (lead.banco || "").toLowerCase();
   
   // Verificar limite de consultas excedido no retorno_autorizacao
   if (isLimiteConsultasExcedido(autorizacao)) {
+    // Para PRESENÇA: se há dados válidos na margem E simulação, não é pendente
+    // Significa que os dados foram processados apesar do erro de limite
+    if (banco.includes("presença") || banco.includes("presenca")) {
+      if (hasValidMargemData(margem) && hasValidSimulacaoData(simulacao)) {
+        return false; // Tem dados, pode processar normalmente
+      }
+    }
     return true;
   }
   
@@ -134,6 +172,12 @@ const isPendente = (lead: LeadData): boolean => {
     const lower = String(erro).toLowerCase();
     if (lower.includes("rate limit") || 
         (lower.includes("limite") && lower.includes("excedido"))) {
+      // Para PRESENÇA: verificar se tem dados válidos apesar do erro
+      if (banco.includes("presença") || banco.includes("presenca")) {
+        if (hasValidMargemData(margem) && hasValidSimulacaoData(simulacao)) {
+          return false;
+        }
+      }
       return true;
     }
   }
