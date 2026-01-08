@@ -5,55 +5,71 @@ import { useNavigate } from "react-router-dom";
 import { useDashboard } from "@/contexts/DashboardContext";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useMemo } from "react";
+import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 
-// Extrai CNPJ/Razão Social e agrupa estatísticas
+// Extrai dados da empresa do lead de múltiplas fontes
+const extrairEmpresa = (lead: any): { cnpj: string; razaoSocial: string } | null => {
+  const margem = lead.retorno_margem as any;
+  
+  // 1. Verifica retorno_margem.details.dataprevValidationResponses[0].employeeRelationShip
+  const empRel = margem?.details?.dataprevValidationResponses?.[0]?.employeeRelationShip;
+  if (empRel) {
+    const cnpj = empRel.numeroInscricaoEmpregador || "";
+    const razao = empRel.nomeEmpregador || "";
+    if (cnpj || razao) {
+      return { cnpj, razaoSocial: razao };
+    }
+  }
+  
+  // 2. Verifica retorno_margem.cnpjEmpregador
+  if (margem?.cnpjEmpregador) {
+    return { 
+      cnpj: margem.cnpjEmpregador, 
+      razaoSocial: margem?.nomeEmpregador || margem?.registroEmpregaticio?.razaoSocial || "" 
+    };
+  }
+  
+  return null;
+};
+
+// Formata CNPJ
+const formatCnpj = (cnpj: string): string => {
+  const cleaned = cnpj.replace(/\D/g, "");
+  if (cleaned.length !== 14) return cnpj;
+  return cleaned.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+};
+
+// Agrupa estatísticas por empresa
 const EmpresasPanel = () => {
   const navigate = useNavigate();
   const { leads, stats } = useDashboard();
 
-  // Função para normalizar status baseado em valorMargemDisponivel
-  const getNormalizedStatus = (lead: any): string => {
-    const margem = lead.retorno_margem as any;
-    if (!margem) return "pendente";
-    const erro = margem?.error || "";
-    if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
-      return "pendente";
-    }
-    const valorMargem = margem?.valorMargemDisponivel;
-    if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
-      return "aprovado";
-    }
-    return "reprovado";
-  };
-
-  // Agrupa por CNPJ do empregador (retorno_margem.cnpjEmpregador)
   const empresas = useMemo(() => {
-    const map: Record<string, { cnpj: string; razao: string; aprovados: number; reprovados: number; total: number }> = {};
+    const map: Record<string, { cnpj: string; razaoSocial: string; aprovados: number; reprovados: number; total: number }> = {};
 
     leads.forEach((lead) => {
-      const margem = lead.retorno_margem as any;
-      // CNPJ está diretamente em retorno_margem.cnpjEmpregador
-      const cnpj = margem?.cnpjEmpregador || "";
-      // Razão social pode estar em registroEmpregaticio ou diretamente
-      const razao = margem?.registroEmpregaticio?.razaoSocial || margem?.razaoSocial || margem?.registroEmpregaticio || "";
+      const empresa = extrairEmpresa(lead);
+      if (!empresa || !empresa.cnpj) return;
 
-      if (!cnpj) return;
-
-      const key = cnpj;
+      const key = empresa.cnpj;
       if (!map[key]) {
-        map[key] = { cnpj, razao: typeof razao === 'string' ? razao : "", aprovados: 0, reprovados: 0, total: 0 };
+        map[key] = { cnpj: empresa.cnpj, razaoSocial: empresa.razaoSocial, aprovados: 0, reprovados: 0, total: 0 };
       }
       map[key].total++;
       
-      // Usa status normalizado baseado em valorMargemDisponivel
-      const status = getNormalizedStatus(lead);
+      // Atualiza razão social se ainda não tinha
+      if (!map[key].razaoSocial && empresa.razaoSocial) {
+        map[key].razaoSocial = empresa.razaoSocial;
+      }
+      
+      const status = normalizarStatusLead(lead);
       if (status === "aprovado") map[key].aprovados++;
       if (status === "reprovado") map[key].reprovados++;
     });
 
     return Object.values(map)
       .map((e) => ({ ...e, taxaAprovacao: e.total > 0 ? Math.round((e.aprovados / e.total) * 100) : 0 }))
-      .sort((a, b) => b.aprovados - a.aprovados)
+      .sort((a, b) => b.aprovados - a.aprovados || b.taxaAprovacao - a.taxaAprovacao)
       .slice(0, 30);
   }, [leads]);
 
@@ -124,8 +140,8 @@ const EmpresasPanel = () => {
             <TableBody>
               {empresas.map((e) => (
                 <TableRow key={e.cnpj}>
-                  <TableCell className="text-muted-foreground">{e.cnpj}</TableCell>
-                  <TableCell className="text-foreground truncate max-w-[200px]">{e.razao || "-"}</TableCell>
+                  <TableCell className="text-muted-foreground font-mono">{formatCnpj(e.cnpj)}</TableCell>
+                  <TableCell className="text-foreground truncate max-w-[200px]">{e.razaoSocial || "-"}</TableCell>
                   <TableCell className="text-right text-muted-foreground">{e.total}</TableCell>
                   <TableCell className="text-right text-muted-foreground">{e.aprovados}</TableCell>
                   <TableCell className="text-right text-emerald-400">{e.taxaAprovacao}%</TableCell>
