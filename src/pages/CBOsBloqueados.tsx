@@ -6,7 +6,7 @@ import VisaoGeralCBOsPanel from "@/components/cbos/VisaoGeralCBOsPanel";
 import PorBancoCBOsPanel from "@/components/cbos/PorBancoCBOsPanel";
 import PorSetorCBOsPanel from "@/components/cbos/PorSetorCBOsPanel";
 import ListaCompletaCBOsPanel from "@/components/cbos/ListaCompletaCBOsPanel";
-import { DashboardProvider, useDashboard } from "@/contexts/DashboardContext";
+import { useDashboard } from "@/contexts/DashboardContext";
 import { Loader2 } from "lucide-react";
 import { useMemo } from "react";
 
@@ -189,12 +189,10 @@ const CBOsContent = () => {
 
 const CBOsBloqueados = () => {
   return (
-    <DashboardProvider>
-      <div className="min-h-screen flex w-full bg-background">
-        <DashboardSidebar />
-        <CBOsContent />
-      </div>
-    </DashboardProvider>
+    <div className="min-h-screen flex w-full bg-background">
+      <DashboardSidebar />
+      <CBOsContent />
+    </div>
   );
 };
 
