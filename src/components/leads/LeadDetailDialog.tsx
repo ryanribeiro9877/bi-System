@@ -3,7 +3,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Lead } from "@/hooks/useLeadsData";
-import { FileText, CheckCircle, XCircle, Clock, User, Building2, CreditCard, FileJson } from "lucide-react";
+import { FileText, CheckCircle, XCircle, Clock, User, Building2, CreditCard, FileJson, AlertTriangle } from "lucide-react";
+import { normalizarStatusLead, extrairMotivoErro } from "@/lib/leadStatusUtils";
 
 interface LeadDetailDialogProps {
   lead: Lead | null;
@@ -20,12 +21,14 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
     return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
 
-  const getStatusBadge = (status: string | null) => {
-    if (!status) return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">? CPF Não Encontrado</Badge>;
-    const s = status.toLowerCase();
-    if (s === "aprovado") return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ Aprovado</Badge>;
-    if (s === "reprovado") return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">✕ Reprovado</Badge>;
-    if (s === "cpf_nao_encontrado" || s === "cpf não encontrado") return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">? CPF Não Encontrado</Badge>;
+  // Usa o status normalizado do utilitário
+  const statusNormalizado = normalizarStatusLead(lead);
+  const motivoErro = extrairMotivoErro(lead);
+
+  const getStatusBadge = (status: string) => {
+    if (status === "aprovado") return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ Aprovado</Badge>;
+    if (status === "reprovado") return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">✕ Reprovado</Badge>;
+    if (status === "pendente") return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">⏳ Pendente</Badge>;
     return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">? CPF Não Encontrado</Badge>;
   };
 
@@ -86,7 +89,7 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Status</p>
-                {getStatusBadge(lead.status)}
+                {getStatusBadge(statusNormalizado)}
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Banco</p>
@@ -102,7 +105,20 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
                   {valor > 0 ? `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-"}
                 </p>
               </div>
-              {lead.tipo_reprovacao && (
+              {/* Motivo do erro/pendência */}
+              {motivoErro && (
+                <div className="col-span-2 md:col-span-3">
+                  <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    {statusNormalizado === "pendente" ? "Motivo da Pendência" : 
+                     statusNormalizado === "reprovado" ? "Motivo da Reprovação" : "Motivo"}
+                  </p>
+                  <p className={`${statusNormalizado === "pendente" ? "text-amber-400" : "text-red-400"}`}>
+                    {motivoErro}
+                  </p>
+                </div>
+              )}
+              {lead.tipo_reprovacao && !motivoErro && (
                 <div className="col-span-2 md:col-span-3">
                   <p className="text-xs text-muted-foreground mb-1">Motivo da Reprovação</p>
                   <p className="text-red-400">{lead.tipo_reprovacao}</p>
