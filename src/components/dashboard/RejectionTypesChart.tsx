@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, memo, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -84,33 +84,30 @@ const summarizeRejectionReason = (fullText: string): string => {
   return cleanText;
 };
 
-const RejectionTypesChart = () => {
+const RejectionTypesChart = memo(() => {
   const { stats } = useDashboard();
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const maxValue = Math.max(...stats.reprovacoesPorTipo.map(item => item.quantidade), 1);
-  
-  // Dados para o gráfico (top 8)
-  const chartData = stats.reprovacoesPorTipo.slice(0, 8).map(item => {
-    const fullText = item.tipoCompleto || item.tipo;
-    return {
-      name: summarizeRejectionReason(fullText),
-      value: item.quantidade,
-      fullName: extractCleanMessage(fullText),
-    };
-  });
+  const { chartData, allData, maxValue, totalTypes } = useMemo(() => {
+    const max = Math.max(...stats.reprovacoesPorTipo.map(item => item.quantidade), 1);
+    
+    const all = stats.reprovacoesPorTipo.map(item => {
+      const fullText = item.tipoCompleto || item.tipo;
+      return {
+        name: summarizeRejectionReason(fullText),
+        value: item.quantidade,
+        fullName: extractCleanMessage(fullText),
+      };
+    });
 
-  // Todos os dados para o diálogo
-  const allData = stats.reprovacoesPorTipo.map(item => {
-    const fullText = item.tipoCompleto || item.tipo;
     return {
-      name: summarizeRejectionReason(fullText),
-      value: item.quantidade,
-      fullName: extractCleanMessage(fullText),
+      maxValue: max,
+      chartData: all.slice(0, 8),
+      allData: all,
+      totalTypes: stats.reprovacoesPorTipo.length,
     };
-  });
+  }, [stats.reprovacoesPorTipo]);
 
-  const totalTypes = stats.reprovacoesPorTipo.length;
   const hasMore = totalTypes > 8;
 
   if (chartData.length === 0) {
@@ -230,6 +227,8 @@ const RejectionTypesChart = () => {
       </CardContent>
     </Card>
   );
-};
+});
+
+RejectionTypesChart.displayName = "RejectionTypesChart";
 
 export default RejectionTypesChart;
