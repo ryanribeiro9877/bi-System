@@ -9,6 +9,7 @@ const BankApprovalChart = () => {
     name: item.banco,
     aprovado: item.total > 0 ? Math.round((item.aprovados / item.total) * 100) : 0,
     reprovado: item.total > 0 ? Math.round((item.reprovados / item.total) * 100) : 0,
+    pendente: item.total > 0 ? Math.round(((item.pendentes || 0) / item.total) * 100) : 0,
   }));
 
   if (data.length === 0) {
@@ -16,7 +17,7 @@ const BankApprovalChart = () => {
       <Card className="glass-card">
         <CardHeader>
           <CardTitle className="text-lg font-semibold text-foreground">
-            Taxa de Aprovação/Reprovação por Banco
+            Taxa por Status e Banco
           </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center h-[300px]">
@@ -30,7 +31,7 @@ const BankApprovalChart = () => {
     <Card className="glass-card">
       <CardHeader>
         <CardTitle className="text-lg font-semibold text-foreground">
-          Taxa de Aprovação/Reprovação por Banco
+          Taxa por Status e Banco
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -50,6 +51,7 @@ const BankApprovalChart = () => {
             />
             <Legend />
             <Bar dataKey="aprovado" stackId="a" fill="hsl(var(--success))" name="Aprovado" radius={[0, 0, 0, 0]} />
+            <Bar dataKey="pendente" stackId="a" fill="hsl(var(--warning))" name="Pendente" radius={[0, 0, 0, 0]} />
             <Bar dataKey="reprovado" stackId="a" fill="hsl(var(--destructive))" name="Reprovado" radius={[0, 4, 4, 0]} />
           </BarChart>
         </ResponsiveContainer>
