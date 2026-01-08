@@ -13,17 +13,11 @@ interface LeadDetailDialogProps {
 }
 
 const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) => {
-  if (!lead) return null;
-
   const formatCpf = (cpf: string) => {
     const cleaned = cpf.replace(/\D/g, "");
     if (cleaned.length !== 11) return cpf;
     return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
-
-  // Usa o status normalizado do utilitário
-  const statusNormalizado = normalizarStatusLead(lead);
-  const motivoErro = extrairMotivoErro(lead);
 
   const getStatusBadge = (status: string) => {
     if (status === "aprovado") return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ Aprovado</Badge>;
@@ -50,6 +44,15 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
     );
   };
 
+  const hasData = (data: any) => data && typeof data === "object" && Object.keys(data).length > 0;
+
+  // Early return AFTER all hooks/functions that could contain hooks
+  if (!lead) return null;
+
+  // Usa o status normalizado do utilitário
+  const statusNormalizado = normalizarStatusLead(lead);
+  const motivoErro = extrairMotivoErro(lead);
+
   const margem = lead.retorno_margem as any;
   const nome = lead.nome || margem?.registroEmpregaticio?.nomeEmpregado || margem?.nomeEmpregado || "-";
   const sim = lead.retorno_simulacao as any;
@@ -62,8 +65,6 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
     { key: "retorno_proposta", label: "Proposta", icon: FileText, data: lead.retorno_proposta },
     { key: "retorno_get_proposta", label: "Get Proposta", icon: FileText, data: lead.retorno_get_proposta },
   ];
-
-  const hasData = (data: any) => data && typeof data === "object" && Object.keys(data).length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
