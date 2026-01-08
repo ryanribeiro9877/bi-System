@@ -14,23 +14,23 @@ const CBOsContent = () => {
   const { stats, leads, isLoading } = useDashboard();
 
   const calculatedStats = useMemo(() => {
-    const reprovados = leads.filter((l) => l.status?.toLowerCase() === "reprovado");
+    // Usar dados extraídos de CBOs bloqueados
+    const totalCBOsBloqueados = stats.totalCBOsBloqueados;
+    const cbosUnicosBloqueados = stats.cbosBloqueados.length;
 
     // Estima margem perdida nos reprovados que tinham valorMargemDisponivel
     let margemPerdida = 0;
+    const reprovados = leads.filter((l) => l.status?.toLowerCase() === "reprovado");
     reprovados.forEach((lead) => {
       const margem = lead.retorno_margem as any;
       margemPerdida += margem?.valorMargemDisponivel || 0;
     });
 
-    // Contagem de CBOs únicos (nao necessariamente usamos isso, pois já há stats.cbosUnicos, mas mantemos)
-    const setoresAfetados = stats.cbosUnicos || 0;
-
     return {
-      totalBloqueados: stats.cbosUnicos,
-      leadsAfetados: stats.leadsReprovados,
+      totalBloqueados: cbosUnicosBloqueados,
+      leadsAfetados: totalCBOsBloqueados,
       margemPerdida,
-      setoresAfetados,
+      taxaReprovacao: stats.taxaReprovacao,
     };
   }, [leads, stats]);
 
@@ -46,7 +46,7 @@ const CBOsContent = () => {
 
   const kpiCards = [
     {
-      title: "CBOs Únicos (reprovados)",
+      title: "CBOs Bloqueados",
       value: calculatedStats.totalBloqueados.toString(),
       subtitle: "Ocupações identificadas",
       icon: Ban,
@@ -56,9 +56,9 @@ const CBOsContent = () => {
       iconColor: "text-red-400",
     },
     {
-      title: "Leads Reprovados",
+      title: "Leads Afetados",
       value: calculatedStats.leadsAfetados.toLocaleString("pt-BR"),
-      subtitle: "Total de reprovações",
+      subtitle: "Total bloqueados por CBO",
       icon: Users,
       bgGradient: "from-orange-950/50 to-orange-900/30",
       borderColor: "border-l-orange-500",
@@ -77,7 +77,7 @@ const CBOsContent = () => {
     },
     {
       title: "% Reprovação",
-      value: `${stats.taxaReprovacao}%`,
+      value: `${calculatedStats.taxaReprovacao}%`,
       subtitle: "Taxa de reprovação geral",
       icon: Building2,
       bgGradient: "from-purple-950/50 to-purple-900/30",

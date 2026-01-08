@@ -42,7 +42,39 @@ interface ParsedLead {
   retorno_proposta?: any;
   retorno_get_proposta?: any;
   ultimo_log?: string;
+  // Campos de CBO bloqueado extraídos
+  cbo_block_code?: string;
+  cbo_block_name?: string;
 }
+
+// Função para extrair CBO bloqueado da mensagem de erro
+// Formato esperado: "CBO bloqueado: 123456 - Nome do CBO" ou variações
+const extrairCBOBloqueado = (mensagemErro: string | undefined): { code: string | undefined; name: string | undefined } => {
+  if (!mensagemErro) return { code: undefined, name: undefined };
+  
+  // Regex para capturar "CBO bloqueado: CODIGO - NOME" ou "CBO bloqueado: CODIGO"
+  // Também captura variações como "cbo bloqueado", "CBO Bloqueado", etc.
+  const regexComNome = /cbo\s*bloqueado[:\s]+(\d+)\s*[-–—]\s*([^,.\n]+)/i;
+  const regexSemNome = /cbo\s*bloqueado[:\s]+(\d+)/i;
+  
+  let match = mensagemErro.match(regexComNome);
+  if (match) {
+    return {
+      code: match[1].trim(),
+      name: match[2].trim()
+    };
+  }
+  
+  match = mensagemErro.match(regexSemNome);
+  if (match) {
+    return {
+      code: match[1].trim(),
+      name: undefined
+    };
+  }
+  
+  return { code: undefined, name: undefined };
+};
 
 // Função para extrair nome do JSON - busca em TODAS as colunas disponíveis
 const extrairNomeDoJson = (margem: any, simulacao?: any, getProposta?: any, proposta?: any, autorizacao?: any): string | undefined => {
@@ -378,6 +410,12 @@ const Importacoes = () => {
             if (!lead.valor) {
               lead.valor = extrairValorMargem(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta);
             }
+            // Extrair CBO bloqueado se houver mensagem de erro
+            if (lead.status === "reprovado") {
+              const cboBlock = extrairCBOBloqueado(lead.tipo_reprovacao);
+              lead.cbo_block_code = cboBlock.code;
+              lead.cbo_block_name = cboBlock.name;
+            }
             
             return lead;
           });
@@ -459,6 +497,12 @@ const Importacoes = () => {
             // Extrair valor da margem disponível
             if (!lead.valor) {
               lead.valor = extrairValorMargem(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta);
+            }
+            // Extrair CBO bloqueado se houver mensagem de erro
+            if (lead.status === "reprovado") {
+              const cboBlock = extrairCBOBloqueado(lead.tipo_reprovacao);
+              lead.cbo_block_code = cboBlock.code;
+              lead.cbo_block_name = cboBlock.name;
             }
             
             return lead;
@@ -579,6 +623,8 @@ const Importacoes = () => {
           retorno_proposta: lead.retorno_proposta,
           retorno_get_proposta: lead.retorno_get_proposta,
           ultimo_log: lead.ultimo_log,
+          cbo_block_code: lead.cbo_block_code,
+          cbo_block_name: lead.cbo_block_name,
           import_batch_id: importRecord.id,
           imported_by: user.id,
         }));

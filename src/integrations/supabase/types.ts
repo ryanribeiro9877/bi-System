@@ -60,6 +60,8 @@ export type Database = {
         Row: {
           banco: string | null
           cbo: string | null
+          cbo_block_code: string | null
+          cbo_block_name: string | null
           cpf: string
           created_at: string
           data_envio: string | null
@@ -83,6 +85,8 @@ export type Database = {
         Insert: {
           banco?: string | null
           cbo?: string | null
+          cbo_block_code?: string | null
+          cbo_block_name?: string | null
           cpf: string
           created_at?: string
           data_envio?: string | null
@@ -106,6 +110,8 @@ export type Database = {
         Update: {
           banco?: string | null
           cbo?: string | null
+          cbo_block_code?: string | null
+          cbo_block_name?: string | null
           cpf?: string
           created_at?: string
           data_envio?: string | null
