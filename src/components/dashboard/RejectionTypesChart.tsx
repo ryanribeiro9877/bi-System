@@ -10,25 +10,53 @@ const getBarColor = (value: number, max: number) => {
   return "hsl(var(--success))";
 };
 
-// Função para criar resumos inteligentes de mensagens de erro longas
-const summarizeRejectionReason = (fullText: string): string => {
+// Função para extrair a mensagem útil de um erro técnico (para o tooltip)
+const extractCleanMessage = (fullText: string): string => {
   const lowerText = fullText.toLowerCase();
+  
+  // Extrai a mensagem "message" do JSON se existir
+  const messageMatch = fullText.match(/"message"\s*:\s*"([^"]+)"/);
+  if (messageMatch) {
+    return messageMatch[1];
+  }
+  
+  // Se tem padrão "Requisição falhou...: Mensagem real", pega só a parte útil
+  if (lowerText.includes("requisição falhou") && fullText.includes(":")) {
+    const parts = fullText.split(":");
+    if (parts.length >= 2) {
+      // Pega a segunda parte que geralmente é a mensagem real
+      const cleanPart = parts[1].trim().split("(")[0].trim();
+      if (cleanPart.length > 10) {
+        return cleanPart;
+      }
+    }
+  }
+  
+  // Remove padrões técnicos comuns
+  let cleaned = fullText
+    .replace(/\s*\(Code:\s*[A-Z_]+\)/gi, "")
+    .replace(/\s*\|\s*Response completo:.*/gi, "")
+    .replace(/\s*\{[^}]*\}/g, "")
+    .replace(/Requisição falhou com status \d+:\s*/gi, "")
+    .trim();
+  
+  return cleaned || fullText;
+};
+
+// Função para criar resumos curtos (para o eixo X do gráfico)
+const summarizeRejectionReason = (fullText: string): string => {
+  const cleanText = extractCleanMessage(fullText);
+  const lowerText = cleanText.toLowerCase();
   
   // Mapeia padrões comuns para resumos curtos
   if (lowerText.includes("valor solicitado") && lowerText.includes("maior")) {
     return "Valor acima do limite";
   }
-  if (lowerText.includes("record_not_exists") || lowerText.includes("produto não encontrado")) {
-    return "Produto não encontrado";
-  }
-  if (lowerText.includes("missing_permission") || lowerText.includes("permissão de acesso")) {
-    return "Sem permissão de acesso";
-  }
-  if (lowerText.includes("requisição falhou") && lowerText.includes("status 400")) {
-    return "Erro na requisição (400)";
+  if (lowerText.includes("produto não encontrado") || lowerText.includes("não possui permissão")) {
+    return "Sem permissão/Não encontrado";
   }
   if (lowerText.includes("registro inferior") || lowerText.includes("meses de carteira")) {
-    return "Tempo de registro insuficiente";
+    return "Tempo de registro insuf.";
   }
   if (lowerText.includes("margem")) {
     return "Problema com margem";
@@ -43,22 +71,12 @@ const summarizeRejectionReason = (fullText: string): string => {
     return "Cliente com restrição";
   }
   
-  // Se não encontrar padrão, trunca de forma inteligente
-  if (fullText.length > 25) {
-    // Tenta pegar até o primeiro ":" ou "." ou limite de caracteres
-    const colonIndex = fullText.indexOf(":");
-    const dotIndex = fullText.indexOf(".");
-    
-    if (colonIndex > 0 && colonIndex < 30) {
-      return fullText.substring(0, colonIndex);
-    }
-    if (dotIndex > 0 && dotIndex < 30) {
-      return fullText.substring(0, dotIndex);
-    }
-    return fullText.substring(0, 22) + "...";
+  // Se ainda for longo, trunca
+  if (cleanText.length > 25) {
+    return cleanText.substring(0, 22) + "...";
   }
   
-  return fullText;
+  return cleanText;
 };
 
 const RejectionTypesChart = () => {
@@ -66,11 +84,14 @@ const RejectionTypesChart = () => {
 
   const maxValue = Math.max(...stats.reprovacoesPorTipo.map(item => item.quantidade), 1);
   
-  const data = stats.reprovacoesPorTipo.slice(0, 8).map(item => ({
-    name: summarizeRejectionReason(item.tipoCompleto || item.tipo),
-    value: item.quantidade,
-    fullName: item.tipoCompleto || item.tipo,
-  }));
+  const data = stats.reprovacoesPorTipo.slice(0, 8).map(item => {
+    const fullText = item.tipoCompleto || item.tipo;
+    return {
+      name: summarizeRejectionReason(fullText),
+      value: item.quantidade,
+      fullName: extractCleanMessage(fullText), // Mensagem limpa sem JSON técnico
+    };
+  });
 
   if (data.length === 0) {
     return (
