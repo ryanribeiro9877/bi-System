@@ -68,6 +68,29 @@ const isSemMargem = (texto: string): boolean => {
 };
 
 /**
+ * Verifica se texto contém indicadores de bloqueio de negócio
+ * Aplicável a todos os bancos, incluindo PRESENÇA
+ */
+const isBloqueioNegocio = (texto: string): boolean => {
+  const lower = texto.toLowerCase();
+  return (
+    lower.includes("cbo bloqueado") ||
+    lower.includes("cbo inválido") ||
+    lower.includes("cbo invalido") ||
+    lower.includes("compliance") ||
+    lower.includes("ocupação bloqueada") ||
+    lower.includes("ocupacao bloqueada") ||
+    lower.includes("empresa bloqueada") ||
+    lower.includes("porte não atendido") ||
+    lower.includes("porte nao atendido") ||
+    lower.includes("inelegível") ||
+    lower.includes("inelegivel") ||
+    lower.includes("não elegível") ||
+    lower.includes("nao elegivel")
+  );
+};
+
+/**
  * Verifica se é erro de conexão/timeout (PENDENTE, não REPROVADO)
  */
 const isErroConexao = (erro: string): boolean => {
@@ -151,7 +174,54 @@ const hasValoresFinanceiros = (lead: LeadData): boolean => {
 // =====================================================
 
 /**
+ * Verifica se há bloqueio de negócio nas mensagens de retorno
+ * Se houver bloqueio, NÃO é considerado success mesmo com status success
+ */
+const hasBloqueioNegocio = (lead: LeadData): boolean => {
+  const margem = lead.retorno_margem as any;
+  const simulacao = lead.retorno_simulacao as any;
+  const proposta = lead.retorno_proposta as any;
+  
+  // Verificar mensagens de erro
+  const mensagens = [
+    margem?.error,
+    margem?.message,
+    margem?.details?.reason,
+    simulacao?.error,
+    simulacao?.message,
+    proposta?.error,
+    proposta?.message
+  ].filter(Boolean).map(String);
+  
+  for (const msg of mensagens) {
+    if (isBloqueioNegocio(msg) || isSemMargem(msg)) {
+      return true;
+    }
+  }
+  
+  // UY3: Verificar reasonForIneligibility
+  if (margem?.details?.dataprevValidationResponses) {
+    const responses = margem.details.dataprevValidationResponses;
+    if (Array.isArray(responses)) {
+      for (const resp of responses) {
+        if (Array.isArray(resp?.reasonForIneligibility)) {
+          for (const reason of resp.reasonForIneligibility) {
+            const msg = String(reason?.messageError || reason?.errorField || "");
+            if (isBloqueioNegocio(msg)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  return false;
+};
+
+/**
  * Verifica se a API retornou status "success" ou equivalente
+ * REGRA: Status success + sem bloqueio de negócio
  */
 const hasStatusSuccess = (lead: LeadData): boolean => {
   const proposta = lead.retorno_proposta as any;
@@ -188,7 +258,7 @@ const hasStatusSuccess = (lead: LeadData): boolean => {
     }
   }
   
-  // UY3/PRESENÇA: Se tem dados de margem SEM erro, considera sucesso na consulta
+  // PRESENÇA/UY3: Se tem dados de margem SEM erro, considera sucesso na consulta
   if (margem && !margem.error) {
     // Se tem dados do funcionário, a consulta foi bem sucedida
     if (margem.valorMargemDisponivel !== undefined || 
@@ -198,10 +268,10 @@ const hasStatusSuccess = (lead: LeadData): boolean => {
   }
   
   // UY3: Se tem dataprevValidationResponses com dados, é sucesso (mesmo com erro wrapper)
+  // MAS apenas se não houver bloqueio de negócio
   if (margem?.details?.dataprevValidationResponses) {
     const responses = margem.details.dataprevValidationResponses;
     if (Array.isArray(responses) && responses.length > 0) {
-      // Se tem pelo menos um registro com dados, a consulta funcionou
       return true;
     }
   }
@@ -311,23 +381,30 @@ export const extrairMotivoErro = (lead: LeadData): string | null => {
 /**
  * REGRA MESTRE: Normaliza o status do lead
  * 
- * APROVADO = status success + valores financeiros > 0
- * REPROVADO = sem valores financeiros (mesmo com status success)
+ * APROVADO = status success + valores financeiros > 0 + sem bloqueio de negócio
+ * REPROVADO = sem valores financeiros OU bloqueio de negócio (CBO, Compliance, etc.)
  * PENDENTE = erros de sistema (timeout, limite, conexão)
+ * 
+ * Aplicável a todos os bancos: V8, UY3, PRESENÇA
  */
 export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
   const temValoresFinanceiros = hasValoresFinanceiros(lead);
   const temStatusSuccess = hasStatusSuccess(lead);
+  const temBloqueio = hasBloqueioNegocio(lead);
   
   // =====================================================
-  // 1. APROVADO: Ambos critérios atendidos
+  // 1. APROVADO: Todos os critérios atendidos
+  //    - Status success
+  //    - Valores financeiros > 0
+  //    - SEM bloqueio de negócio (CBO, Compliance, etc.)
   // =====================================================
-  if (temStatusSuccess && temValoresFinanceiros) {
+  if (temStatusSuccess && temValoresFinanceiros && !temBloqueio) {
     return "aprovado";
   }
   
   // =====================================================
   // 2. PENDENTE: Erros de sistema (timeout, limite, etc.)
+  //    Apenas se não tem valores financeiros
   // =====================================================
   if (isPendente(lead)) {
     return "pendente";
@@ -335,8 +412,9 @@ export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
   
   // =====================================================
   // 3. REPROVADO: Tudo mais
+  //    - Status success mas com bloqueio (CBO, Compliance)
   //    - Status success mas sem valores financeiros
-  //    - Erro de negócio (CBO bloqueado, empresa inelegível)
+  //    - Erro de negócio (margem indisponível)
   //    - Sem dados para processar
   // =====================================================
   return "reprovado";
@@ -363,6 +441,6 @@ export const normalizarStatus = (status: string | null, lead?: LeadData): Status
 };
 
 /**
- * Exporta função para extrair valor de margem (útil para visualizações)
+ * Exporta funções úteis para visualizações e outros módulos
  */
-export { extrairValorMargem, hasValoresFinanceiros, hasStatusSuccess };
+export { extrairValorMargem, hasValoresFinanceiros, hasStatusSuccess, hasBloqueioNegocio };
