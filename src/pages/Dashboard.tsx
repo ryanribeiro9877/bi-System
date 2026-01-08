@@ -1,4 +1,4 @@
-// Dashboard page - updated
+// Dashboard page - force refresh v2
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import DashboardFilters from "@/components/dashboard/DashboardFilters";
 import DashboardTabs from "@/components/dashboard/DashboardTabs";
