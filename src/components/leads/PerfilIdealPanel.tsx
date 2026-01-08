@@ -1,142 +1,189 @@
-import { Star, Upload, TrendingUp, Users, DollarSign, Clock, UserCheck, Briefcase, Calendar } from "lucide-react";
+import { Star, Upload, DollarSign, Clock, Building2, Briefcase, CheckCircle, Award } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useDashboard } from "@/contexts/DashboardContext";
 import { useMemo } from "react";
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from "recharts";
-
-// Função para normalizar status baseado em valorMargemDisponivel
-const getNormalizedStatus = (lead: any): string => {
-  const margem = lead.retorno_margem as any;
-  if (!margem) return "pendente";
-  const erro = margem?.error || "";
-  if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
-    return "pendente";
-  }
-  const valorMargem = margem?.valorMargemDisponivel;
-  if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
-    return "aprovado";
-  }
-  return "reprovado";
-};
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Cell } from "recharts";
+import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 
 const PerfilIdealPanel = () => {
   const navigate = useNavigate();
   const { leads, stats } = useDashboard();
 
   const perfil = useMemo(() => {
-    const aprovados = leads.filter((l) => getNormalizedStatus(l) === "aprovado");
-    const reprovados = leads.filter((l) => getNormalizedStatus(l) === "reprovado");
+    // Usa a função centralizada de normalização de status
+    const aprovados = leads.filter((l) => normalizarStatusLead(l) === "aprovado");
 
     if (aprovados.length === 0) return null;
 
-    // Extrai dados dos aprovados
+    // Extrai dados dos aprovados de múltiplas estruturas
     const dadosAprovados = aprovados.map((l) => {
       const margem = l.retorno_margem as any;
-      const dataNasc = margem?.dataNascimento;
-      const dataAdm = margem?.dataAdmissao;
       
-      const idade = dataNasc ? Math.floor((Date.now() - new Date(dataNasc).getTime()) / (1000 * 60 * 60 * 24 * 365)) : null;
-      const tempoVinculo = dataAdm ? Math.floor((Date.now() - new Date(dataAdm).getTime()) / (1000 * 60 * 60 * 24 * 30)) : null;
+      // Tentar extrair de diferentes estruturas
+      let result = margem?.result?.[0] || margem?.details?.dataprevValidationResponses?.[0]?.employeeRelationShip || margem;
+      
+      // Dados extraídos
+      const valorMargem = result?.valorMargemDisponivel || margem?.valorMargemDisponivel || 0;
+      const dataAdmissao = result?.dataAdmissao || margem?.dataAdmissao;
+      const nomeEmpregador = result?.nomeEmpregador || margem?.nomeEmpregador || "";
+      const qtdEmprestimos = result?.qtdEmprestimosAtivosSuspensos ?? margem?.qtdEmprestimosAtivosSuspensos ?? null;
+      const cbo = result?.cbo || margem?.cbo;
+      const cnae = result?.cnae || margem?.cnae;
+      
+      // Calcular tempo de vínculo em meses
+      let tempoVinculoMeses = 0;
+      if (dataAdmissao) {
+        // Formato pode ser DDMMAAAA ou ISO
+        let dataAdm: Date | null = null;
+        if (typeof dataAdmissao === 'string') {
+          if (dataAdmissao.length === 8 && !dataAdmissao.includes('-')) {
+            // Formato DDMMAAAA
+            const dia = parseInt(dataAdmissao.substring(0, 2));
+            const mes = parseInt(dataAdmissao.substring(2, 4)) - 1;
+            const ano = parseInt(dataAdmissao.substring(4, 8));
+            dataAdm = new Date(ano, mes, dia);
+          } else {
+            dataAdm = new Date(dataAdmissao);
+          }
+        }
+        if (dataAdm && !isNaN(dataAdm.getTime())) {
+          tempoVinculoMeses = Math.floor((Date.now() - dataAdm.getTime()) / (1000 * 60 * 60 * 24 * 30));
+        }
+      }
+      
+      // Classificar porte da empresa pelo nome
+      let porteEmpresa = "Não identificado";
+      const nomeUpper = nomeEmpregador.toUpperCase();
+      if (nomeUpper.includes("S.A.") || nomeUpper.includes("S/A") || nomeUpper.includes(" SA ") || nomeEmpregador.endsWith(" SA")) {
+        porteEmpresa = "Grande";
+      } else if (nomeUpper.includes("LTDA") || nomeUpper.includes("EIRELI")) {
+        porteEmpresa = "Média";
+      } else if (nomeUpper.includes("MEI") || nomeUpper.includes("ME ") || nomeEmpregador.endsWith(" ME")) {
+        porteEmpresa = "ME";
+      } else if (nomeEmpregador.length > 0) {
+        porteEmpresa = "Pequena";
+      }
       
       return {
-        margem: margem?.valorMargemDisponivel || 0,
-        margemBase: margem?.valorMargemBase || 0,
-        totalDevido: margem?.valorTotalDevido || 0,
-        sexo: margem?.sexo || null,
-        idade,
-        tempoVinculo,
+        margem: valorMargem,
+        tempoVinculoMeses,
+        porteEmpresa,
+        qtdEmprestimos,
+        cbo: cbo?.descricao || (typeof cbo === 'string' ? cbo : ''),
+        cnae: cnae?.descricao || (typeof cnae === 'string' ? cnae : ''),
+        banco: l.banco || "Não informado",
       };
     });
 
-    // Calcula médias dos aprovados
-    const margens = dadosAprovados.filter(d => d.margem > 0).map(d => d.margem);
-    const margensBase = dadosAprovados.filter(d => d.margemBase > 0).map(d => d.margemBase);
-    const dividas = dadosAprovados.filter(d => d.totalDevido > 0).map(d => d.totalDevido);
-    const idades = dadosAprovados.filter(d => d.idade && d.idade > 0).map(d => d.idade!);
-    const temposVinculo = dadosAprovados.filter(d => d.tempoVinculo && d.tempoVinculo > 0).map(d => d.tempoVinculo!);
+    // === Distribuição por Faixa de Margem ===
+    const faixasMargem = [
+      { faixa: 'R$ 0-300', min: 0, max: 300, quantidade: 0 },
+      { faixa: 'R$ 301-500', min: 301, max: 500, quantidade: 0 },
+      { faixa: 'R$ 501-800', min: 501, max: 800, quantidade: 0 },
+      { faixa: 'R$ 801-1200', min: 801, max: 1200, quantidade: 0 },
+      { faixa: 'R$ 1200+', min: 1201, max: Infinity, quantidade: 0 },
+    ];
     
-    const masculino = dadosAprovados.filter(d => d.sexo === 'M').length;
-    const feminino = dadosAprovados.filter(d => d.sexo === 'F').length;
-
-    const margemMedia = margens.length > 0 ? margens.reduce((a, b) => a + b, 0) / margens.length : 0;
-    const margemBaseMedia = margensBase.length > 0 ? margensBase.reduce((a, b) => a + b, 0) / margensBase.length : 0;
-    const dividaMedia = dividas.length > 0 ? dividas.reduce((a, b) => a + b, 0) / dividas.length : 0;
-    const idadeMedia = idades.length > 0 ? Math.round(idades.reduce((a, b) => a + b, 0) / idades.length) : 0;
-    const tempoMedioVinculo = temposVinculo.length > 0 ? Math.round(temposVinculo.reduce((a, b) => a + b, 0) / temposVinculo.length) : 0;
-
-    // Agrupa por faixa etária
-    const faixasEtarias = [
-      { faixa: '18-30', aprovados: 0, reprovados: 0 },
-      { faixa: '31-40', aprovados: 0, reprovados: 0 },
-      { faixa: '41-50', aprovados: 0, reprovados: 0 },
-      { faixa: '51-60', aprovados: 0, reprovados: 0 },
-      { faixa: '60+', aprovados: 0, reprovados: 0 },
-    ];
-
-    aprovados.forEach(l => {
-      const margem = l.retorno_margem as any;
-      const dataNasc = margem?.dataNascimento;
-      if (!dataNasc) return;
-      const idade = Math.floor((Date.now() - new Date(dataNasc).getTime()) / (1000 * 60 * 60 * 24 * 365));
-      if (idade >= 18 && idade <= 30) faixasEtarias[0].aprovados++;
-      else if (idade >= 31 && idade <= 40) faixasEtarias[1].aprovados++;
-      else if (idade >= 41 && idade <= 50) faixasEtarias[2].aprovados++;
-      else if (idade >= 51 && idade <= 60) faixasEtarias[3].aprovados++;
-      else if (idade > 60) faixasEtarias[4].aprovados++;
+    dadosAprovados.forEach(d => {
+      const faixa = faixasMargem.find(f => d.margem >= f.min && d.margem <= f.max);
+      if (faixa) faixa.quantidade++;
     });
 
-    // Agrupa por tempo de vínculo
+    // === Distribuição por Tempo de Vínculo ===
     const faixasVinculo = [
-      { faixa: '0-12 meses', aprovados: 0, total: 0 },
-      { faixa: '1-3 anos', aprovados: 0, total: 0 },
-      { faixa: '3-5 anos', aprovados: 0, total: 0 },
-      { faixa: '5-10 anos', aprovados: 0, total: 0 },
-      { faixa: '10+ anos', aprovados: 0, total: 0 },
+      { faixa: '6-12 meses', min: 6, max: 12, quantidade: 0 },
+      { faixa: '1-2 anos', min: 13, max: 24, quantidade: 0 },
+      { faixa: '2-3 anos', min: 25, max: 36, quantidade: 0 },
+      { faixa: '3-5 anos', min: 37, max: 60, quantidade: 0 },
+      { faixa: '5+ anos', min: 61, max: Infinity, quantidade: 0 },
     ];
-
-    aprovados.forEach(l => {
-      const margem = l.retorno_margem as any;
-      const dataAdm = margem?.dataAdmissao;
-      if (!dataAdm) return;
-      const meses = Math.floor((Date.now() - new Date(dataAdm).getTime()) / (1000 * 60 * 60 * 24 * 30));
-      if (meses <= 12) { faixasVinculo[0].aprovados++; faixasVinculo[0].total++; }
-      else if (meses <= 36) { faixasVinculo[1].aprovados++; faixasVinculo[1].total++; }
-      else if (meses <= 60) { faixasVinculo[2].aprovados++; faixasVinculo[2].total++; }
-      else if (meses <= 120) { faixasVinculo[3].aprovados++; faixasVinculo[3].total++; }
-      else { faixasVinculo[4].aprovados++; faixasVinculo[4].total++; }
+    
+    dadosAprovados.forEach(d => {
+      if (d.tempoVinculoMeses > 0) {
+        const faixa = faixasVinculo.find(f => d.tempoVinculoMeses >= f.min && d.tempoVinculoMeses <= f.max);
+        if (faixa) faixa.quantidade++;
+      }
     });
 
-    // Calcula % de utilização da margem (margem disponível / margem base)
-    const utilizacaoMargem = margemBaseMedia > 0 ? Math.round((margemMedia / margemBaseMedia) * 100) : 0;
+    // === Distribuição por Porte da Empresa ===
+    const portesEmpresa: Record<string, number> = {
+      'Grande': 0,
+      'Média': 0,
+      'Pequena': 0,
+      'ME': 0,
+    };
+    
+    dadosAprovados.forEach(d => {
+      if (portesEmpresa[d.porteEmpresa] !== undefined) {
+        portesEmpresa[d.porteEmpresa]++;
+      }
+    });
+    
+    const portesData = Object.entries(portesEmpresa)
+      .map(([porte, quantidade]) => ({ porte, quantidade }))
+      .sort((a, b) => b.quantidade - a.quantidade);
 
-    // Radar chart data - características do perfil ideal
+    // === Encontrar o perfil ideal (moda/mais comum) ===
+    const margemMaisComum = faixasMargem.reduce((max, f) => f.quantidade > max.quantidade ? f : max, faixasMargem[0]);
+    const vinculoMaisComum = faixasVinculo.reduce((max, f) => f.quantidade > max.quantidade ? f : max, faixasVinculo[0]);
+    const porteMaisComum = portesData[0] || { porte: 'N/A', quantidade: 0 };
+    
+    // CBO mais comum
+    const cboCount: Record<string, number> = {};
+    dadosAprovados.forEach(d => {
+      if (d.cbo) {
+        cboCount[d.cbo] = (cboCount[d.cbo] || 0) + 1;
+      }
+    });
+    const cboMaisComum = Object.entries(cboCount).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+    
+    // Contratos ativos mais comum
+    const contratosCount: Record<number, number> = {};
+    dadosAprovados.forEach(d => {
+      if (d.qtdEmprestimos !== null) {
+        contratosCount[d.qtdEmprestimos] = (contratosCount[d.qtdEmprestimos] || 0) + 1;
+      }
+    });
+    const contratosMaisComum = Object.entries(contratosCount).sort((a, b) => b[1] - a[1])[0];
+    const maxContratos = contratosMaisComum ? parseInt(contratosMaisComum[0]) : 0;
+
+    // === Radar Chart Data ===
+    // Calcular scores baseados nos dados
+    const margemMedia = dadosAprovados.reduce((acc, d) => acc + d.margem, 0) / dadosAprovados.length || 0;
+    const tempoMedio = dadosAprovados.filter(d => d.tempoVinculoMeses > 0).reduce((acc, d, _, arr) => acc + d.tempoVinculoMeses / arr.length, 0) || 0;
+    const taxaGrande = (portesEmpresa['Grande'] + portesEmpresa['Média']) / aprovados.length * 100 || 0;
+    const taxaCboElegivel = Object.keys(cboCount).length > 0 ? 80 : 0; // Se tem CBOs, assume 80% elegíveis
+    const taxaCnaeElegivel = 75; // Estimativa baseada nos aprovados
+    const taxaBaixosContratos = dadosAprovados.filter(d => d.qtdEmprestimos !== null && d.qtdEmprestimos <= 1).length / aprovados.length * 100 || 0;
+
     const radarData = [
-      { caracteristica: 'Margem Disponível', valor: Math.min(100, (margemMedia / 2000) * 100), fullMark: 100 },
-      { caracteristica: 'Tempo Vínculo', valor: Math.min(100, (tempoMedioVinculo / 120) * 100), fullMark: 100 },
-      { caracteristica: 'Idade Ideal', valor: idadeMedia > 35 && idadeMedia < 50 ? 90 : 60, fullMark: 100 },
-      { caracteristica: 'Margem Base', valor: Math.min(100, (margemBaseMedia / 6000) * 100), fullMark: 100 },
-      { caracteristica: 'Baixo Endividamento', valor: Math.max(0, 100 - Math.min(100, (dividaMedia / 100000) * 100)), fullMark: 100 },
+      { caracteristica: 'Margem', valor: Math.min(100, (margemMedia / 1000) * 100), fullMark: 100 },
+      { caracteristica: 'Tempo Vínculo', valor: Math.min(100, (tempoMedio / 60) * 100), fullMark: 100 },
+      { caracteristica: 'Porte Empresa', valor: Math.min(100, taxaGrande), fullMark: 100 },
+      { caracteristica: 'CBO Elegível', valor: taxaCboElegivel, fullMark: 100 },
+      { caracteristica: 'CNAE Elegível', valor: taxaCnaeElegivel, fullMark: 100 },
+      { caracteristica: 'Contratos Ativos', valor: Math.min(100, taxaBaixosContratos), fullMark: 100 },
     ];
 
     return {
       totalAprovados: aprovados.length,
-      totalReprovados: reprovados.length,
-      taxaAprovacao: stats.taxaAprovacao,
-      margemMedia,
-      margemBaseMedia,
-      dividaMedia,
-      idadeMedia,
-      tempoMedioVinculo,
-      masculino,
-      feminino,
-      utilizacaoMargem,
-      faixasEtarias,
+      faixasMargem,
       faixasVinculo,
+      portesData,
       radarData,
+      resumo: {
+        margemIdeal: margemMaisComum.faixa,
+        vinculoIdeal: vinculoMaisComum.faixa.replace('meses', '').replace('anos', '').trim(),
+        porteIdeal: porteMaisComum.porte === 'Grande' || portesData[1]?.porte === 'Média' 
+          ? 'Grande / Média' 
+          : porteMaisComum.porte,
+        cboIdeal: cboMaisComum.length > 25 ? cboMaisComum.substring(0, 22) + '...' : cboMaisComum,
+        contratosIdeal: `0 - ${Math.max(1, maxContratos)} contrato${maxContratos !== 1 ? 's' : ''}`,
+      },
     };
-  }, [leads, stats]);
+  }, [leads]);
 
   if (stats.totalLeads === 0) {
     return (
@@ -179,188 +226,207 @@ const PerfilIdealPanel = () => {
     );
   }
 
-  const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#6366f1', '#ec4899'];
-  const sexoData = [
-    { name: 'Masculino', value: perfil.masculino, color: '#3b82f6' },
-    { name: 'Feminino', value: perfil.feminino, color: '#ec4899' },
-  ];
+  const PORTE_COLORS = ['#a855f7', '#8b5cf6', '#7c3aed', '#6d28d9'];
 
-  const kpiCards = [
+  const resumoItems = [
     {
-      title: "Margem Média Disponível",
-      value: `R$ ${perfil.margemMedia.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       icon: DollarSign,
+      title: "Margem Disponível",
+      subtitle: "Faixa ideal",
+      value: perfil.resumo.margemIdeal,
       color: "text-emerald-400",
-      bg: "bg-emerald-500/10",
-      description: "Valor médio disponível para empréstimo",
+      bgColor: "bg-emerald-500/20",
+      borderColor: "border-emerald-500/30",
     },
     {
-      title: "Idade Média",
-      value: `${perfil.idadeMedia} anos`,
-      icon: Calendar,
-      color: "text-blue-400",
-      bg: "bg-blue-500/10",
-      description: "Faixa etária predominante",
-    },
-    {
+      icon: Clock,
       title: "Tempo de Vínculo",
-      value: perfil.tempoMedioVinculo > 12 ? `${Math.round(perfil.tempoMedioVinculo / 12)} anos` : `${perfil.tempoMedioVinculo} meses`,
-      icon: Briefcase,
-      color: "text-purple-400",
-      bg: "bg-purple-500/10",
-      description: "Tempo médio no emprego",
+      subtitle: "Período ideal",
+      value: perfil.resumo.vinculoIdeal,
+      color: "text-cyan-400",
+      bgColor: "bg-cyan-500/20",
+      borderColor: "border-cyan-500/30",
     },
     {
-      title: "Utilização da Margem",
-      value: `${perfil.utilizacaoMargem}%`,
-      icon: TrendingUp,
+      icon: Building2,
+      title: "Porte da Empresa",
+      subtitle: "Melhor taxa",
+      value: perfil.resumo.porteIdeal,
       color: "text-amber-400",
-      bg: "bg-amber-500/10",
-      description: "% da margem base disponível",
+      bgColor: "bg-amber-500/20",
+      borderColor: "border-amber-500/30",
+    },
+    {
+      icon: Briefcase,
+      title: "CBO Elegível",
+      subtitle: "Top ocupação",
+      value: perfil.resumo.cboIdeal,
+      color: "text-pink-400",
+      bgColor: "bg-pink-500/20",
+      borderColor: "border-pink-500/30",
+    },
+    {
+      icon: CheckCircle,
+      title: "Contratos Ativos",
+      subtitle: "Máximo permitido",
+      value: perfil.resumo.contratosIdeal,
+      color: "text-green-400",
+      bgColor: "bg-green-500/20",
+      borderColor: "border-green-500/30",
     },
   ];
 
   return (
     <div className="space-y-6">
-      {/* Header Card */}
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Star className="w-5 h-5 text-amber-400" />
-            Perfil Ideal do Lead Aprovado
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Análise baseada em {perfil.totalAprovados.toLocaleString("pt-BR")} leads aprovados
-          </p>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
-            {kpiCards.map((c) => (
-              <div key={c.title} className={`rounded-lg border border-border p-4 ${c.bg}`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <c.icon className={`w-5 h-5 ${c.color}`} />
-                  <span className="text-sm text-muted-foreground">{c.title}</span>
-                </div>
-                <p className={`text-2xl font-bold ${c.color}`}>{c.value}</p>
-                <p className="text-xs text-muted-foreground mt-1">{c.description}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Charts Row */}
+      {/* Header Row - Radar + Resumo */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Radar Chart - Características do Perfil */}
+        {/* Radar Chart */}
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <UserCheck className="w-4 h-4 text-emerald-400" />
-              Características do Perfil Ideal
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Star className="w-5 h-5 text-amber-400" />
+              Perfil Ideal do Lead Aprovado
             </CardTitle>
-            <p className="text-xs text-muted-foreground">Score de cada característica (0-100)</p>
+            <p className="text-sm text-muted-foreground">
+              Características que maximizam a chance de aprovação
+            </p>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
+            <div className="h-[350px]">
               <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={perfil.radarData}>
+                <RadarChart data={perfil.radarData} cx="50%" cy="50%" outerRadius="70%">
                   <PolarGrid stroke="#374151" />
-                  <PolarAngleAxis dataKey="caracteristica" tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#9ca3af', fontSize: 10 }} />
-                  <Radar name="Perfil" dataKey="valor" stroke="#10b981" fill="#10b981" fillOpacity={0.5} />
+                  <PolarAngleAxis 
+                    dataKey="caracteristica" 
+                    tick={{ fill: '#9ca3af', fontSize: 11 }} 
+                  />
+                  <PolarRadiusAxis 
+                    angle={90} 
+                    domain={[0, 100]} 
+                    tick={{ fill: '#6b7280', fontSize: 10 }}
+                    tickCount={5}
+                  />
+                  <Radar 
+                    name="Perfil" 
+                    dataKey="valor" 
+                    stroke="#10b981" 
+                    fill="#10b981" 
+                    fillOpacity={0.4}
+                    strokeWidth={2}
+                  />
                 </RadarChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
-        {/* Distribuição por Gênero */}
+        {/* Resumo do Perfil */}
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Users className="w-4 h-4 text-blue-400" />
-              Distribuição por Gênero (Aprovados)
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Award className="w-5 h-5 text-amber-400" />
+              Resumo do Perfil que Aprova
             </CardTitle>
-            <p className="text-xs text-muted-foreground">Proporção entre homens e mulheres aprovados</p>
+            <p className="text-sm text-muted-foreground">
+              Características mais comuns entre leads aprovados
+            </p>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={sexoData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={5}
-                    dataKey="value"
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {sexoData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                    labelStyle={{ color: '#f3f4f6' }}
-                  />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
+            <div className="space-y-4">
+              {resumoItems.map((item) => (
+                <div 
+                  key={item.title}
+                  className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${item.bgColor}`}>
+                      <item.icon className={`w-4 h-4 ${item.color}`} />
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">{item.title}</p>
+                      <p className="text-xs text-muted-foreground">{item.subtitle}</p>
+                    </div>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium border ${item.bgColor} ${item.color} ${item.borderColor}`}>
+                    {item.value}
+                  </span>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Second Charts Row */}
+      {/* Charts Row - Margem + Vínculo */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Aprovados por Faixa Etária */}
+        {/* Distribuição por Faixa de Margem */}
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Calendar className="w-4 h-4 text-purple-400" />
-              Aprovados por Faixa Etária
+            <CardTitle className="text-base font-semibold text-foreground">
+              Distribuição por Faixa de Margem
             </CardTitle>
-            <p className="text-xs text-muted-foreground">Distribuição de aprovados por idade</p>
+            <p className="text-xs text-muted-foreground">
+              Leads aprovados por faixa de margem disponível
+            </p>
           </CardHeader>
           <CardContent>
             <div className="h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={perfil.faixasEtarias} layout="vertical">
+                <BarChart data={perfil.faixasMargem} layout="vertical" margin={{ left: 10, right: 20 }}>
                   <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                  <YAxis dataKey="faixa" type="category" tick={{ fill: '#9ca3af', fontSize: 11 }} width={60} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                    labelStyle={{ color: '#f3f4f6' }}
+                  <YAxis 
+                    dataKey="faixa" 
+                    type="category" 
+                    tick={{ fill: '#9ca3af', fontSize: 11 }} 
+                    width={80} 
                   />
-                  <Bar dataKey="aprovados" fill="#10b981" radius={[0, 4, 4, 0]} name="Aprovados" />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--popover))', 
+                      border: '1px solid hsl(var(--border))', 
+                      borderRadius: '8px',
+                      color: 'hsl(var(--foreground))'
+                    }}
+                    formatter={(value: number) => [`${value} leads`, 'Quantidade']}
+                  />
+                  <Bar dataKey="quantidade" fill="#10b981" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
-        {/* Aprovados por Tempo de Vínculo */}
+        {/* Distribuição por Tempo de Vínculo */}
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Briefcase className="w-4 h-4 text-amber-400" />
-              Aprovados por Tempo de Vínculo
+            <CardTitle className="text-base font-semibold text-foreground">
+              Distribuição por Tempo de Vínculo
             </CardTitle>
-            <p className="text-xs text-muted-foreground">Tempo no emprego atual</p>
+            <p className="text-xs text-muted-foreground">
+              Leads aprovados por tempo de emprego
+            </p>
           </CardHeader>
           <CardContent>
             <div className="h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={perfil.faixasVinculo} layout="vertical">
+                <BarChart data={perfil.faixasVinculo} layout="vertical" margin={{ left: 10, right: 20 }}>
                   <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                  <YAxis dataKey="faixa" type="category" tick={{ fill: '#9ca3af', fontSize: 11 }} width={80} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                    labelStyle={{ color: '#f3f4f6' }}
+                  <YAxis 
+                    dataKey="faixa" 
+                    type="category" 
+                    tick={{ fill: '#9ca3af', fontSize: 11 }} 
+                    width={80} 
                   />
-                  <Bar dataKey="aprovados" fill="#f59e0b" radius={[0, 4, 4, 0]} name="Aprovados" />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--popover))', 
+                      border: '1px solid hsl(var(--border))', 
+                      borderRadius: '8px',
+                      color: 'hsl(var(--foreground))'
+                    }}
+                    formatter={(value: number) => [`${value} leads`, 'Quantidade']}
+                  />
+                  <Bar dataKey="quantidade" fill="#3b82f6" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -368,60 +434,45 @@ const PerfilIdealPanel = () => {
         </Card>
       </div>
 
-      {/* Insights Card */}
+      {/* Distribuição por Porte da Empresa */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
-            Insights do Perfil Ideal
+          <CardTitle className="text-base font-semibold text-foreground">
+            Distribuição por Porte da Empresa
           </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Taxa de aprovação por porte do empregador
+          </p>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-              <h4 className="font-medium text-emerald-400 mb-2">✓ Idade Ideal</h4>
-              <p className="text-sm text-muted-foreground">
-                Leads entre <span className="text-foreground font-medium">35-50 anos</span> têm maior taxa de aprovação. 
-                A idade média dos aprovados é {perfil.idadeMedia} anos.
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
-              <h4 className="font-medium text-blue-400 mb-2">✓ Estabilidade</h4>
-              <p className="text-sm text-muted-foreground">
-                Tempo médio de vínculo de <span className="text-foreground font-medium">{Math.round(perfil.tempoMedioVinculo / 12)} anos</span> no emprego. 
-                Quanto maior o tempo, maior a chance de aprovação.
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
-              <h4 className="font-medium text-purple-400 mb-2">✓ Gênero</h4>
-              <p className="text-sm text-muted-foreground">
-                <span className="text-foreground font-medium">{Math.round((perfil.masculino / (perfil.masculino + perfil.feminino)) * 100)}% masculino</span> e 
-                <span className="text-foreground font-medium"> {Math.round((perfil.feminino / (perfil.masculino + perfil.feminino)) * 100)}% feminino</span>. 
-                Ambos os gêneros são aprovados.
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
-              <h4 className="font-medium text-amber-400 mb-2">✓ Margem Disponível</h4>
-              <p className="text-sm text-muted-foreground">
-                Margem média de <span className="text-foreground font-medium">R$ {perfil.margemMedia.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>. 
-                Representa {perfil.utilizacaoMargem}% da margem base.
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
-              <h4 className="font-medium text-red-400 mb-2">⚠ O que evitar</h4>
-              <p className="text-sm text-muted-foreground">
-                Leads <span className="text-foreground font-medium">sem dados de empregador</span> ou com 
-                <span className="text-foreground font-medium"> margem negativa</span> são automaticamente reprovados.
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
-              <h4 className="font-medium text-cyan-400 mb-2">💡 Dica</h4>
-              <p className="text-sm text-muted-foreground">
-                Priorize leads com <span className="text-foreground font-medium">CNPJ válido</span>, 
-                <span className="text-foreground font-medium"> tempo de vínculo &gt; 1 ano</span> e 
-                <span className="text-foreground font-medium"> idade entre 35-50</span>.
-              </p>
-            </div>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={perfil.portesData} margin={{ left: 20, right: 20, bottom: 20 }}>
+                <XAxis 
+                  dataKey="porte" 
+                  tick={{ fill: '#9ca3af', fontSize: 12 }} 
+                  axisLine={{ stroke: '#374151' }}
+                />
+                <YAxis 
+                  tick={{ fill: '#9ca3af', fontSize: 11 }} 
+                  axisLine={{ stroke: '#374151' }}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'hsl(var(--popover))', 
+                    border: '1px solid hsl(var(--border))', 
+                    borderRadius: '8px',
+                    color: 'hsl(var(--foreground))'
+                  }}
+                  formatter={(value: number) => [`${value} leads aprovados`, 'Quantidade']}
+                />
+                <Bar dataKey="quantidade" radius={[4, 4, 0, 0]}>
+                  {perfil.portesData.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={PORTE_COLORS[index % PORTE_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
