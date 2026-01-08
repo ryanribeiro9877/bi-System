@@ -17,25 +17,56 @@ const PerfilIdealPanel = () => {
 
     if (aprovados.length === 0) return null;
 
-    // Extrai dados dos aprovados de múltiplas estruturas
-    const dadosAprovados = aprovados.map((l) => {
+    // Função auxiliar para extrair dados de margem de múltiplas estruturas
+    const extrairDadosMargem = (l: any) => {
       const margem = l.retorno_margem as any;
+      const simulacao = l.retorno_simulacao as any;
+      const getProposta = l.retorno_get_proposta as any;
       
-      // Tentar extrair de diferentes estruturas
-      let result = margem?.result?.[0] || margem?.details?.dataprevValidationResponses?.[0]?.employeeRelationShip || margem;
+      // UY3: retorno_margem é um array com result dentro
+      if (Array.isArray(margem) && margem[0]?.result?.[0]) {
+        return margem[0].result[0];
+      }
+      
+      // UY3: retorno_margem.result array
+      if (margem?.result?.[0]) {
+        return margem.result[0];
+      }
+      
+      // UY3: dataprevValidationResponses
+      if (margem?.details?.dataprevValidationResponses?.[0]?.employeeRelationShip) {
+        return margem.details.dataprevValidationResponses[0].employeeRelationShip;
+      }
+      
+      // V8 ou fallback: usar dados de simulação e proposta
+      return {
+        valorMargemDisponivel: simulacao?.liquidValue || simulacao?.initialValue || 0,
+        dataAdmissao: null,
+        nomeEmpregador: getProposta?.name || "",
+        qtdEmprestimosAtivosSuspensos: null,
+        cbo: null,
+        cnae: null,
+        // Dados específicos V8
+        monthlyInterest: simulacao?.monthlyInterest,
+        numberOfPayments: simulacao?.numberOfPayments,
+      };
+    };
+
+    // Extrai dados dos aprovados
+    const dadosAprovados = aprovados.map((l) => {
+      const result = extrairDadosMargem(l);
       
       // Dados extraídos
-      const valorMargem = result?.valorMargemDisponivel || margem?.valorMargemDisponivel || 0;
-      const dataAdmissao = result?.dataAdmissao || margem?.dataAdmissao;
-      const nomeEmpregador = result?.nomeEmpregador || margem?.nomeEmpregador || "";
-      const qtdEmprestimos = result?.qtdEmprestimosAtivosSuspensos ?? margem?.qtdEmprestimosAtivosSuspensos ?? null;
-      const cbo = result?.cbo || margem?.cbo;
-      const cnae = result?.cnae || margem?.cnae;
+      const valorMargem = result?.valorMargemDisponivel || 0;
+      const dataAdmissao = result?.dataAdmissao;
+      const nomeEmpregador = result?.nomeEmpregador || "";
+      const qtdEmprestimos = result?.qtdEmprestimosAtivosSuspensos ?? null;
+      const cbo = result?.cbo;
+      const cnae = result?.cnae;
       
       // Calcular tempo de vínculo em meses
       let tempoVinculoMeses = 0;
       if (dataAdmissao) {
-        // Formato pode ser DDMMAAAA ou ISO
         let dataAdm: Date | null = null;
         if (typeof dataAdmissao === 'string') {
           if (dataAdmissao.length === 8 && !dataAdmissao.includes('-')) {
