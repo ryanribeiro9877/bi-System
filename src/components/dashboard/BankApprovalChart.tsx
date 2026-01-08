@@ -1,10 +1,11 @@
 import { memo, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useDashboardStats } from "@/hooks/useDashboardStats";
 
 const BankApprovalChart = memo(() => {
-  const { stats } = useDashboardStats();
+  const { stats, isLoading } = useDashboardStats();
 
   const data = useMemo(() => {
     return stats.reprovacoesPorBanco.slice(0, 5).map(item => ({
@@ -15,6 +16,27 @@ const BankApprovalChart = memo(() => {
     }));
   }, [stats.reprovacoesPorBanco]);
 
+  // Mostra skeleton enquanto carrega
+  if (isLoading) {
+    return (
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold text-foreground">
+            Taxa de Aprovação/Reprovação por Banco
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="h-[300px] space-y-4">
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-[90%]" />
+          <Skeleton className="h-8 w-[85%]" />
+          <Skeleton className="h-8 w-[75%]" />
+          <Skeleton className="h-8 w-[60%]" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Só mostra "sem dados" após carregamento completo
   if (data.length === 0) {
     return (
       <Card className="glass-card">
