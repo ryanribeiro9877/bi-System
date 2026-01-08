@@ -13,6 +13,7 @@ import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import { parseJsonSafe } from "@/types/lead";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
+import { validateLeads } from "@/lib/leadValidation";
 
 interface ImportRecord {
   id: string;
@@ -651,6 +652,28 @@ const Importacoes = () => {
         parsed = await parseExcel(selectedFile);
       }
 
+      // Validate leads before import
+      const validationResult = validateLeads(parsed);
+      
+      // Log validation errors for debugging (without sensitive data)
+      if (validationResult.invalid.length > 0) {
+        console.warn(`[Importacoes] ${validationResult.invalid.length} registros inválidos encontrados durante validação`);
+      }
+
+      // Only proceed with valid leads
+      const validLeads = validationResult.valid;
+      const invalidCount = validationResult.invalid.length;
+
+      if (validLeads.length === 0) {
+        toast({
+          title: "Nenhum registro válido",
+          description: `Todos os ${invalidCount} registros falharam na validação. Verifique os CPFs e outros campos obrigatórios.`,
+          variant: "destructive",
+        });
+        setIsProcessing(false);
+        return;
+      }
+
       // Create import record
       const { data: importRecord, error: importError } = await supabase
         .from("imports")
@@ -669,10 +692,10 @@ const Importacoes = () => {
       // Insert leads in batches
       const batchSize = 100;
       let successCount = 0;
-      let failCount = 0;
+      let failCount = invalidCount; // Start with validation failures
 
-      for (let i = 0; i < parsed.length; i += batchSize) {
-        const batch = parsed.slice(i, i + batchSize).map(lead => ({
+      for (let i = 0; i < validLeads.length; i += batchSize) {
+        const batch = validLeads.slice(i, i + batchSize).map(lead => ({
           cpf: lead.cpf,
           nome: lead.nome,
           banco: lead.banco,
@@ -716,9 +739,10 @@ const Importacoes = () => {
         })
         .eq("id", importRecord.id);
 
+      const validationMessage = invalidCount > 0 ? ` (${invalidCount} inválidos por CPF ou dados incorretos)` : "";
       toast({
         title: "Importação concluída",
-        description: `${successCount} registros importados com sucesso${failCount > 0 ? `, ${failCount} falharam` : ""}.`,
+        description: `${successCount} registros importados com sucesso${failCount > 0 ? `, ${failCount} falharam${validationMessage}` : ""}.`,
       });
 
       // Emitir evento para sincronização global
