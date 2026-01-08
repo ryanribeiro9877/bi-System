@@ -50,27 +50,35 @@ interface ParsedLead {
 
 // Função para extrair CBO bloqueado buscando em múltiplas fontes de dados
 // Formato esperado: "CBO bloqueado: 123456 - Nome do CBO" ou variações
+// Suporta todos os bancos: V8, UY3, PRESENÇA
 const extrairCBOBloqueadoFromText = (texto: string | undefined): { code: string | undefined; name: string | undefined } => {
   if (!texto) return { code: undefined, name: undefined };
   
-  // Regex para capturar "CBO bloqueado: CODIGO - NOME" ou "CBO bloqueado: CODIGO"
-  const regexComNome = /cbo\s*bloqueado[:\s]+(\d+)\s*[-–—]\s*([^,.()\n]+)/i;
-  const regexSemNome = /cbo\s*bloqueado[:\s]+(\d+)/i;
+  // Padrões de regex para diferentes formatos de CBO bloqueado
+  const patterns = [
+    // "CBO bloqueado: 123456 - Nome do CBO"
+    /cbo\s*bloqueado[:\s]+(\d+)\s*[-–—]\s*([^,.()\n]+)/i,
+    // "CBO: 123456 - Nome do CBO" (formato PRESENÇA)
+    /cbo[:\s]+(\d{6})\s*[-–—]\s*([^,.()\n]+)/i,
+    // "CBO bloqueado: 123456"
+    /cbo\s*bloqueado[:\s]+(\d+)/i,
+    // "código CBO 123456"
+    /c[oó]digo\s*cbo[:\s]*(\d+)/i,
+    // "cbo (123456)"
+    /cbo\s*\((\d{6})\)/i,
+    // "ocupação bloqueada: 123456 - Nome"
+    /ocupa[çc][aã]o\s*bloqueada[:\s]+(\d+)\s*[-–—]\s*([^,.()\n]+)/i,
+  ];
   
-  let match = texto.match(regexComNome);
-  if (match) {
-    return {
-      code: match[1].trim(),
-      name: match[2].trim()
-    };
-  }
-  
-  match = texto.match(regexSemNome);
-  if (match) {
-    return {
-      code: match[1].trim(),
-      name: undefined
-    };
+  // Tenta cada padrão
+  for (const pattern of patterns) {
+    const match = texto.match(pattern);
+    if (match) {
+      return {
+        code: match[1].trim(),
+        name: match[2]?.trim() || undefined
+      };
+    }
   }
   
   return { code: undefined, name: undefined };
