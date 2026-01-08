@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { importEvents } from "@/events/importEvents";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 import { parseJsonSafe, RetornoMargem, RetornoSimulacao } from "@/types/lead";
+import { useAuth } from "@/hooks/useAuth";
 
 export interface DashboardStatsOptimized {
   totalLeads: number;
@@ -19,8 +20,10 @@ export interface DashboardStatsOptimized {
 /**
  * Hook otimizado que busca estatísticas do banco
  * Usa a mesma lógica de normalização de status do frontend para consistência
+ * Aguarda autenticação antes de buscar dados
  */
 export const useDashboardStats = () => {
+  const { user, isLoading: authLoading } = useAuth();
   const [stats, setStats] = useState<DashboardStatsOptimized>({
     totalLeads: 0,
     leadsAprovados: 0,
@@ -34,8 +37,13 @@ export const useDashboardStats = () => {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasFetched, setHasFetched] = useState(false);
 
   const fetchStats = useCallback(async () => {
+    if (!user) {
+      console.log('[useDashboardStats] Sem usuário autenticado, pulando fetch');
+      return;
+    }
     setIsLoading(true);
     setError(null);
 
@@ -155,26 +163,33 @@ export const useDashboardStats = () => {
         bancos: bancosUnicos,
         reprovacoesPorBanco,
       });
+      setHasFetched(true);
     } catch (err: any) {
       console.error("Error fetching stats:", err);
       setError(err.message || "Erro ao buscar estatísticas");
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user]);
 
+  // Fetch quando usuário autenticar
   useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+    if (user && !authLoading && !hasFetched) {
+      console.log('[useDashboardStats] Usuário autenticado, buscando stats...');
+      fetchStats();
+    }
+  }, [user, authLoading, hasFetched, fetchStats]);
 
   // Atualiza quando houver nova importação
   useEffect(() => {
     const unsubscribe = importEvents.subscribe(() => {
       console.log("[useDashboardStats] Recebido evento de importação, atualizando...");
-      fetchStats();
+      if (user) {
+        fetchStats();
+      }
     });
     return unsubscribe;
-  }, [fetchStats]);
+  }, [fetchStats, user]);
 
-  return { stats, isLoading, error, refetch: fetchStats };
+  return { stats, isLoading: authLoading || isLoading, error, refetch: fetchStats };
 };
