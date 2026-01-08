@@ -10,6 +10,7 @@ import {
   RetornoGetProposta,
   parseJsonSafe 
 } from "@/types/lead";
+import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 
 export interface Lead {
   id: string;
@@ -139,7 +140,8 @@ const extrairBanco = (lead: Lead): string => {
   return "Não Informado";
 };
 
-// Helper para normalizar status - apenas 3 opções: aprovado, reprovado, cpf_nao_encontrado
+// Helper para normalizar status - usa utilitário centralizado
+// Mantém assinatura antiga para compatibilidade
 const normalizarStatus = (status: string | null, lead?: Lead): string => {
   const s = (status || "").toLowerCase().trim();
   
@@ -148,51 +150,9 @@ const normalizarStatus = (status: string | null, lead?: Lead): string => {
   if (s === "reprovado" || s === "rejected" || s === "recusado") return "reprovado";
   if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "cpf_nao_encontrado";
   
-  // Para outros status, verificar dados do lead
+  // Para outros status, usar lógica centralizada por banco
   if (lead) {
-    const margem = lead.retorno_margem as any;
-    const simulacao = lead.retorno_simulacao as any;
-    
-    // Verificar status explícito no retorno_simulacao.details (novo formato)
-    const detailsStatus = typeof simulacao?.details?.status === 'string' 
-      ? simulacao.details.status.toUpperCase() 
-      : String(simulacao?.details?.status || "").toUpperCase();
-    
-    if (detailsStatus === "APPROVED" || detailsStatus === "SUCCESS") return "aprovado";
-    if (detailsStatus === "REJECTED" || detailsStatus === "FAILED") {
-      // Verificar se é CPF não encontrado ou reprovado por margem
-      const error = String(simulacao?.details?.error || simulacao?.details?.description || "");
-      if (error.includes("não encontrado") || error.includes("inelegível") || error.includes("não elegível")) {
-        return "cpf_nao_encontrado";
-      }
-      return "reprovado";
-    }
-    
-    // Se tem margem disponível > 0 = aprovado (retorno_margem)
-    const valorMargem = margem?.valorMargemDisponivel;
-    if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
-      return "aprovado";
-    }
-    
-    // Se tem availableMarginValue > 0 = aprovado (retorno_simulacao.details)
-    const availableMargin = simulacao?.details?.availableMarginValue;
-    if (availableMargin !== undefined && availableMargin !== null && parseFloat(availableMargin) > 0) {
-      return "aprovado";
-    }
-    
-    // Se não tem margem e não tem details = CPF não encontrado
-    if (!margem && !simulacao?.details) {
-      return "cpf_nao_encontrado";
-    }
-    
-    // Se tem erro de timeout ou rate limit = CPF não encontrado (não conseguiu verificar)
-    const erro = margem?.error || simulacao?.error || "";
-    if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
-      return "cpf_nao_encontrado";
-    }
-    
-    // Se tem retorno mas margem <= 0 ou erro de margem indisponível = reprovado
-    return "reprovado";
+    return normalizarStatusLead(lead);
   }
   
   return "cpf_nao_encontrado";
