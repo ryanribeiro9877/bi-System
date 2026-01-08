@@ -61,7 +61,7 @@ export interface DashboardStats {
   tiposReprovacaoUnicos: number;
   reprovacoesPorBanco: { banco: string; aprovados: number; reprovados: number; total: number; taxaReprovacao: number }[];
   reprovacoesPorCBO: { cbo: string; quantidade: number }[];
-  reprovacoesPorTipo: { tipo: string; quantidade: number }[];
+  reprovacoesPorTipo: { tipo: string; tipoCompleto: string; quantidade: number }[];
   leadsPorStatus: { status: string; quantidade: number }[];
   // Novos campos extraídos
   margemMedia: number;
@@ -413,7 +413,7 @@ export const useLeadsData = (filters?: FilterState) => {
     });
 
     const tiposReprovacao = Object.entries(motivoReprovacaoCount)
-      .map(([tipo, quantidade]) => ({ tipo, quantidade }))
+      .map(([tipo, quantidade]) => ({ tipo, tipoCompleto: motivoOriginais[tipo] || tipo, quantidade }))
       .sort((a, b) => b.quantidade - a.quantidade);
 
     const principalMotivo = tiposReprovacao[0]?.tipo || "-";

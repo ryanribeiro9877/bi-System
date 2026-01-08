@@ -16,9 +16,9 @@ const RejectionTypesChart = () => {
   const maxValue = Math.max(...stats.reprovacoesPorTipo.map(item => item.quantidade), 1);
   
   const data = stats.reprovacoesPorTipo.slice(0, 8).map(item => ({
-    name: item.tipo.length > 20 ? item.tipo.substring(0, 20) + "..." : item.tipo,
+    name: item.tipo,
     value: item.quantidade,
-    fullName: item.tipo,
+    fullName: item.tipoCompleto || item.tipo,
   }));
 
   if (data.length === 0) {
@@ -55,10 +55,15 @@ const RejectionTypesChart = () => {
                 border: "1px solid hsl(var(--border))",
                 borderRadius: "8px",
                 color: "hsl(var(--foreground))",
+                maxWidth: "350px",
               }}
-              labelStyle={{ color: "hsl(var(--foreground))" }}
+              labelStyle={{ color: "hsl(var(--foreground))", fontWeight: "bold", marginBottom: "4px" }}
               itemStyle={{ color: "white" }}
-              formatter={(value: number, name: string, props: any) => [value, props.payload.fullName || "Quantidade"]}
+              labelFormatter={(label: string, payload: any[]) => {
+                const item = payload?.[0]?.payload;
+                return item?.fullName || label;
+              }}
+              formatter={(value: number) => [value, "Quantidade"]}
             />
             <Bar dataKey="value" radius={[4, 4, 0, 0]}>
               {data.map((entry, index) => (
