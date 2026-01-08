@@ -63,7 +63,7 @@ export interface DashboardStats {
   bancoMaiorReprovacaoPercentual: number;
   cbosUnicos: number;
   tiposReprovacaoUnicos: number;
-  reprovacoesPorBanco: { banco: string; aprovados: number; reprovados: number; total: number; taxaReprovacao: number }[];
+  reprovacoesPorBanco: { banco: string; aprovados: number; reprovados: number; pendentes: number; total: number; taxaReprovacao: number }[];
   reprovacoesPorCBO: { cbo: string; quantidade: number }[];
   reprovacoesPorTipo: { tipo: string; tipoCompleto: string; quantidade: number }[];
   leadsPorStatus: { status: string; quantidade: number }[];
@@ -438,17 +438,19 @@ export const useLeadsData = (filters?: FilterState) => {
       : 0;
 
     // Count by banco - extrair de várias fontes
-    const bancoStats: Record<string, { aprovados: number; reprovados: number; total: number }> = {};
+    const bancoStats: Record<string, { aprovados: number; reprovados: number; pendentes: number; total: number }> = {};
     leadsComStatusNormalizado.forEach(l => {
       const banco = extrairBanco(l) || "Não informado";
       if (!bancoStats[banco]) {
-        bancoStats[banco] = { aprovados: 0, reprovados: 0, total: 0 };
+        bancoStats[banco] = { aprovados: 0, reprovados: 0, pendentes: 0, total: 0 };
       }
       bancoStats[banco].total++;
       if (l.statusNormalizado === "aprovado") {
         bancoStats[banco].aprovados++;
       } else if (l.statusNormalizado === "reprovado") {
         bancoStats[banco].reprovados++;
+      } else if (l.statusNormalizado === "pendente") {
+        bancoStats[banco].pendentes++;
       }
     });
 
