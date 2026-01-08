@@ -109,7 +109,7 @@ const extrairNome = (lead: Lead): string => {
   return fontes.find(v => v && typeof v === 'string' && v.trim().length > 0) || "";
 };
 
-// Helper para extrair CBO - busca em TODAS as colunas
+// Helper para extrair CBO - busca em TODAS as colunas incluindo estruturas aninhadas
 const extrairCBO = (lead: Lead): string => {
   if (lead.cbo) return lead.cbo;
   
@@ -119,6 +119,21 @@ const extrairCBO = (lead: Lead): string => {
   const proposta = lead.retorno_proposta as any;
   const autorizacao = lead.retorno_autorizacao as any;
 
+  // Tentar extrair de dataprevValidationResponses (estrutura UY3)
+  const dataprevResponses = margem?.details?.dataprevValidationResponses;
+  if (Array.isArray(dataprevResponses) && dataprevResponses.length > 0) {
+    const employeeRelationShip = dataprevResponses[0]?.employeeRelationShip;
+    if (employeeRelationShip?.cbo) {
+      const cboData = employeeRelationShip.cbo;
+      // Pode ser objeto com codigo/descricao ou string
+      if (typeof cboData === 'object' && cboData.descricao) {
+        return `${cboData.codigo || ''} - ${cboData.descricao}`.trim();
+      }
+      if (typeof cboData === 'string') return cboData;
+      if (cboData.codigo) return String(cboData.codigo);
+    }
+  }
+
   const fontes = [
     // retorno_margem
     margem?.registroEmpregaticio?.cbo,
@@ -126,6 +141,7 @@ const extrairCBO = (lead: Lead): string => {
     // retorno_simulacao
     simulacao?.details?.cbo,
     simulacao?.cbo,
+    simulacao?.details?.occupation,
     // retorno_get_proposta
     getProposta?.cbo,
     getProposta?.occupation,
