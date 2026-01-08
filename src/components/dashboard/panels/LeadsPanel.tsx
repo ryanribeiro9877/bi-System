@@ -173,7 +173,6 @@ const LeadsPanel = () => {
             <option value="aprovado">Aprovados</option>
             <option value="reprovado">Reprovados</option>
             <option value="pendente">Pendentes</option>
-            <option value="cpf_nao_encontrado">CPF Não Encontrado</option>
           </select>
           <Button variant="outline" className="gap-2" disabled>
             <Download className="w-4 h-4" />
