@@ -111,6 +111,7 @@ const isErroConexao = (erro: string): boolean => {
 
 /**
  * Extrai valor de margem disponível de todas as fontes possíveis
+ * Adaptado para V8, UY3 e PRESENÇA
  */
 const extrairValorMargem = (lead: LeadData): number => {
   const margem = lead.retorno_margem as any;
@@ -118,12 +119,30 @@ const extrairValorMargem = (lead: LeadData): number => {
   
   let maiorMargem = 0;
   
-  // 1. retorno_margem.valorMargemDisponivel (direto)
+  // 1. retorno_margem como array (UY3)
+  if (Array.isArray(margem) && margem.length > 0) {
+    for (const item of margem) {
+      // UY3: result[].valorMargemDisponivel
+      if (item?.result && Array.isArray(item.result)) {
+        for (const res of item.result) {
+          if (res?.valorMargemDisponivel) {
+            maiorMargem = Math.max(maiorMargem, parseValorNumerico(res.valorMargemDisponivel));
+          }
+        }
+      }
+      // Direto no item
+      if (item?.valorMargemDisponivel) {
+        maiorMargem = Math.max(maiorMargem, parseValorNumerico(item.valorMargemDisponivel));
+      }
+    }
+  }
+  
+  // 2. retorno_margem.valorMargemDisponivel (direto)
   if (margem?.valorMargemDisponivel) {
     maiorMargem = Math.max(maiorMargem, parseValorNumerico(margem.valorMargemDisponivel));
   }
   
-  // 2. retorno_margem.details.dataprevValidationResponses (UY3 aninhado)
+  // 3. retorno_margem.details.dataprevValidationResponses (UY3 aninhado)
   if (margem?.details?.dataprevValidationResponses) {
     const responses = margem.details.dataprevValidationResponses;
     if (Array.isArray(responses)) {
@@ -136,23 +155,31 @@ const extrairValorMargem = (lead: LeadData): number => {
     }
   }
   
-  // 3. retorno_simulacao.details.availableMarginValue (V8)
-  if (simulacao?.details?.availableMarginValue) {
-    maiorMargem = Math.max(maiorMargem, parseValorNumerico(simulacao.details.availableMarginValue));
-  }
-  
-  // 4. retorno_simulacao.details.liquidValue
-  if (simulacao?.details?.liquidValue) {
-    maiorMargem = Math.max(maiorMargem, parseValorNumerico(simulacao.details.liquidValue));
-  }
-  
-  // 5. retorno_simulacao.details.installmentValue
-  if (simulacao?.details?.installmentValue) {
-    maiorMargem = Math.max(maiorMargem, parseValorNumerico(simulacao.details.installmentValue));
-  }
-  
-  // 6. retorno_simulacao campos diretos
+  // 4. retorno_simulacao - CRÍTICO para V8
   if (simulacao) {
+    // V8: initialValue, liquidValue, requestedAmount
+    if (simulacao.initialValue) {
+      maiorMargem = Math.max(maiorMargem, parseValorNumerico(simulacao.initialValue));
+    }
+    if (simulacao.liquidValue) {
+      maiorMargem = Math.max(maiorMargem, parseValorNumerico(simulacao.liquidValue));
+    }
+    if (simulacao.requestedAmount) {
+      maiorMargem = Math.max(maiorMargem, parseValorNumerico(simulacao.requestedAmount));
+    }
+    
+    // V8/UY3: details nested
+    if (simulacao.details?.availableMarginValue) {
+      maiorMargem = Math.max(maiorMargem, parseValorNumerico(simulacao.details.availableMarginValue));
+    }
+    if (simulacao.details?.liquidValue) {
+      maiorMargem = Math.max(maiorMargem, parseValorNumerico(simulacao.details.liquidValue));
+    }
+    if (simulacao.details?.installmentValue) {
+      maiorMargem = Math.max(maiorMargem, parseValorNumerico(simulacao.details.installmentValue));
+    }
+    
+    // Campos diretos legados
     const valorParcela = parseValorNumerico(simulacao.valor_parcela);
     const valorFinanciado = parseValorNumerico(simulacao.valor_financiado);
     if (valorParcela > 0) maiorMargem = Math.max(maiorMargem, valorParcela);
@@ -221,7 +248,11 @@ const hasBloqueioNegocio = (lead: LeadData): boolean => {
 
 /**
  * Verifica se a API retornou status "success" ou equivalente
- * REGRA: Status success + sem bloqueio de negócio
+ * REGRA PRINCIPAL: retorno_proposta.status = "success" indica proposta aceita
+ * 
+ * Padrão para V8 e UY3:
+ * - retorno_proposta.status = "success" = proposta aceita pelo banco
+ * - retorno_get_proposta.status = "formalization" ou "pending" = em andamento (válido)
  */
 const hasStatusSuccess = (lead: LeadData): boolean => {
   const proposta = lead.retorno_proposta as any;
@@ -229,7 +260,10 @@ const hasStatusSuccess = (lead: LeadData): boolean => {
   const simulacao = lead.retorno_simulacao as any;
   const margem = lead.retorno_margem as any;
   
-  // V8: retorno_proposta.status = "success"
+  // =====================================================
+  // REGRA PRINCIPAL: retorno_proposta.status = "success"
+  // Este é o indicador MAIS CONFIÁVEL de aprovação
+  // =====================================================
   if (proposta?.status) {
     const status = String(proposta.status).toLowerCase();
     if (status === "success" || status === "aprovada" || status === "approved") {
@@ -237,15 +271,18 @@ const hasStatusSuccess = (lead: LeadData): boolean => {
     }
   }
   
-  // V8: formalizationLink presente indica sucesso
+  // V8/UY3: formalizationLink presente indica sucesso
   if (proposta?.formalizationLink) {
     return true;
   }
   
-  // V8: retorno_get_proposta.status
+  // V8/UY3: retorno_get_proposta.status indica proposta em andamento
   if (getProposta?.status) {
     const status = String(getProposta.status).toLowerCase();
-    if (status === "success" || status === "formalization" || status === "approved") {
+    // "formalization" = em formalização (V8)
+    // "pending" = aguardando formalização (UY3)
+    // Ambos indicam que a proposta foi ACEITA pelo banco
+    if (status === "success" || status === "formalization" || status === "pending" || status === "approved") {
       return true;
     }
   }
