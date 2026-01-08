@@ -1,13 +1,12 @@
-// Dashboard page - force refresh v3
+// Dashboard page - force refresh v2
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import DashboardFilters from "@/components/dashboard/DashboardFilters";
 import DashboardTabs from "@/components/dashboard/DashboardTabs";
 import { useDashboard } from "@/contexts/DashboardContext";
-import { SkeletonDashboard } from "@/components/ui/skeleton-card";
 import { Loader2 } from "lucide-react";
 
 const Dashboard = () => {
-  const { filters, setFilters, isLoading: dataLoading, stats } = useDashboard();
+  const { filters, setFilters, isLoading: dataLoading } = useDashboard();
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -23,21 +22,18 @@ const Dashboard = () => {
           </p>
         </div>
 
-        {/* Filters - sempre visíveis */}
+        {/* Filters */}
         <DashboardFilters filters={filters} onFiltersChange={setFilters} />
 
-        {/* Loading state com skeletons */}
+        {/* Loading indicator */}
         {dataLoading && (
-          <div className="space-y-6">
-            <div className="flex items-center gap-2 py-4">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
-              <span className="text-muted-foreground">Carregando dados do banco...</span>
-            </div>
-            <SkeletonDashboard />
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-primary mr-2" />
+            <span className="text-muted-foreground">Carregando dados...</span>
           </div>
         )}
 
-        {/* Tabbed Panels - só mostra quando carregou */}
+        {/* Tabbed Panels */}
         {!dataLoading && <DashboardTabs />}
       </main>
     </div>

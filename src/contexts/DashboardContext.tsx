@@ -1,7 +1,6 @@
-// DashboardContext - v3 - Persistent state with auth-aware loading
-import { createContext, useContext, ReactNode, useState, useEffect, useCallback } from "react";
+// DashboardContext - v2
+import { createContext, useContext, ReactNode, useState } from "react";
 import { useLeadsData, DashboardStats, Lead, FilterState } from "@/hooks/useLeadsData";
-import { useAuth } from "@/hooks/useAuth";
 
 interface DashboardContextType {
   leads: Lead[];
@@ -22,7 +21,6 @@ interface DashboardContextType {
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined);
 
 export const DashboardProvider = ({ children }: { children: ReactNode }) => {
-  const { user, isLoading: authLoading } = useAuth();
   const [filters, setFilters] = useState<FilterState>({
     dataInicial: undefined,
     dataFinal: undefined,
@@ -32,23 +30,7 @@ export const DashboardProvider = ({ children }: { children: ReactNode }) => {
     status: "",
     cpf: "",
   });
-  
-  // Só passa filtros para o hook quando o usuário está autenticado
-  const { leads, stats, filterOptions, isLoading: dataLoading, error, refetch } = useLeadsData(
-    user ? filters : undefined,
-    !authLoading && !!user // enabled: só busca quando auth está pronto e tem usuário
-  );
-
-  // Reidrata dados quando usuário faz login
-  useEffect(() => {
-    if (user && !authLoading) {
-      console.log('[DashboardContext] Usuário autenticado, reidratando dados...');
-      refetch();
-    }
-  }, [user, authLoading]);
-
-  // Combinação de loading states
-  const isLoading = authLoading || dataLoading;
+  const { leads, stats, filterOptions, isLoading, error, refetch } = useLeadsData(filters);
 
   return (
     <DashboardContext.Provider

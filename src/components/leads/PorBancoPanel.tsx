@@ -4,15 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useNavigate } from "react-router-dom";
 import { useDashboard } from "@/contexts/DashboardContext";
-import { useDashboardStats } from "@/hooks/useDashboardStats";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 const PorBancoPanel = () => {
   const navigate = useNavigate();
-  const { stats: contextStats } = useDashboard();
-  const { stats } = useDashboardStats();
+  const { stats } = useDashboard();
 
-  if (contextStats.totalLeads === 0) {
+  if (stats.totalLeads === 0) {
     return (
       <div className="space-y-6">
         <Card className="bg-card border-border">
@@ -41,8 +39,8 @@ const PorBancoPanel = () => {
     name: b.banco,
     aprovados: b.aprovados,
     reprovados: b.reprovados,
-    pendentes: b.pendentes,
-    taxaAprovacao: b.taxaAprovacao,
+    pendentes: b.total - b.aprovados - b.reprovados,
+    taxaAprovacao: b.total > 0 ? Math.round((b.aprovados / b.total) * 100) : 0,
   }));
 
   return (
@@ -58,11 +56,9 @@ const PorBancoPanel = () => {
           <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData}>
-                <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#9ca3af' }} />
-                <YAxis tick={{ fontSize: 12, fill: '#9ca3af' }} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis />
+                <Tooltip />
                 <Legend />
                 <Bar dataKey="aprovados" fill="#22c55e" name="Aprovados" stackId="a" />
                 <Bar dataKey="reprovados" fill="#ef4444" name="Reprovados" stackId="a" />
@@ -85,7 +81,6 @@ const PorBancoPanel = () => {
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Aprovados</TableHead>
                 <TableHead className="text-right">Reprovados</TableHead>
-                <TableHead className="text-right">Pendentes</TableHead>
                 <TableHead className="text-right">% Aprovação</TableHead>
                 <TableHead className="text-right">% Reprovação</TableHead>
               </TableRow>
@@ -97,8 +92,7 @@ const PorBancoPanel = () => {
                   <TableCell className="text-right text-muted-foreground">{b.total.toLocaleString("pt-BR")}</TableCell>
                   <TableCell className="text-right text-muted-foreground">{b.aprovados.toLocaleString("pt-BR")}</TableCell>
                   <TableCell className="text-right text-muted-foreground">{b.reprovados.toLocaleString("pt-BR")}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">{b.pendentes.toLocaleString("pt-BR")}</TableCell>
-                  <TableCell className="text-right text-emerald-400">{b.taxaAprovacao}%</TableCell>
+                  <TableCell className="text-right text-emerald-400">{b.total > 0 ? Math.round((b.aprovados / b.total) * 100) : 0}%</TableCell>
                   <TableCell className="text-right text-red-400">{b.taxaReprovacao}%</TableCell>
                 </TableRow>
               ))}

@@ -167,29 +167,24 @@ const normalizarStatus = (status: string | null, lead?: Lead): string => {
   return "reprovado";
 };
 
-export const useLeadsData = (filters?: FilterState, enabled: boolean = true) => {
+export const useLeadsData = (filters?: FilterState) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [hasFetched, setHasFetched] = useState(false);
 
   const fetchLeads = async () => {
-    if (!enabled) {
-      console.log('[useLeadsData] Fetch desabilitado (aguardando autenticação)');
-      return;
-    }
-    
     setIsLoading(true);
     setError(null);
 
     try {
-      // Buscar apenas campos necessários para melhor performance
-      const selectFields = "id,cpf,nome,banco,cbo,status,tipo_reprovacao,valor,data_envio,data_retorno,observacoes,created_at,updated_at,retorno_autorizacao,retorno_margem,retorno_simulacao,retorno_proposta,retorno_get_proposta,ultimo_log,cbo_block_code,cbo_block_name";
-      
+      const pageSize = 1000;
+      let from = 0;
+      let allRows: any[] = [];
+
       const buildBaseQuery = () => {
         let query = supabase
           .from("leads")
-          .select(selectFields)
+          .select("*")
           .order("created_at", { ascending: false });
 
         // Apply filters
@@ -205,6 +200,7 @@ export const useLeadsData = (filters?: FilterState, enabled: boolean = true) => 
         if (filters?.tipoReprovacao) {
           query = query.eq("tipo_reprovacao", filters.tipoReprovacao);
         }
+        // Filtro múltiplo de tipos de reprovação (usa ilike para match parcial)
         if (filters?.tiposReprovacaoMultiplos && filters.tiposReprovacaoMultiplos.length > 0) {
           query = query.in("tipo_reprovacao", filters.tiposReprovacaoMultiplos);
         }
@@ -218,81 +214,18 @@ export const useLeadsData = (filters?: FilterState, enabled: boolean = true) => 
         return query;
       };
 
-      // Usar paginação paralela para maior velocidade
-      const pageSize = 1000;
-      
-      // Primeiro, pegar a contagem total COM os mesmos filtros
-      const buildCountQuery = () => {
-        let query = supabase
-          .from("leads")
-          .select("*", { count: "exact", head: true });
+      // PostgREST tem limite padrão de 1000 linhas por request.
+      // Aqui buscamos em páginas para montar estatísticas corretas.
+      while (true) {
+        const { data, error: fetchError } = await buildBaseQuery().range(from, from + pageSize - 1);
 
-        if (filters?.dataInicial) {
-          query = query.gte("created_at", filters.dataInicial.toISOString());
-        }
-        if (filters?.dataFinal) {
-          query = query.lte("created_at", filters.dataFinal.toISOString());
-        }
-        if (filters?.banco) {
-          query = query.eq("banco", filters.banco);
-        }
-        if (filters?.tipoReprovacao) {
-          query = query.eq("tipo_reprovacao", filters.tipoReprovacao);
-        }
-        if (filters?.tiposReprovacaoMultiplos && filters.tiposReprovacaoMultiplos.length > 0) {
-          query = query.in("tipo_reprovacao", filters.tiposReprovacaoMultiplos);
-        }
-        if (filters?.status) {
-          query = query.eq("status", filters.status);
-        }
-        if (filters?.cpf) {
-          query = query.ilike("cpf", `%${filters.cpf}%`);
-        }
+        if (fetchError) throw fetchError;
 
-        return query;
-      };
+        const batch = data || [];
+        allRows = allRows.concat(batch);
 
-      const { count, error: countError } = await buildCountQuery();
-      
-      if (countError) {
-        console.error('[useLeadsData] Erro na contagem:', countError);
-        throw countError;
-      }
-      
-      const totalRecords = count || 0;
-      const totalPages = Math.ceil(totalRecords / pageSize);
-      
-      console.log(`[useLeadsData] Total de leads: ${totalRecords}, páginas: ${totalPages}`);
-      
-      if (totalRecords === 0) {
-        setLeads([]);
-        setHasFetched(true);
-        setIsLoading(false);
-        return;
-      }
-
-      // Buscar todas as páginas em paralelo (máximo 5 requisições simultâneas)
-      const maxConcurrent = 5;
-      let allRows: any[] = [];
-      
-      for (let batch = 0; batch < Math.ceil(totalPages / maxConcurrent); batch++) {
-        const startPage = batch * maxConcurrent;
-        const endPage = Math.min(startPage + maxConcurrent, totalPages);
-        
-        const pagePromises = [];
-        for (let page = startPage; page < endPage; page++) {
-          const from = page * pageSize;
-          pagePromises.push(
-            buildBaseQuery().range(from, from + pageSize - 1)
-          );
-        }
-        
-        const results = await Promise.all(pagePromises);
-        
-        for (const result of results) {
-          if (result.error) throw result.error;
-          if (result.data) allRows = allRows.concat(result.data);
-        }
+        if (batch.length < pageSize) break;
+        from += pageSize;
       }
 
       // Parse JSONB fields
@@ -305,43 +238,28 @@ export const useLeadsData = (filters?: FilterState, enabled: boolean = true) => 
         retorno_get_proposta: parseJsonSafe<RetornoGetProposta>(row.retorno_get_proposta),
       }));
 
-      console.log(`[useLeadsData] Carregados ${parsedLeads.length} leads`);
       setLeads(parsedLeads);
-      setHasFetched(true);
     } catch (err: any) {
-      console.error("[useLeadsData] Error fetching leads:", err);
+      console.error("Error fetching leads:", err);
       setError(err.message || "Erro ao buscar leads");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Fetch inicial quando enabled muda para true
   useEffect(() => {
-    if (enabled && !hasFetched) {
-      console.log('[useLeadsData] Iniciando fetch (enabled=true)');
-      fetchLeads();
-    }
-  }, [enabled]);
-
-  // Refetch quando filtros mudam (mas só se já fez o fetch inicial)
-  useEffect(() => {
-    if (enabled && hasFetched) {
-      fetchLeads();
-    }
+    fetchLeads();
   }, [filters?.dataInicial, filters?.dataFinal, filters?.banco, filters?.tipoReprovacao, filters?.tiposReprovacaoMultiplos, filters?.status, filters?.cpf]);
 
   // Sincronização global: refetch quando houver nova importação
   useEffect(() => {
     const unsubscribe = importEvents.subscribe(() => {
       console.log('[useLeadsData] Recebido evento de importação, atualizando dados...');
-      if (enabled) {
-        fetchLeads();
-      }
+      fetchLeads();
     });
     
     return unsubscribe;
-  }, [enabled]);
+  }, []);
 
   const stats = useMemo<DashboardStats>(() => {
     if (leads.length === 0) {

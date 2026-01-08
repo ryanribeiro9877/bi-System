@@ -289,9 +289,6 @@ const Importacoes = () => {
   const [imports, setImports] = useState<ImportRecord[]>([]);
   const [previewData, setPreviewData] = useState<ParsedLead[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  // Armazenar dados parseados para evitar re-parse no import
-  const [parsedData, setParsedData] = useState<ParsedLead[]>([]);
-  const [importProgress, setImportProgress] = useState<number>(0);
 
   // Fetch import history
   const fetchImports = useCallback(async () => {
@@ -598,7 +595,6 @@ const Importacoes = () => {
 
     setSelectedFile(file);
     setIsProcessing(true);
-    setImportProgress(0);
 
     try {
       let parsed: ParsedLead[];
@@ -620,12 +616,9 @@ const Importacoes = () => {
           variant: "destructive",
         });
         setSelectedFile(null);
-        setParsedData([]);
         return;
       }
 
-      // Armazenar dados parseados para reutilizar no import
-      setParsedData(parsed);
       setPreviewData(parsed.slice(0, 10));
       toast({
         title: "Arquivo processado",
@@ -639,22 +632,24 @@ const Importacoes = () => {
         variant: "destructive",
       });
       setSelectedFile(null);
-      setParsedData([]);
     } finally {
       setIsProcessing(false);
     }
   };
 
   const handleImport = async () => {
-    if (!selectedFile || !user || parsedData.length === 0) return;
+    if (!selectedFile || !user) return;
 
     setIsProcessing(true);
-    setImportProgress(0);
     const extension = selectedFile.name.split(".").pop()?.toLowerCase();
 
     try {
-      // Usar dados já parseados (evita re-parse)
-      const parsed = parsedData;
+      let parsed: ParsedLead[];
+      if (extension === "csv") {
+        parsed = await parseCSV(selectedFile);
+      } else {
+        parsed = await parseExcel(selectedFile);
+      }
 
       // Create import record
       const { data: importRecord, error: importError } = await supabase
@@ -671,14 +666,11 @@ const Importacoes = () => {
 
       if (importError) throw importError;
 
-      // Batch size maior para menos requisições
-      const batchSize = 500;
+      // Insert leads in batches
+      const batchSize = 100;
       let successCount = 0;
       let failCount = 0;
-      const totalBatches = Math.ceil(parsed.length / batchSize);
 
-      // Preparar todos os batches
-      const batches: any[][] = [];
       for (let i = 0; i < parsed.length; i += batchSize) {
         const batch = parsed.slice(i, i + batchSize).map(lead => ({
           cpf: lead.cpf,
@@ -702,32 +694,14 @@ const Importacoes = () => {
           import_batch_id: importRecord.id,
           imported_by: user.id,
         }));
-        batches.push(batch);
-      }
 
-      // Inserir batches em paralelo (máximo 3 simultâneos)
-      const maxConcurrent = 3;
-      let completedBatches = 0;
-
-      for (let i = 0; i < batches.length; i += maxConcurrent) {
-        const concurrentBatches = batches.slice(i, i + maxConcurrent);
+        const { error } = await supabase.from("leads").insert(batch);
         
-        const results = await Promise.all(
-          concurrentBatches.map(batch => 
-            supabase.from("leads").insert(batch)
-          )
-        );
-
-        for (let j = 0; j < results.length; j++) {
-          completedBatches++;
-          setImportProgress(Math.round((completedBatches / totalBatches) * 100));
-          
-          if (results[j].error) {
-            console.error("Erro ao inserir batch:", results[j].error);
-            failCount += concurrentBatches[j].length;
-          } else {
-            successCount += concurrentBatches[j].length;
-          }
+        if (error) {
+          console.error("Erro ao inserir batch:", error);
+          failCount += batch.length;
+        } else {
+          successCount += batch.length;
         }
       }
 
@@ -753,8 +727,6 @@ const Importacoes = () => {
 
       setSelectedFile(null);
       setPreviewData([]);
-      setParsedData([]);
-      setImportProgress(0);
       fetchImports();
     } catch (error: any) {
       toast({
@@ -854,19 +826,9 @@ const Importacoes = () => {
                 />
                 
                 {isProcessing ? (
-                  <div className="flex flex-col items-center gap-4 w-full max-w-md">
+                  <div className="flex flex-col items-center gap-4">
                     <Loader2 className="w-12 h-12 text-primary animate-spin" />
-                    <p className="text-muted-foreground">
-                      {importProgress > 0 ? `Importando... ${importProgress}%` : "Processando arquivo..."}
-                    </p>
-                    {importProgress > 0 && (
-                      <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                        <div 
-                          className="h-full bg-primary transition-all duration-300 ease-out"
-                          style={{ width: `${importProgress}%` }}
-                        />
-                      </div>
-                    )}
+                    <p className="text-muted-foreground">Processando arquivo...</p>
                   </div>
                 ) : selectedFile ? (
                   <div className="flex flex-col items-center gap-4">
