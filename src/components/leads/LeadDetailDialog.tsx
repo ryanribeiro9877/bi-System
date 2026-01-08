@@ -114,19 +114,19 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
                     {statusNormalizado === "pendente" ? "Motivo da Pendência" : 
                      statusNormalizado === "reprovado" ? "Motivo da Reprovação" : "Motivo"}
                   </p>
-                  <ScrollArea className="max-h-[200px]">
-                    <p className={`${statusNormalizado === "pendente" ? "text-amber-400" : "text-red-400"} whitespace-pre-wrap break-words text-sm`}>
+                  <div className="max-h-[180px] overflow-y-auto pr-2">
+                    <p className={`${statusNormalizado === "pendente" ? "text-amber-400" : "text-red-400"} whitespace-pre-wrap break-words`}>
                       {motivoErro}
                     </p>
-                  </ScrollArea>
+                  </div>
                 </div>
               )}
               {lead.tipo_reprovacao && !motivoErro && (
                 <div className="col-span-2 md:col-span-3">
                   <p className="text-xs text-muted-foreground mb-1">Motivo da Reprovação</p>
-                  <ScrollArea className="max-h-[200px]">
-                    <p className="text-red-400 whitespace-pre-wrap break-words text-sm">{lead.tipo_reprovacao}</p>
-                  </ScrollArea>
+                  <div className="max-h-[180px] overflow-y-auto pr-2">
+                    <p className="text-red-400 whitespace-pre-wrap break-words">{lead.tipo_reprovacao}</p>
+                  </div>
                 </div>
               )}
             </div>
