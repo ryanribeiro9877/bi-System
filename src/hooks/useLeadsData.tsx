@@ -215,13 +215,43 @@ export const useLeadsData = (filters?: FilterState) => {
       // Usar paginação paralela para maior velocidade
       const pageSize = 1000;
       
-      // Primeiro, pegar a contagem total para saber quantas páginas buscar
-      const { count } = await supabase
-        .from("leads")
-        .select("*", { count: "exact", head: true });
+      // Primeiro, pegar a contagem total COM os mesmos filtros
+      const buildCountQuery = () => {
+        let query = supabase
+          .from("leads")
+          .select("*", { count: "exact", head: true });
+
+        if (filters?.dataInicial) {
+          query = query.gte("created_at", filters.dataInicial.toISOString());
+        }
+        if (filters?.dataFinal) {
+          query = query.lte("created_at", filters.dataFinal.toISOString());
+        }
+        if (filters?.banco) {
+          query = query.eq("banco", filters.banco);
+        }
+        if (filters?.tipoReprovacao) {
+          query = query.eq("tipo_reprovacao", filters.tipoReprovacao);
+        }
+        if (filters?.tiposReprovacaoMultiplos && filters.tiposReprovacaoMultiplos.length > 0) {
+          query = query.in("tipo_reprovacao", filters.tiposReprovacaoMultiplos);
+        }
+        if (filters?.status) {
+          query = query.eq("status", filters.status);
+        }
+        if (filters?.cpf) {
+          query = query.ilike("cpf", `%${filters.cpf}%`);
+        }
+
+        return query;
+      };
+
+      const { count } = await buildCountQuery();
       
       const totalRecords = count || 0;
       const totalPages = Math.ceil(totalRecords / pageSize);
+      
+      console.log(`[useLeadsData] Total de leads: ${totalRecords}, páginas: ${totalPages}`);
       
       if (totalRecords === 0) {
         setLeads([]);
