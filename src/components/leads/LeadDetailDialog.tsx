@@ -36,11 +36,9 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
     }
 
     return (
-      <div className="max-h-[300px] overflow-y-auto">
-        <pre className="bg-muted/50 rounded-lg p-4 text-xs overflow-x-auto whitespace-pre-wrap break-words font-mono text-foreground">
-          {JSON.stringify(data, null, 2)}
-        </pre>
-      </div>
+      <pre className="bg-muted/50 rounded-lg p-4 text-xs overflow-x-auto whitespace-pre-wrap break-words font-mono text-foreground">
+        {JSON.stringify(data, null, 2)}
+      </pre>
     );
   };
 
@@ -68,7 +66,7 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-3">
             <User className="w-5 h-5 text-primary" />
@@ -76,7 +74,7 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
           </DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 h-[calc(85vh-100px)] pr-4">
+        <div className="flex-1 overflow-y-auto pr-2">
           <div className="space-y-6">
             {/* Dados básicos */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg border border-border">
@@ -114,19 +112,15 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
                     {statusNormalizado === "pendente" ? "Motivo da Pendência" : 
                      statusNormalizado === "reprovado" ? "Motivo da Reprovação" : "Motivo"}
                   </p>
-                  <div className="max-h-[180px] overflow-y-auto pr-2">
-                    <p className={`${statusNormalizado === "pendente" ? "text-amber-400" : "text-red-400"} whitespace-pre-wrap break-words`}>
-                      {motivoErro}
-                    </p>
-                  </div>
+                  <p className={`${statusNormalizado === "pendente" ? "text-amber-400" : "text-red-400"} whitespace-pre-wrap break-words`}>
+                    {motivoErro}
+                  </p>
                 </div>
               )}
               {lead.tipo_reprovacao && !motivoErro && (
                 <div className="col-span-2 md:col-span-3">
                   <p className="text-xs text-muted-foreground mb-1">Motivo da Reprovação</p>
-                  <div className="max-h-[180px] overflow-y-auto pr-2">
-                    <p className="text-red-400 whitespace-pre-wrap break-words">{lead.tipo_reprovacao}</p>
-                  </div>
+                  <p className="text-red-400 whitespace-pre-wrap break-words">{lead.tipo_reprovacao}</p>
                 </div>
               )}
             </div>
@@ -188,7 +182,7 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
               </div>
             </div>
           </div>
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );
