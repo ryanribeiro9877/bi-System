@@ -15,78 +15,78 @@ import CBOsBloqueados from "./pages/CBOsBloqueados";
 import Alertas from "./pages/Alertas";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
-
-// Wrapper que inclui o DashboardProvider para rotas protegidas
-const ProtectedWithDashboard = ({ children, requireAdmin = false }: { children: React.ReactNode; requireAdmin?: boolean }) => (
-  <ProtectedRoute requireAdmin={requireAdmin}>
-    <DashboardProvider>
-      {children}
-    </DashboardProvider>
-  </ProtectedRoute>
-);
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutos
+      retry: 2,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <AuthProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedWithDashboard>
-                  <Dashboard />
-                </ProtectedWithDashboard>
-              }
-            />
-            <Route
-              path="/dashboard/users"
-              element={
-                <ProtectedWithDashboard requireAdmin>
-                  <UserManagement />
-                </ProtectedWithDashboard>
-              }
-            />
-            <Route
-              path="/dashboard/importacoes"
-              element={
-                <ProtectedWithDashboard>
-                  <Importacoes />
-                </ProtectedWithDashboard>
-              }
-            />
-            <Route
-              path="/dashboard/leads"
-              element={
-                <ProtectedWithDashboard>
-                  <Leads />
-                </ProtectedWithDashboard>
-              }
-            />
-            <Route
-              path="/dashboard/cbos-bloqueados"
-              element={
-                <ProtectedWithDashboard>
-                  <CBOsBloqueados />
-                </ProtectedWithDashboard>
-              }
-            />
-            <Route
-              path="/dashboard/alertas"
-              element={
-                <ProtectedWithDashboard>
-                  <Alertas />
-                </ProtectedWithDashboard>
-              }
-            />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
+        <DashboardProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard/users"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <UserManagement />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard/importacoes"
+                element={
+                  <ProtectedRoute>
+                    <Importacoes />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard/leads"
+                element={
+                  <ProtectedRoute>
+                    <Leads />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard/cbos-bloqueados"
+                element={
+                  <ProtectedRoute>
+                    <CBOsBloqueados />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard/alertas"
+                element={
+                  <ProtectedRoute>
+                    <Alertas />
+                  </ProtectedRoute>
+                }
+              />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </DashboardProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>

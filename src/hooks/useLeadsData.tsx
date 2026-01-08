@@ -167,12 +167,18 @@ const normalizarStatus = (status: string | null, lead?: Lead): string => {
   return "reprovado";
 };
 
-export const useLeadsData = (filters?: FilterState) => {
+export const useLeadsData = (filters?: FilterState, enabled: boolean = true) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasFetched, setHasFetched] = useState(false);
 
   const fetchLeads = async () => {
+    if (!enabled) {
+      console.log('[useLeadsData] Fetch desabilitado (aguardando autenticação)');
+      return;
+    }
+    
     setIsLoading(true);
     setError(null);
 
@@ -246,7 +252,12 @@ export const useLeadsData = (filters?: FilterState) => {
         return query;
       };
 
-      const { count } = await buildCountQuery();
+      const { count, error: countError } = await buildCountQuery();
+      
+      if (countError) {
+        console.error('[useLeadsData] Erro na contagem:', countError);
+        throw countError;
+      }
       
       const totalRecords = count || 0;
       const totalPages = Math.ceil(totalRecords / pageSize);
@@ -255,6 +266,7 @@ export const useLeadsData = (filters?: FilterState) => {
       
       if (totalRecords === 0) {
         setLeads([]);
+        setHasFetched(true);
         setIsLoading(false);
         return;
       }
@@ -293,28 +305,43 @@ export const useLeadsData = (filters?: FilterState) => {
         retorno_get_proposta: parseJsonSafe<RetornoGetProposta>(row.retorno_get_proposta),
       }));
 
+      console.log(`[useLeadsData] Carregados ${parsedLeads.length} leads`);
       setLeads(parsedLeads);
+      setHasFetched(true);
     } catch (err: any) {
-      console.error("Error fetching leads:", err);
+      console.error("[useLeadsData] Error fetching leads:", err);
       setError(err.message || "Erro ao buscar leads");
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Fetch inicial quando enabled muda para true
   useEffect(() => {
-    fetchLeads();
+    if (enabled && !hasFetched) {
+      console.log('[useLeadsData] Iniciando fetch (enabled=true)');
+      fetchLeads();
+    }
+  }, [enabled]);
+
+  // Refetch quando filtros mudam (mas só se já fez o fetch inicial)
+  useEffect(() => {
+    if (enabled && hasFetched) {
+      fetchLeads();
+    }
   }, [filters?.dataInicial, filters?.dataFinal, filters?.banco, filters?.tipoReprovacao, filters?.tiposReprovacaoMultiplos, filters?.status, filters?.cpf]);
 
   // Sincronização global: refetch quando houver nova importação
   useEffect(() => {
     const unsubscribe = importEvents.subscribe(() => {
       console.log('[useLeadsData] Recebido evento de importação, atualizando dados...');
-      fetchLeads();
+      if (enabled) {
+        fetchLeads();
+      }
     });
     
     return unsubscribe;
-  }, []);
+  }, [enabled]);
 
   const stats = useMemo<DashboardStats>(() => {
     if (leads.length === 0) {
