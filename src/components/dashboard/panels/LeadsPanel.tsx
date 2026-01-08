@@ -44,17 +44,51 @@ const getNormalizedStatus = (lead: Lead): string => {
   return normalizarStatusLead(lead);
 };
 
-// Helper para extrair valor da margem disponível
-const getValorMargem = (lead: Lead): number => {
+// Helper para extrair valor da proposta de leads aprovados - busca em múltiplos campos
+const getValorProposta = (lead: Lead): number => {
   const margem = lead.retorno_margem as any;
   const simulacao = lead.retorno_simulacao as any;
+  const proposta = lead.retorno_proposta as any;
+  const getProposta = lead.retorno_get_proposta as any;
   
-  if (margem?.valorMargemDisponivel !== undefined && margem?.valorMargemDisponivel !== null) {
-    return parseFloat(margem.valorMargemDisponivel) || 0;
+  // Busca em ordem de prioridade - campos mais comuns primeiro
+  const possiveisValores = [
+    // retorno_simulacao (vários formatos de bancos)
+    simulacao?.liquidValue, // PRESENÇA e outros
+    simulacao?.availableBalance,
+    simulacao?.requestedAmount,
+    simulacao?.valorMargem,
+    simulacao?.details?.availableMarginValue,
+    simulacao?.details?.liquidValue,
+    simulacao?.details?.requestedAmount,
+    // retorno_margem
+    margem?.valorMargemDisponivel,
+    margem?.valorMargem,
+    margem?.valorMargemBase,
+    // retorno_proposta
+    proposta?.liquidValue,
+    proposta?.requestedAmount,
+    proposta?.valor,
+    // retorno_get_proposta
+    getProposta?.liquidValue,
+    getProposta?.requestedAmount,
+    getProposta?.valor,
+    // Campo direto do lead
+    lead.valor,
+  ];
+  
+  // Retorna o primeiro valor válido encontrado
+  for (const valor of possiveisValores) {
+    if (valor !== undefined && valor !== null) {
+      const parsed = parseFloat(String(valor));
+      // Verifica se o valor está em centavos (muito grande) e converte
+      if (!isNaN(parsed) && parsed > 0) {
+        // Se o valor for maior que 100000, provavelmente está em centavos
+        return parsed > 100000 ? parsed / 100 : parsed;
+      }
+    }
   }
-  if (simulacao?.details?.availableMarginValue !== undefined && simulacao?.details?.availableMarginValue !== null) {
-    return parseFloat(simulacao.details.availableMarginValue) || 0;
-  }
+  
   return 0;
 };
 
@@ -205,7 +239,7 @@ const LeadsPanel = () => {
                 <TableBody>
                   {paginatedLeads.map((lead) => {
                     const nome = getNome(lead);
-                    const valorMargemDisponivel = getValorMargem(lead);
+                    const valorProposta = getValorProposta(lead);
                     const banco = lead.banco || "-";
                     const statusNormalizado = getNormalizedStatus(lead);
 
@@ -216,8 +250,8 @@ const LeadsPanel = () => {
                         <TableCell className="text-muted-foreground">{banco}</TableCell>
                         <TableCell className="text-muted-foreground truncate max-w-[100px]">{lead.cbo || "-"}</TableCell>
                         <TableCell className="text-foreground">
-                          {statusNormalizado === "aprovado" && valorMargemDisponivel > 0 
-                            ? `R$ ${valorMargemDisponivel.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
+                          {statusNormalizado === "aprovado" && valorProposta > 0 
+                            ? `R$ ${valorProposta.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
                             : "-"}
                         </TableCell>
                         <TableCell>{getStatusBadge(statusNormalizado)}</TableCell>
