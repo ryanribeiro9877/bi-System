@@ -422,9 +422,18 @@ export const extrairMotivoErro = (lead: LeadData): string | null => {
  * REPROVADO = sem valores financeiros OU bloqueio de negócio (CBO, Compliance, etc.)
  * PENDENTE = erros de sistema (timeout, limite, conexão)
  * 
- * Aplicável a todos os bancos: V8, UY3, PRESENÇA
+ * Aplicável apenas a: V8, UY3 (PRESENÇA desconsiderado por falta de dados válidos)
  */
 export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
+  // =====================================================
+  // PRESENÇA: Desconsiderar - dados incompletos/inválidos
+  // O banco PRESENÇA não retorna status da proposta (success/error)
+  // =====================================================
+  const banco = (lead.banco || "").toLowerCase().trim();
+  if (banco.includes("presença") || banco.includes("presenca")) {
+    return "pendente"; // Marcar como pendente para revisão manual
+  }
+  
   const temValoresFinanceiros = hasValoresFinanceiros(lead);
   const temStatusSuccess = hasStatusSuccess(lead);
   const temBloqueio = hasBloqueioNegocio(lead);
