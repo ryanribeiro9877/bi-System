@@ -47,17 +47,16 @@ interface ParsedLead {
   cbo_block_name?: string;
 }
 
-// Função para extrair CBO bloqueado da mensagem de erro
+// Função para extrair CBO bloqueado buscando em múltiplas fontes de dados
 // Formato esperado: "CBO bloqueado: 123456 - Nome do CBO" ou variações
-const extrairCBOBloqueado = (mensagemErro: string | undefined): { code: string | undefined; name: string | undefined } => {
-  if (!mensagemErro) return { code: undefined, name: undefined };
+const extrairCBOBloqueadoFromText = (texto: string | undefined): { code: string | undefined; name: string | undefined } => {
+  if (!texto) return { code: undefined, name: undefined };
   
   // Regex para capturar "CBO bloqueado: CODIGO - NOME" ou "CBO bloqueado: CODIGO"
-  // Também captura variações como "cbo bloqueado", "CBO Bloqueado", etc.
-  const regexComNome = /cbo\s*bloqueado[:\s]+(\d+)\s*[-–—]\s*([^,.\n]+)/i;
+  const regexComNome = /cbo\s*bloqueado[:\s]+(\d+)\s*[-–—]\s*([^,.()\n]+)/i;
   const regexSemNome = /cbo\s*bloqueado[:\s]+(\d+)/i;
   
-  let match = mensagemErro.match(regexComNome);
+  let match = texto.match(regexComNome);
   if (match) {
     return {
       code: match[1].trim(),
@@ -65,12 +64,79 @@ const extrairCBOBloqueado = (mensagemErro: string | undefined): { code: string |
     };
   }
   
-  match = mensagemErro.match(regexSemNome);
+  match = texto.match(regexSemNome);
   if (match) {
     return {
       code: match[1].trim(),
       name: undefined
     };
+  }
+  
+  return { code: undefined, name: undefined };
+};
+
+// Função principal que busca CBO bloqueado em TODAS as fontes possíveis do lead
+const extrairCBOBloqueado = (
+  tipoReprovacao: string | undefined, 
+  retornoMargem: any,
+  retornoSimulacao?: any,
+  retornoProposta?: any,
+  retornoAutorizacao?: any
+): { code: string | undefined; name: string | undefined } => {
+  // Lista de textos a serem verificados
+  const textosParaBuscar: string[] = [];
+  
+  // 1. tipo_reprovacao direto
+  if (tipoReprovacao) textosParaBuscar.push(tipoReprovacao);
+  
+  // 2. retorno_margem - busca em várias propriedades
+  if (retornoMargem) {
+    if (retornoMargem.details?.reason) textosParaBuscar.push(retornoMargem.details.reason);
+    if (retornoMargem.message) textosParaBuscar.push(retornoMargem.message);
+    if (retornoMargem.error) textosParaBuscar.push(retornoMargem.error);
+    // reasonForIneligibility pode ter mensagens de erro
+    const validationResponses = retornoMargem.details?.dataprevValidationResponses;
+    if (Array.isArray(validationResponses)) {
+      validationResponses.forEach((resp: any) => {
+        if (Array.isArray(resp.reasonForIneligibility)) {
+          resp.reasonForIneligibility.forEach((reason: any) => {
+            if (reason.messageError) textosParaBuscar.push(reason.messageError);
+            if (reason.errorField) textosParaBuscar.push(reason.errorField);
+          });
+        }
+      });
+    }
+    // Converter JSON inteiro para string como fallback
+    if (typeof retornoMargem === 'object') {
+      textosParaBuscar.push(JSON.stringify(retornoMargem));
+    }
+  }
+  
+  // 3. retorno_simulacao
+  if (retornoSimulacao) {
+    if (retornoSimulacao.details?.reason) textosParaBuscar.push(retornoSimulacao.details.reason);
+    if (retornoSimulacao.message) textosParaBuscar.push(retornoSimulacao.message);
+    if (retornoSimulacao.error) textosParaBuscar.push(retornoSimulacao.error);
+  }
+  
+  // 4. retorno_proposta
+  if (retornoProposta) {
+    if (retornoProposta.details?.reason) textosParaBuscar.push(retornoProposta.details.reason);
+    if (retornoProposta.message) textosParaBuscar.push(retornoProposta.message);
+  }
+  
+  // 5. retorno_autorizacao
+  if (retornoAutorizacao) {
+    if (retornoAutorizacao.details?.reason) textosParaBuscar.push(retornoAutorizacao.details.reason);
+    if (retornoAutorizacao.message) textosParaBuscar.push(retornoAutorizacao.message);
+  }
+  
+  // Buscar em cada texto
+  for (const texto of textosParaBuscar) {
+    const resultado = extrairCBOBloqueadoFromText(texto);
+    if (resultado.code) {
+      return resultado;
+    }
   }
   
   return { code: undefined, name: undefined };
@@ -410,9 +476,15 @@ const Importacoes = () => {
             if (!lead.valor) {
               lead.valor = extrairValorMargem(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta);
             }
-            // Extrair CBO bloqueado se houver mensagem de erro
+            // Extrair CBO bloqueado se houver mensagem de erro - busca em TODAS as fontes
             if (lead.status === "reprovado") {
-              const cboBlock = extrairCBOBloqueado(lead.tipo_reprovacao);
+              const cboBlock = extrairCBOBloqueado(
+                lead.tipo_reprovacao, 
+                lead.retorno_margem, 
+                lead.retorno_simulacao, 
+                lead.retorno_proposta, 
+                lead.retorno_autorizacao
+              );
               lead.cbo_block_code = cboBlock.code;
               lead.cbo_block_name = cboBlock.name;
             }
@@ -498,9 +570,15 @@ const Importacoes = () => {
             if (!lead.valor) {
               lead.valor = extrairValorMargem(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta);
             }
-            // Extrair CBO bloqueado se houver mensagem de erro
+            // Extrair CBO bloqueado se houver mensagem de erro - busca em TODAS as fontes
             if (lead.status === "reprovado") {
-              const cboBlock = extrairCBOBloqueado(lead.tipo_reprovacao);
+              const cboBlock = extrairCBOBloqueado(
+                lead.tipo_reprovacao, 
+                lead.retorno_margem, 
+                lead.retorno_simulacao, 
+                lead.retorno_proposta, 
+                lead.retorno_autorizacao
+              );
               lead.cbo_block_code = cboBlock.code;
               lead.cbo_block_name = cboBlock.name;
             }
