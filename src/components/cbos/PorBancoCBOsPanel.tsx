@@ -37,7 +37,7 @@ const PorBancoCBOsPanel = () => {
     name: b.banco,
     aprovados: b.aprovados,
     reprovados: b.reprovados,
-    cpfNaoEncontrado: b.total - b.aprovados - b.reprovados,
+    pendentes: b.total - b.aprovados - b.reprovados,
   }));
 
   return (
@@ -59,7 +59,7 @@ const PorBancoCBOsPanel = () => {
                 <Legend />
                 <Bar dataKey="aprovados" fill="#22c55e" name="Aprovados" stackId="a" />
                 <Bar dataKey="reprovados" fill="#ef4444" name="Reprovados" stackId="a" />
-                <Bar dataKey="cpfNaoEncontrado" fill="#6b7280" name="CPF Não Encontrado" stackId="a" />
+                <Bar dataKey="pendentes" fill="#f59e0b" name="Pendentes" stackId="a" />
               </BarChart>
             </ResponsiveContainer>
           </div>

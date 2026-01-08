@@ -9,10 +9,10 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCo
 // Função para normalizar status baseado em valorMargemDisponivel
 const getNormalizedStatus = (lead: any): string => {
   const margem = lead.retorno_margem as any;
-  if (!margem) return "cpf_nao_encontrado";
+  if (!margem) return "pendente";
   const erro = margem?.error || "";
   if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
-    return "cpf_nao_encontrado";
+    return "pendente";
   }
   const valorMargem = margem?.valorMargemDisponivel;
   if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
