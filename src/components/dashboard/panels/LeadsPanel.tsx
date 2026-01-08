@@ -12,17 +12,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useNavigate } from "react-router-dom";
 import { useDashboard } from "@/contexts/DashboardContext";
 import { Lead } from "@/hooks/useLeadsData";
 import LeadDetailDialog from "@/components/leads/LeadDetailDialog";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
-import { REJECTION_COLORS, summarizeType } from "@/components/dashboard/DashboardFilters";
 
 // Formata data como dd/mm/aaaa - hh:nn:ss
 const formatDateTime = (dateString: string | null): string => {
@@ -45,61 +39,49 @@ const formatDateTime = (dateString: string | null): string => {
   }
 };
 
+// Helper para normalizar status do lead - usa utilitário centralizado
+const getNormalizedStatus = (lead: Lead): string => {
+  return normalizarStatusLead(lead);
+};
+
+// Helper para extrair valor da margem disponível
+const getValorMargem = (lead: Lead): number => {
+  const margem = lead.retorno_margem as any;
+  const simulacao = lead.retorno_simulacao as any;
+  
+  if (margem?.valorMargemDisponivel !== undefined && margem?.valorMargemDisponivel !== null) {
+    return parseFloat(margem.valorMargemDisponivel) || 0;
+  }
+  if (simulacao?.details?.availableMarginValue !== undefined && simulacao?.details?.availableMarginValue !== null) {
+    return parseFloat(simulacao.details.availableMarginValue) || 0;
+  }
+  return 0;
+};
+
+// Helper para extrair nome
+const getNome = (lead: Lead): string => {
+  if (lead.nome) return lead.nome;
+  
+  const margem = lead.retorno_margem as any;
+  const simulacao = lead.retorno_simulacao as any;
+  
+  if (margem?.registroEmpregaticio?.nomeEmpregado) return margem.registroEmpregaticio.nomeEmpregado;
+  if (margem?.nomeEmpregado) return margem.nomeEmpregado;
+  if (simulacao?.details?.name) return simulacao.details.name;
+  if (simulacao?.name) return simulacao.name;
+  
+  return "-";
+};
+
 const LeadsPanel = () => {
   const navigate = useNavigate();
-  const { leads, stats, filters } = useDashboard();
+  const { leads, stats } = useDashboard();
   const [currentPage, setCurrentPage] = useState(1);
   const [searchCpf, setSearchCpf] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const leadsPerPage = 15;
-
-  // Mapa de tipos de reprovação para cores
-  const tipoColorMap = useMemo(() => {
-    const map: Record<string, { cor: string; resumido: string }> = {};
-    stats.reprovacoesPorTipo.forEach((item, index) => {
-      map[item.tipo] = {
-        cor: REJECTION_COLORS[index % REJECTION_COLORS.length],
-        resumido: summarizeType(item.tipoCompleto || item.tipo),
-      };
-    });
-    return map;
-  }, [stats.reprovacoesPorTipo]);
-
-  // Helper para normalizar status do lead - usa utilitário centralizado
-  const getNormalizedStatus = (lead: Lead): string => {
-    return normalizarStatusLead(lead);
-  };
-  
-  // Helper para extrair valor da margem disponível
-  const getValorMargem = (lead: Lead): number => {
-    const margem = lead.retorno_margem as any;
-    const simulacao = lead.retorno_simulacao as any;
-    
-    if (margem?.valorMargemDisponivel !== undefined && margem?.valorMargemDisponivel !== null) {
-      return parseFloat(margem.valorMargemDisponivel) || 0;
-    }
-    if (simulacao?.details?.availableMarginValue !== undefined && simulacao?.details?.availableMarginValue !== null) {
-      return parseFloat(simulacao.details.availableMarginValue) || 0;
-    }
-    return 0;
-  };
-  
-  // Helper para extrair nome
-  const getNome = (lead: Lead): string => {
-    if (lead.nome) return lead.nome;
-    
-    const margem = lead.retorno_margem as any;
-    const simulacao = lead.retorno_simulacao as any;
-    
-    if (margem?.registroEmpregaticio?.nomeEmpregado) return margem.registroEmpregaticio.nomeEmpregado;
-    if (margem?.nomeEmpregado) return margem.nomeEmpregado;
-    if (simulacao?.details?.name) return simulacao.details.name;
-    if (simulacao?.name) return simulacao.name;
-    
-    return "-";
-  };
 
   // Filtra e pagina os leads
   const filteredLeads = useMemo(() => {
@@ -211,7 +193,6 @@ const LeadsPanel = () => {
               <Table>
                 <TableHeader>
                   <TableRow className="border-border hover:bg-transparent">
-                    <TableHead className="text-muted-foreground w-[40px]"></TableHead>
                     <TableHead className="text-muted-foreground">CPF</TableHead>
                     <TableHead className="text-muted-foreground">Nome</TableHead>
                     <TableHead className="text-muted-foreground">Banco</TableHead>
@@ -228,29 +209,9 @@ const LeadsPanel = () => {
                     const valorMargemDisponivel = getValorMargem(lead);
                     const banco = lead.banco || "-";
                     const statusNormalizado = getNormalizedStatus(lead);
-                    const tipoReprovacao = lead.tipo_reprovacao;
-                    const colorInfo = tipoReprovacao ? tipoColorMap[tipoReprovacao] : null;
 
                     return (
                       <TableRow key={lead.id} className="border-border/50 hover:bg-muted/30">
-                        {/* Indicador de cor do tipo de reprovação */}
-                        <TableCell className="px-2">
-                          {colorInfo ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <div 
-                                  className="w-3 h-3 rounded-full cursor-help mx-auto"
-                                  style={{ backgroundColor: `hsl(${colorInfo.cor})` }}
-                                />
-                              </TooltipTrigger>
-                              <TooltipContent side="right" className="max-w-[250px]">
-                                <p className="text-xs font-medium">{colorInfo.resumido}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          ) : (
-                            <div className="w-3 h-3 rounded-full mx-auto bg-muted" />
-                          )}
-                        </TableCell>
                         <TableCell className="font-mono text-foreground">{formatCpf(lead.cpf)}</TableCell>
                         <TableCell className="text-muted-foreground truncate max-w-[160px]">{nome}</TableCell>
                         <TableCell className="text-muted-foreground">{banco}</TableCell>
