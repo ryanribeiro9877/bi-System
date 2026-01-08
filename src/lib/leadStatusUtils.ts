@@ -1,30 +1,25 @@
 /**
  * Utilitário centralizado para normalizar status de leads
  * 
- * REGRAS ATUALIZADAS - PRIORIZA VALORES FINANCEIROS SOBRE MENSAGENS DE ERRO
+ * =====================================================
+ * REGRA MESTRE DE CLASSIFICAÇÃO (Todos os Bancos)
+ * =====================================================
  * 
- * PRINCÍPIO GERAL:
- * Se existem valores financeiros positivos (margem, valor_parcela, valor_financiado, prazo),
- * o lead é APROVADO independente de mensagens de warning/erro.
+ * APROVADO: Apenas quando AMBOS os critérios são atendidos:
+ *   1. Status da API = "success" (ou equivalente)
+ *   2. Valores financeiros positivos (margem > 0, valor_parcela > 0, etc.)
  * 
- * PENDENTE (prioridade máxima):
- * - retorno_autorizacao.errors contém "Limite de consultas excedido"
- * - Erros de timeout/rate limit que impedem processamento
- * - EXCETO se existem valores financeiros positivos
+ * REPROVADO: Quando qualquer uma das condições:
+ *   - Status "success" mas valores financeiros = 0 ou "sem margem"
+ *   - Erro de negócio (CBO bloqueado, margem indisponível, etc.)
+ *   - Sem dados financeiros válidos
  * 
- * V8:
- * - APROVADO: retorno_simulacao.details.availableMarginValue > 0
- * - APROVADO: retorno_proposta.status = "success" ou "Aprovada"
- * - REPROVADO: sem valores financeiros válidos
+ * PENDENTE: Apenas para erros de sistema:
+ *   - Limite de consultas excedido
+ *   - Timeout / Rate limit
+ *   - Erro de conexão
  * 
- * UY3:
- * - APROVADO: dataprevValidationResponses[].employeeRelationShip.valorMargemDisponivel > 0
- * - APROVADO: valor_parcela, valor_financiado ou prazo > 0 na simulação
- * - REPROVADO: sem valores financeiros válidos
- * 
- * PRESENÇA:
- * - APROVADO: retorno_margem.valorMargemDisponivel > 0
- * - REPROVADO: retorno_margem.error presente SEM valores positivos
+ * NOTA: Status "success" SEM valores financeiros = REPROVADO (não erro)
  */
 
 export type StatusNormalizado = "aprovado" | "reprovado" | "pendente";
@@ -39,31 +34,233 @@ interface LeadData {
   retorno_autorizacao?: unknown;
 }
 
+// =====================================================
+// UTILITÁRIOS DE PARSING
+// =====================================================
+
 /**
- * Verifica se há erro de limite de consultas no retorno_autorizacao
+ * Extrai valor numérico de qualquer formato
  */
-const isLimiteConsultasExcedido = (autorizacao: any): boolean => {
-  if (!autorizacao) return false;
+const parseValorNumerico = (valor: any): number => {
+  if (valor === null || valor === undefined) return 0;
+  if (typeof valor === "number") return valor;
+  if (typeof valor === "string") {
+    const cleaned = valor.replace(/[^\d.,\-]/g, "").replace(",", ".");
+    return parseFloat(cleaned) || 0;
+  }
+  return 0;
+};
+
+/**
+ * Verifica se texto contém indicadores de "sem margem"
+ */
+const isSemMargem = (texto: string): boolean => {
+  const lower = texto.toLowerCase();
+  return (
+    lower.includes("sem margem") ||
+    lower.includes("margem indisponível") ||
+    lower.includes("margem indisponivel") ||
+    lower.includes("não existe valor de margem") ||
+    lower.includes("nao existe valor de margem") ||
+    lower.includes("margem disponível r$ 0") ||
+    lower.includes("margem disponivel r$ 0")
+  );
+};
+
+/**
+ * Verifica se é erro de conexão/timeout (PENDENTE, não REPROVADO)
+ */
+const isErroConexao = (erro: string): boolean => {
+  const lower = erro.toLowerCase();
+  return (
+    lower.includes("timeout") ||
+    lower.includes("curl error") ||
+    lower.includes("rate limit") ||
+    lower.includes("connection") ||
+    lower.includes("network") ||
+    (lower.includes("limite") && lower.includes("excedido"))
+  );
+};
+
+// =====================================================
+// VERIFICAÇÃO DE VALORES FINANCEIROS
+// =====================================================
+
+/**
+ * Extrai valor de margem disponível de todas as fontes possíveis
+ */
+const extrairValorMargem = (lead: LeadData): number => {
+  const margem = lead.retorno_margem as any;
+  const simulacao = lead.retorno_simulacao as any;
   
-  // Formato: { errors: ["Limite de consultas excedido para este parceiro."] }
-  if (Array.isArray(autorizacao.errors)) {
-    return autorizacao.errors.some((err: string) => 
-      String(err).toLowerCase().includes("limite") && 
-      String(err).toLowerCase().includes("excedido")
-    );
+  let maiorMargem = 0;
+  
+  // 1. retorno_margem.valorMargemDisponivel (direto)
+  if (margem?.valorMargemDisponivel) {
+    maiorMargem = Math.max(maiorMargem, parseValorNumerico(margem.valorMargemDisponivel));
   }
   
-  // Formato alternativo: { error: "..." }
-  if (autorizacao.error) {
-    const erro = String(autorizacao.error).toLowerCase();
-    return erro.includes("limite") && erro.includes("excedido");
+  // 2. retorno_margem.details.dataprevValidationResponses (UY3 aninhado)
+  if (margem?.details?.dataprevValidationResponses) {
+    const responses = margem.details.dataprevValidationResponses;
+    if (Array.isArray(responses)) {
+      for (const response of responses) {
+        const emp = response?.employeeRelationShip;
+        if (emp?.valorMargemDisponivel) {
+          maiorMargem = Math.max(maiorMargem, parseValorNumerico(emp.valorMargemDisponivel));
+        }
+      }
+    }
+  }
+  
+  // 3. retorno_simulacao.details.availableMarginValue (V8)
+  if (simulacao?.details?.availableMarginValue) {
+    maiorMargem = Math.max(maiorMargem, parseValorNumerico(simulacao.details.availableMarginValue));
+  }
+  
+  // 4. retorno_simulacao.details.liquidValue
+  if (simulacao?.details?.liquidValue) {
+    maiorMargem = Math.max(maiorMargem, parseValorNumerico(simulacao.details.liquidValue));
+  }
+  
+  // 5. retorno_simulacao.details.installmentValue
+  if (simulacao?.details?.installmentValue) {
+    maiorMargem = Math.max(maiorMargem, parseValorNumerico(simulacao.details.installmentValue));
+  }
+  
+  // 6. retorno_simulacao campos diretos
+  if (simulacao) {
+    const valorParcela = parseValorNumerico(simulacao.valor_parcela);
+    const valorFinanciado = parseValorNumerico(simulacao.valor_financiado);
+    if (valorParcela > 0) maiorMargem = Math.max(maiorMargem, valorParcela);
+    if (valorFinanciado > 0) maiorMargem = Math.max(maiorMargem, valorFinanciado);
+  }
+  
+  return maiorMargem;
+};
+
+/**
+ * Verifica se o lead possui valores financeiros positivos
+ */
+const hasValoresFinanceiros = (lead: LeadData): boolean => {
+  return extrairValorMargem(lead) > 0;
+};
+
+// =====================================================
+// VERIFICAÇÃO DE STATUS SUCCESS
+// =====================================================
+
+/**
+ * Verifica se a API retornou status "success" ou equivalente
+ */
+const hasStatusSuccess = (lead: LeadData): boolean => {
+  const proposta = lead.retorno_proposta as any;
+  const getProposta = lead.retorno_get_proposta as any;
+  const simulacao = lead.retorno_simulacao as any;
+  const margem = lead.retorno_margem as any;
+  
+  // V8: retorno_proposta.status = "success"
+  if (proposta?.status) {
+    const status = String(proposta.status).toLowerCase();
+    if (status === "success" || status === "aprovada" || status === "approved") {
+      return true;
+    }
+  }
+  
+  // V8: formalizationLink presente indica sucesso
+  if (proposta?.formalizationLink) {
+    return true;
+  }
+  
+  // V8: retorno_get_proposta.status
+  if (getProposta?.status) {
+    const status = String(getProposta.status).toLowerCase();
+    if (status === "success" || status === "formalization" || status === "approved") {
+      return true;
+    }
+  }
+  
+  // Genérico: retorno_simulacao.details.status
+  if (simulacao?.details?.status) {
+    const status = String(simulacao.details.status).toUpperCase();
+    if (status === "APPROVED" || status === "SUCCESS") {
+      return true;
+    }
+  }
+  
+  // UY3/PRESENÇA: Se tem dados de margem SEM erro, considera sucesso na consulta
+  if (margem && !margem.error) {
+    // Se tem dados do funcionário, a consulta foi bem sucedida
+    if (margem.valorMargemDisponivel !== undefined || 
+        margem.details?.dataprevValidationResponses) {
+      return true;
+    }
+  }
+  
+  // UY3: Se tem dataprevValidationResponses com dados, é sucesso (mesmo com erro wrapper)
+  if (margem?.details?.dataprevValidationResponses) {
+    const responses = margem.details.dataprevValidationResponses;
+    if (Array.isArray(responses) && responses.length > 0) {
+      // Se tem pelo menos um registro com dados, a consulta funcionou
+      return true;
+    }
   }
   
   return false;
 };
 
+// =====================================================
+// VERIFICAÇÃO DE PENDENTE (ERROS DE SISTEMA)
+// =====================================================
+
 /**
- * Extrai o motivo do erro/reprovação/pendência de um lead
+ * Verifica se o lead está pendente por erro de sistema
+ */
+const isPendente = (lead: LeadData): boolean => {
+  const autorizacao = lead.retorno_autorizacao as any;
+  const margem = lead.retorno_margem as any;
+  const simulacao = lead.retorno_simulacao as any;
+  
+  // Se tem valores financeiros, NUNCA é pendente
+  if (hasValoresFinanceiros(lead)) {
+    return false;
+  }
+  
+  // Limite de consultas excedido
+  if (autorizacao) {
+    if (Array.isArray(autorizacao.errors)) {
+      const hasLimite = autorizacao.errors.some((err: string) => 
+        String(err).toLowerCase().includes("limite") && 
+        String(err).toLowerCase().includes("excedido")
+      );
+      if (hasLimite) return true;
+    }
+    if (autorizacao.error && isErroConexao(String(autorizacao.error))) {
+      return true;
+    }
+  }
+  
+  // Erros de conexão em outros retornos
+  const erros = [
+    margem?.error,
+    simulacao?.error
+  ].filter(Boolean);
+  
+  for (const erro of erros) {
+    if (isErroConexao(String(erro))) {
+      return true;
+    }
+  }
+  
+  return false;
+};
+
+// =====================================================
+// EXTRAÇÃO DE MOTIVO DE ERRO
+// =====================================================
+
+/**
+ * Extrai o motivo do erro/reprovação de um lead
  */
 export const extrairMotivoErro = (lead: LeadData): string | null => {
   const proposta = lead.retorno_proposta as any;
@@ -71,7 +268,7 @@ export const extrairMotivoErro = (lead: LeadData): string | null => {
   const simulacao = lead.retorno_simulacao as any;
   const autorizacao = lead.retorno_autorizacao as any;
   
-  // Verificar limite de consultas excedido primeiro (pendente)
+  // Erros de sistema (pendente)
   if (autorizacao) {
     if (Array.isArray(autorizacao.errors) && autorizacao.errors.length > 0) {
       return autorizacao.errors.join("; ");
@@ -86,7 +283,7 @@ export const extrairMotivoErro = (lead: LeadData): string | null => {
     return proposta.details?.detail || proposta.error;
   }
   
-  // Presença: erro na margem
+  // Erro na margem
   if (margem?.error) {
     return margem.error;
   }
@@ -99,311 +296,73 @@ export const extrairMotivoErro = (lead: LeadData): string | null => {
     return simulacao.details.error;
   }
   
+  // Verificar "sem margem" implícito
+  if (extrairValorMargem(lead) === 0 && hasStatusSuccess(lead)) {
+    return "Margem indisponível ou zerada";
+  }
+  
   return null;
 };
 
-/**
- * Verifica se é erro de conexão/timeout (não conta como reprovação real)
- */
-const isErroConexao = (erro: string): boolean => {
-  const lower = erro.toLowerCase();
-  return (
-    lower.includes("timeout") ||
-    lower.includes("curl error") ||
-    lower.includes("rate limit") ||
-    lower.includes("connection") ||
-    lower.includes("network")
-  );
-};
-
 // =====================================================
-// FILTRO DE SUCESSO - Prioriza valores financeiros
+// FUNÇÃO PRINCIPAL DE NORMALIZAÇÃO
 // =====================================================
 
 /**
- * Extrai valor numérico de qualquer formato
- */
-const parseValorNumerico = (valor: any): number => {
-  if (valor === null || valor === undefined) return 0;
-  if (typeof valor === "number") return valor;
-  if (typeof valor === "string") {
-    // Remove caracteres não numéricos exceto ponto e vírgula
-    const cleaned = valor.replace(/[^\d.,\-]/g, "").replace(",", ".");
-    return parseFloat(cleaned) || 0;
-  }
-  return 0;
-};
-
-/**
- * FILTRO DE SUCESSO V8
- * Prioriza availableMarginValue > 0 sobre mensagens de erro
- */
-const hasValoresFinanceirosV8 = (lead: LeadData): boolean => {
-  const simulacao = lead.retorno_simulacao as any;
-  const proposta = lead.retorno_proposta as any;
-  const getProposta = lead.retorno_get_proposta as any;
-  
-  // Verificar availableMarginValue em simulacao.details
-  if (simulacao?.details?.availableMarginValue) {
-    const valor = parseValorNumerico(simulacao.details.availableMarginValue);
-    if (valor > 0) return true;
-  }
-  
-  // Verificar status success na proposta
-  if (proposta?.status?.toLowerCase() === "success") return true;
-  if (proposta?.status?.toLowerCase() === "aprovada") return true;
-  
-  // Verificar formalizationLink (indica aprovação)
-  if (proposta?.formalizationLink) return true;
-  
-  // Verificar get_proposta
-  if (getProposta?.status?.toLowerCase() === "success") return true;
-  if (getProposta?.status?.toLowerCase() === "formalization") return true;
-  
-  return false;
-};
-
-/**
- * FILTRO DE SUCESSO UY3
- * Prioriza valorMargemDisponivel > 0 em dataprevValidationResponses
- * ou valor_parcela/valor_financiado/prazo na simulação
- */
-const hasValoresFinanceirosUY3 = (lead: LeadData): boolean => {
-  const margem = lead.retorno_margem as any;
-  const simulacao = lead.retorno_simulacao as any;
-  
-  // Buscar valorMargemDisponivel em dataprevValidationResponses (estrutura aninhada)
-  if (margem?.details?.dataprevValidationResponses) {
-    const responses = margem.details.dataprevValidationResponses;
-    if (Array.isArray(responses)) {
-      for (const response of responses) {
-        const emp = response?.employeeRelationShip;
-        if (emp?.valorMargemDisponivel) {
-          const valor = parseValorNumerico(emp.valorMargemDisponivel);
-          if (valor > 0) return true;
-        }
-      }
-    }
-  }
-  
-  // Verificar valorMargemDisponivel direto na margem
-  if (margem?.valorMargemDisponivel) {
-    const valor = parseValorNumerico(margem.valorMargemDisponivel);
-    if (valor > 0) return true;
-  }
-  
-  // Verificar simulação - valor_parcela, valor_financiado, prazo
-  if (simulacao) {
-    const valorParcela = parseValorNumerico(simulacao.valor_parcela);
-    const valorFinanciado = parseValorNumerico(simulacao.valor_financiado);
-    const prazo = parseValorNumerico(simulacao.prazo);
-    
-    if (valorParcela > 0 || valorFinanciado > 0 || prazo > 0) return true;
-    
-    // Também verificar em details
-    if (simulacao.details) {
-      const liquidValue = parseValorNumerico(simulacao.details.liquidValue);
-      const installmentValue = parseValorNumerico(simulacao.details.installmentValue);
-      const availableMargin = parseValorNumerico(simulacao.details.availableMarginValue);
-      
-      if (liquidValue > 0 || installmentValue > 0 || availableMargin > 0) return true;
-    }
-  }
-  
-  return false;
-};
-
-/**
- * FILTRO DE SUCESSO PRESENÇA
- * Prioriza valorMargemDisponivel > 0
- */
-const hasValoresFinanceirosPresenca = (lead: LeadData): boolean => {
-  const margem = lead.retorno_margem as any;
-  const simulacao = lead.retorno_simulacao as any;
-  
-  // Verificar valorMargemDisponivel na margem
-  if (margem?.valorMargemDisponivel) {
-    const valor = parseValorNumerico(margem.valorMargemDisponivel);
-    if (valor > 0) return true;
-  }
-  
-  // Verificar valores na simulação
-  if (simulacao) {
-    const liquidValue = parseValorNumerico(simulacao.liquidValue);
-    if (liquidValue > 0) return true;
-    
-    if (simulacao.details) {
-      const availableMargin = parseValorNumerico(simulacao.details.availableMarginValue);
-      if (availableMargin > 0) return true;
-    }
-  }
-  
-  return false;
-};
-
-/**
- * FILTRO DE SUCESSO UNIVERSAL
- * Verifica se o lead possui valores financeiros positivos
- * independente do banco
- */
-const hasValoresFinanceiros = (lead: LeadData): boolean => {
-  const banco = (lead.banco || "").toLowerCase();
-  
-  // Aplicar filtro específico por banco
-  if (banco.includes("v8")) {
-    return hasValoresFinanceirosV8(lead);
-  }
-  
-  if (banco.includes("uy3")) {
-    return hasValoresFinanceirosUY3(lead);
-  }
-  
-  if (banco.includes("presença") || banco.includes("presenca")) {
-    return hasValoresFinanceirosPresenca(lead);
-  }
-  
-  // Para outros bancos, verificar todos os padrões
-  return hasValoresFinanceirosV8(lead) || 
-         hasValoresFinanceirosUY3(lead) || 
-         hasValoresFinanceirosPresenca(lead);
-};
-
-/**
- * Verifica se o lead está pendente por erro de limite/conexão
- * EXCETO se possui valores financeiros positivos
- */
-const isPendente = (lead: LeadData): boolean => {
-  const autorizacao = lead.retorno_autorizacao as any;
-  const margem = lead.retorno_margem as any;
-  const simulacao = lead.retorno_simulacao as any;
-  
-  // SE TEM VALORES FINANCEIROS, NÃO É PENDENTE
-  if (hasValoresFinanceiros(lead)) {
-    return false;
-  }
-  
-  // Verificar limite de consultas excedido no retorno_autorizacao
-  if (isLimiteConsultasExcedido(autorizacao)) {
-    return true;
-  }
-  
-  // Verificar erro de rate limit em qualquer retorno
-  const erros = [
-    margem?.error,
-    simulacao?.error,
-    autorizacao?.error
-  ].filter(Boolean);
-  
-  for (const erro of erros) {
-    const lower = String(erro).toLowerCase();
-    if (lower.includes("rate limit") || 
-        (lower.includes("limite") && lower.includes("excedido"))) {
-      return true;
-    }
-  }
-  
-  return false;
-};
-
-/**
- * Normaliza o status do lead considerando as diferenças entre bancos
- * NOVA LÓGICA: Prioriza valores financeiros sobre mensagens de erro
+ * REGRA MESTRE: Normaliza o status do lead
+ * 
+ * APROVADO = status success + valores financeiros > 0
+ * REPROVADO = sem valores financeiros (mesmo com status success)
+ * PENDENTE = erros de sistema (timeout, limite, conexão)
  */
 export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
-  const margem = lead.retorno_margem as any;
-  const simulacao = lead.retorno_simulacao as any;
-  const proposta = lead.retorno_proposta as any;
-  const getProposta = lead.retorno_get_proposta as any;
+  const temValoresFinanceiros = hasValoresFinanceiros(lead);
+  const temStatusSuccess = hasStatusSuccess(lead);
   
   // =====================================================
-  // FILTRO DE SUCESSO - PRIORIDADE MÁXIMA
-  // Se tem valores financeiros positivos = APROVADO
-  // Ignora mensagens de erro/warning
+  // 1. APROVADO: Ambos critérios atendidos
   // =====================================================
-  if (hasValoresFinanceiros(lead)) {
+  if (temStatusSuccess && temValoresFinanceiros) {
     return "aprovado";
   }
   
-  // ==============================
-  // VERIFICAR PENDENTE
-  // ==============================
+  // =====================================================
+  // 2. PENDENTE: Erros de sistema (timeout, limite, etc.)
+  // =====================================================
   if (isPendente(lead)) {
     return "pendente";
   }
   
-  // ==============================
-  // V8: Verificar retorno_proposta
-  // ==============================
-  if (proposta) {
-    // Se tem status = success = APROVADO
-    if (proposta.status?.toLowerCase() === "success") {
-      return "aprovado";
-    }
-    if (proposta.status?.toLowerCase() === "aprovada") {
-      return "aprovado";
-    }
-  }
-  
-  // Verificar retorno_get_proposta
-  if (getProposta) {
-    const getPropostaStatus = String(getProposta.status || "").toLowerCase();
-    if (getPropostaStatus === "success" || getPropostaStatus === "formalization") {
-      return "aprovado";
-    }
-  }
-  
-  // =====================================
-  // GENÉRICO: Verificar retorno_simulacao
-  // =====================================
-  if (simulacao) {
-    // Verificar status explícito no details
-    const detailsStatus = typeof simulacao.details?.status === "string"
-      ? simulacao.details.status.toUpperCase()
-      : String(simulacao.details?.status || "").toUpperCase();
-    
-    if (detailsStatus === "APPROVED" || detailsStatus === "SUCCESS") {
-      return "aprovado";
-    }
-  }
-  
-  // =====================================
-  // Verificar erro de conexão = PENDENTE
-  // =====================================
-  const erros = [
-    margem?.error,
-    simulacao?.error,
-    proposta?.error
-  ].filter(Boolean);
-  
-  for (const erro of erros) {
-    if (isErroConexao(String(erro))) {
-      return "pendente";
-    }
-  }
-  
-  // =====================================
-  // SEM VALORES FINANCEIROS E SEM ERROS DE CONEXÃO = REPROVADO
-  // =====================================
+  // =====================================================
+  // 3. REPROVADO: Tudo mais
+  //    - Status success mas sem valores financeiros
+  //    - Erro de negócio (CBO bloqueado, empresa inelegível)
+  //    - Sem dados para processar
+  // =====================================================
   return "reprovado";
 };
 
 /**
- * Função legada para compatibilidade - chama normalizarStatusLead
- * NOTA: Agora prioriza análise de valores financeiros sobre status de texto
+ * Função legada para compatibilidade
+ * Prioriza análise completa do lead se disponível
  */
 export const normalizarStatus = (status: string | null, lead?: LeadData): StatusNormalizado => {
-  // Se tem lead, usar lógica por banco (prioriza valores financeiros)
+  // Se tem dados do lead, usar regra mestre
   if (lead) {
     return normalizarStatusLead(lead);
   }
   
-  // Status explícitos respeitados apenas se não tem dados do lead
+  // Status explícitos apenas quando não tem dados do lead
   const s = (status || "").toLowerCase().trim();
   if (s === "aprovado" || s === "approved") return "aprovado";
   if (s === "reprovado" || s === "rejected" || s === "recusado") return "reprovado";
   if (s === "pendente" || s === "pending") return "pendente";
-  // CPF não encontrado = REPROVADO
-  if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "reprovado";
+  if (s === "cpf não encontrado" || s === "cpf_nao_encontrado") return "reprovado";
   
   return "reprovado";
 };
+
+/**
+ * Exporta função para extrair valor de margem (útil para visualizações)
+ */
+export { extrairValorMargem, hasValoresFinanceiros, hasStatusSuccess };
