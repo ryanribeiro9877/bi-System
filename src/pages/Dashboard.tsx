@@ -1,3 +1,4 @@
+// Dashboard page - updated
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import DashboardFilters from "@/components/dashboard/DashboardFilters";
 import DashboardTabs from "@/components/dashboard/DashboardTabs";
