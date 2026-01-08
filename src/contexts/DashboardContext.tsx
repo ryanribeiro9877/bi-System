@@ -21,6 +21,10 @@ interface DashboardContextType {
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined);
 
 export const DashboardProvider = ({ children }: { children: ReactNode }) => {
+  // Evita montar múltiplos providers (e refetch duplicado) caso a árvore já esteja envolvida
+  const existing = useContext(DashboardContext);
+  if (existing) return <>{children}</>;
+
   const [filters, setFilters] = useState<FilterState>({
     dataInicial: undefined,
     dataFinal: undefined,

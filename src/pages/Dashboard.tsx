@@ -2,10 +2,10 @@
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import DashboardFilters from "@/components/dashboard/DashboardFilters";
 import DashboardTabs from "@/components/dashboard/DashboardTabs";
-import { useDashboard } from "@/contexts/DashboardContext";
+import { DashboardProvider, useDashboard } from "@/contexts/DashboardContext";
 import { Loader2 } from "lucide-react";
 
-const Dashboard = () => {
+const DashboardInner = () => {
   const { filters, setFilters, isLoading: dataLoading } = useDashboard();
 
   return (
@@ -37,6 +37,16 @@ const Dashboard = () => {
         {!dataLoading && <DashboardTabs />}
       </main>
     </div>
+  );
+};
+
+const Dashboard = () => {
+  // Garantia: caso esta página seja renderizada fora do wrapper de rotas,
+  // ela ainda monta o Provider (sem duplicar se já existir acima).
+  return (
+    <DashboardProvider>
+      <DashboardInner />
+    </DashboardProvider>
   );
 };
 
