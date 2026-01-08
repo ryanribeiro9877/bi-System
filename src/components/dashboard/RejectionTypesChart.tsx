@@ -55,10 +55,21 @@ const RejectionTypesChart = () => {
                 border: "1px solid hsl(var(--border))",
                 borderRadius: "8px",
                 color: "hsl(var(--foreground))",
-                maxWidth: "350px",
+                maxWidth: "320px",
+                whiteSpace: "normal",
+                wordWrap: "break-word",
+                overflowWrap: "break-word",
               }}
-              labelStyle={{ color: "hsl(var(--foreground))", fontWeight: "bold", marginBottom: "4px" }}
-              itemStyle={{ color: "white" }}
+              labelStyle={{ 
+                color: "hsl(var(--foreground))", 
+                fontWeight: "bold", 
+                marginBottom: "4px",
+                whiteSpace: "normal",
+                wordWrap: "break-word",
+                display: "block",
+                lineHeight: "1.4",
+              }}
+              itemStyle={{ color: "hsl(var(--muted-foreground))" }}
               labelFormatter={(label: string, payload: any[]) => {
                 const item = payload?.[0]?.payload;
                 return item?.fullName || label;
