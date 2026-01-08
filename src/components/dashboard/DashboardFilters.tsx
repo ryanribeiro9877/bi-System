@@ -46,7 +46,7 @@ const tiposReprovacao = [
 const statusOptions = [
   { value: "aprovado", label: "Aprovado" },
   { value: "reprovado", label: "Reprovado" },
-  { value: "cpf_nao_encontrado", label: "CPF Não Encontrado" },
+  { value: "pendente", label: "Pendente" },
 ];
 
 const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) => {
