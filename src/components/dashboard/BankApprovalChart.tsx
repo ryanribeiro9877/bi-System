@@ -1,16 +1,17 @@
 import { memo, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useDashboard } from "@/contexts/DashboardContext";
+import { useDashboardStats } from "@/hooks/useDashboardStats";
 
 const BankApprovalChart = memo(() => {
-  const { stats } = useDashboard();
+  const { stats } = useDashboardStats();
 
   const data = useMemo(() => {
     return stats.reprovacoesPorBanco.slice(0, 5).map(item => ({
       name: item.banco,
-      aprovado: item.total > 0 ? Math.round((item.aprovados / item.total) * 100) : 0,
-      reprovado: item.total > 0 ? Math.round((item.reprovados / item.total) * 100) : 0,
+      aprovado: item.taxaAprovacao,
+      reprovado: item.taxaReprovacao,
+      pendente: item.total > 0 ? parseFloat(((item.pendentes / item.total) * 100).toFixed(2)) : 0,
     }));
   }, [stats.reprovacoesPorBanco]);
 
@@ -53,7 +54,8 @@ const BankApprovalChart = memo(() => {
             />
             <Legend />
             <Bar dataKey="aprovado" stackId="a" fill="hsl(var(--success))" name="Aprovado" radius={[0, 0, 0, 0]} />
-            <Bar dataKey="reprovado" stackId="a" fill="hsl(var(--destructive))" name="Reprovado" radius={[0, 4, 4, 0]} />
+            <Bar dataKey="reprovado" stackId="a" fill="hsl(var(--destructive))" name="Reprovado" radius={[0, 0, 0, 0]} />
+            <Bar dataKey="pendente" stackId="a" fill="hsl(var(--warning))" name="Pendente" radius={[0, 4, 4, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </CardContent>
