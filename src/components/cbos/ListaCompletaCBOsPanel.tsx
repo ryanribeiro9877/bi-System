@@ -13,13 +13,17 @@ const ListaCompletaCBOsPanel = () => {
   const navigate = useNavigate();
   const { stats } = useDashboard();
 
-  const cboList = stats.reprovacoesPorCBO;
-  const totalReprovacoes = stats.leadsReprovados;
+  // Usar CBOs bloqueados extraídos das mensagens de erro
+  const cboList = stats.cbosBloqueados;
+  const totalBloqueados = stats.totalCBOsBloqueados;
 
   const filtered = useMemo(() => {
     if (!search) return cboList;
     const s = search.toLowerCase();
-    return cboList.filter((c) => c.cbo.toLowerCase().includes(s));
+    return cboList.filter((c) => 
+      c.code.toLowerCase().includes(s) || 
+      (c.name && c.name.toLowerCase().includes(s))
+    );
   }, [cboList, search]);
 
   if (stats.totalLeads === 0) {
@@ -38,12 +42,34 @@ const ListaCompletaCBOsPanel = () => {
             <Ban className="w-16 h-16 text-muted-foreground/50 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-foreground mb-2">Nenhum CBO bloqueado</h3>
             <p className="text-muted-foreground mb-4 max-w-md mx-auto">
-              Importe seus leads para identificar CBOs.
+              Importe seus leads para identificar CBOs bloqueados.
             </p>
             <Button onClick={() => navigate("/dashboard/importacoes")} className="gap-2">
               <Upload className="w-4 h-4" />
               Ir para Importações
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (cboList.length === 0) {
+    return (
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Ban className="w-5 h-5 text-red-400" />
+            Lista Completa de CBOs Bloqueados
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="py-12 text-center">
+            <Ban className="w-16 h-16 text-muted-foreground/50 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-foreground mb-2">Nenhum CBO bloqueado identificado</h3>
+            <p className="text-muted-foreground mb-4 max-w-md mx-auto">
+              Não foram encontradas mensagens de erro com o padrão "CBO bloqueado" nos leads importados.
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -57,20 +83,20 @@ const ListaCompletaCBOsPanel = () => {
           <div>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Ban className="w-5 h-5 text-red-400" />
-              Lista Completa de CBOs
+              Lista Completa de CBOs Bloqueados
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              CBOs associados a reprovações
+              CBOs identificados nas mensagens de erro
             </p>
           </div>
-          <Badge variant="secondary">{cboList.length} CBOs</Badge>
+          <Badge variant="secondary">{cboList.length} CBOs bloqueados</Badge>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 mt-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar por código ou descrição..."
+              placeholder="Buscar por código ou nome..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 bg-background"
@@ -92,18 +118,20 @@ const ListaCompletaCBOsPanel = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>CBO</TableHead>
-                  <TableHead className="text-right">Reprovações</TableHead>
+                  <TableHead>Código</TableHead>
+                  <TableHead>Nome</TableHead>
+                  <TableHead className="text-right">Leads Bloqueados</TableHead>
                   <TableHead className="text-right">% do Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.slice(0, 50).map((c) => (
-                  <TableRow key={c.cbo}>
-                    <TableCell className="text-foreground">{c.cbo}</TableCell>
+                  <TableRow key={c.code}>
+                    <TableCell className="text-foreground font-mono">{c.code}</TableCell>
+                    <TableCell className="text-foreground">{c.name || "-"}</TableCell>
                     <TableCell className="text-right text-muted-foreground">{c.quantidade.toLocaleString("pt-BR")}</TableCell>
                     <TableCell className="text-right text-foreground">
-                      {totalReprovacoes > 0 ? ((c.quantidade / totalReprovacoes) * 100).toFixed(1) : 0}%
+                      {totalBloqueados > 0 ? ((c.quantidade / totalBloqueados) * 100).toFixed(1) : 0}%
                     </TableCell>
                   </TableRow>
                 ))}

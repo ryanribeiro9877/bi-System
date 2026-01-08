@@ -33,6 +33,9 @@ export interface Lead {
   retorno_proposta: RetornoProposta | null;
   retorno_get_proposta: RetornoGetProposta | null;
   ultimo_log: string | null;
+  // Campos de CBO bloqueado extraídos
+  cbo_block_code: string | null;
+  cbo_block_name: string | null;
 }
 
 export interface FilterState {
@@ -64,6 +67,9 @@ export interface DashboardStats {
   reprovacoesPorCBO: { cbo: string; quantidade: number }[];
   reprovacoesPorTipo: { tipo: string; tipoCompleto: string; quantidade: number }[];
   leadsPorStatus: { status: string; quantidade: number }[];
+  // CBOs bloqueados extraídos
+  cbosBloqueados: { code: string; name: string | null; quantidade: number }[];
+  totalCBOsBloqueados: number;
   // Novos campos extraídos
   margemMedia: number;
   valorSimulacaoTotal: number;
@@ -276,6 +282,8 @@ export const useLeadsData = (filters?: FilterState) => {
         reprovacoesPorCBO: [],
         reprovacoesPorTipo: [],
         leadsPorStatus: [],
+        cbosBloqueados: [],
+        totalCBOsBloqueados: 0,
         margemMedia: 0,
         valorSimulacaoTotal: 0,
       };
@@ -491,6 +499,27 @@ export const useLeadsData = (filters?: FilterState) => {
     ).size;
     const tiposReprovacaoUnicos = tiposReprovacao.length;
 
+    // Count by CBO bloqueado (extraído da mensagem de erro)
+    const cboBlockCount: Record<string, { name: string | null; quantidade: number }> = {};
+    leadsComStatusNormalizado.forEach(l => {
+      if (l.cbo_block_code) {
+        if (!cboBlockCount[l.cbo_block_code]) {
+          cboBlockCount[l.cbo_block_code] = { name: l.cbo_block_name || null, quantidade: 0 };
+        }
+        cboBlockCount[l.cbo_block_code].quantidade++;
+        // Atualiza o nome se encontrar um preenchido
+        if (l.cbo_block_name && !cboBlockCount[l.cbo_block_code].name) {
+          cboBlockCount[l.cbo_block_code].name = l.cbo_block_name;
+        }
+      }
+    });
+
+    const cbosBloqueados = Object.entries(cboBlockCount)
+      .map(([code, data]) => ({ code, name: data.name, quantidade: data.quantidade }))
+      .sort((a, b) => b.quantidade - a.quantidade);
+
+    const totalCBOsBloqueados = cbosBloqueados.reduce((acc, c) => acc + c.quantidade, 0);
+
     return {
       totalLeads,
       leadsAprovados,
@@ -510,6 +539,8 @@ export const useLeadsData = (filters?: FilterState) => {
       reprovacoesPorCBO,
       reprovacoesPorTipo: tiposReprovacao,
       leadsPorStatus,
+      cbosBloqueados,
+      totalCBOsBloqueados,
       margemMedia,
       valorSimulacaoTotal,
     };
