@@ -1,20 +1,27 @@
 /**
  * Utilitário centralizado para normalizar status de leads
  * 
- * REGRAS POR BANCO:
+ * REGRAS POR BANCO (V8, PRESENÇA, UY3):
+ * 
+ * PENDENTE (prioridade máxima):
+ * - retorno_autorizacao.errors contém "Limite de consultas excedido"
+ * - Erros de timeout/rate limit que impedem processamento
  * 
  * V8:
  * - APROVADO: retorno_proposta.status = "success" (com formalizationLink)
  * - REPROVADO: retorno_proposta.error presente
- * - CPF_NAO_ENCONTRADO: sem retornos ou erro de timeout/rate limit
+ * - CPF_NAO_ENCONTRADO: sem retornos
  * 
  * PRESENÇA:
  * - APROVADO: retorno_margem.valorMargemDisponivel > 0 (sem error)
  * - REPROVADO: retorno_margem.error presente (ex: "Margem indisponível")
- * - CPF_NAO_ENCONTRADO: sem retornos ou erro de timeout/rate limit
+ * - CPF_NAO_ENCONTRADO: sem retornos
+ * 
+ * UY3:
+ * - Segue mesma lógica dos demais bancos
  */
 
-export type StatusNormalizado = "aprovado" | "reprovado" | "cpf_nao_encontrado";
+export type StatusNormalizado = "aprovado" | "reprovado" | "cpf_nao_encontrado" | "pendente";
 
 interface LeadData {
   banco?: string | null;
@@ -27,12 +34,46 @@ interface LeadData {
 }
 
 /**
- * Extrai o motivo do erro/reprovação de um lead
+ * Verifica se há erro de limite de consultas no retorno_autorizacao
+ */
+const isLimiteConsultasExcedido = (autorizacao: any): boolean => {
+  if (!autorizacao) return false;
+  
+  // Formato: { errors: ["Limite de consultas excedido para este parceiro."] }
+  if (Array.isArray(autorizacao.errors)) {
+    return autorizacao.errors.some((err: string) => 
+      String(err).toLowerCase().includes("limite") && 
+      String(err).toLowerCase().includes("excedido")
+    );
+  }
+  
+  // Formato alternativo: { error: "..." }
+  if (autorizacao.error) {
+    const erro = String(autorizacao.error).toLowerCase();
+    return erro.includes("limite") && erro.includes("excedido");
+  }
+  
+  return false;
+};
+
+/**
+ * Extrai o motivo do erro/reprovação/pendência de um lead
  */
 export const extrairMotivoErro = (lead: LeadData): string | null => {
   const proposta = lead.retorno_proposta as any;
   const margem = lead.retorno_margem as any;
   const simulacao = lead.retorno_simulacao as any;
+  const autorizacao = lead.retorno_autorizacao as any;
+  
+  // Verificar limite de consultas excedido primeiro (pendente)
+  if (autorizacao) {
+    if (Array.isArray(autorizacao.errors) && autorizacao.errors.length > 0) {
+      return autorizacao.errors.join("; ");
+    }
+    if (autorizacao.error) {
+      return autorizacao.error;
+    }
+  }
   
   // V8: erro na proposta
   if (proposta?.error) {
@@ -70,6 +111,37 @@ const isErroConexao = (erro: string): boolean => {
 };
 
 /**
+ * Verifica se o lead está pendente por erro de limite/conexão
+ */
+const isPendente = (lead: LeadData): boolean => {
+  const autorizacao = lead.retorno_autorizacao as any;
+  const margem = lead.retorno_margem as any;
+  const simulacao = lead.retorno_simulacao as any;
+  
+  // Verificar limite de consultas excedido no retorno_autorizacao
+  if (isLimiteConsultasExcedido(autorizacao)) {
+    return true;
+  }
+  
+  // Verificar erro de rate limit em qualquer retorno
+  const erros = [
+    margem?.error,
+    simulacao?.error,
+    autorizacao?.error
+  ].filter(Boolean);
+  
+  for (const erro of erros) {
+    const lower = String(erro).toLowerCase();
+    if (lower.includes("rate limit") || 
+        (lower.includes("limite") && lower.includes("excedido"))) {
+      return true;
+    }
+  }
+  
+  return false;
+};
+
+/**
  * Normaliza o status do lead considerando as diferenças entre bancos
  */
 export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
@@ -78,6 +150,13 @@ export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
   const proposta = lead.retorno_proposta as any;
   const getProposta = lead.retorno_get_proposta as any;
   const banco = (lead.banco || "").toLowerCase();
+  
+  // ==============================
+  // VERIFICAR PENDENTE PRIMEIRO
+  // ==============================
+  if (isPendente(lead)) {
+    return "pendente";
+  }
   
   // ==============================
   // V8: Verificar retorno_proposta
@@ -108,15 +187,15 @@ export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
   }
   
   // =====================================
-  // PRESENÇA: Verificar retorno_margem
+  // PRESENÇA / UY3: Verificar retorno_margem
   // =====================================
-  if (banco.includes("presença") || banco.includes("presenca") || margem) {
+  if (banco.includes("presença") || banco.includes("presenca") || banco.includes("uy3") || margem) {
     if (margem) {
       // Se tem erro na margem
       if (margem.error) {
         const erro = String(margem.error);
         if (isErroConexao(erro)) {
-          return "cpf_nao_encontrado";
+          return "pendente";
         }
         return "reprovado";
       }
@@ -158,7 +237,7 @@ export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
     // Verificar erro na simulação
     if (simulacao.error) {
       if (isErroConexao(simulacao.error)) {
-        return "cpf_nao_encontrado";
+        return "pendente";
       }
       return "reprovado";
     }
@@ -191,6 +270,7 @@ export const normalizarStatus = (status: string | null, lead?: LeadData): Status
   const s = (status || "").toLowerCase().trim();
   if (s === "aprovado" || s === "approved") return "aprovado";
   if (s === "reprovado" || s === "rejected" || s === "recusado") return "reprovado";
+  if (s === "pendente" || s === "pending") return "pendente";
   if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "cpf_nao_encontrado";
   
   // Se tem lead, usar lógica por banco

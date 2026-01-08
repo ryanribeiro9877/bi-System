@@ -284,7 +284,8 @@ export const useLeadsData = (filters?: FilterState) => {
     
     const leadsAprovados = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "aprovado").length;
     const leadsReprovados = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovado").length;
-    const leadsPendentes = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "cpf_nao_encontrado").length;
+    const leadsPendentes = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "pendente").length;
+    const leadsCpfNaoEncontrado = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "cpf_nao_encontrado").length;
     
     const taxaReprovacao = totalLeads > 0 ? parseFloat(((leadsReprovados / totalLeads) * 100).toFixed(2)) : 0;
     const taxaAprovacao = totalLeads > 0 ? parseFloat(((leadsAprovados / totalLeads) * 100).toFixed(2)) : 0;
@@ -460,13 +461,14 @@ export const useLeadsData = (filters?: FilterState) => {
       .map(([cbo, quantidade]) => ({ cbo, quantidade }))
       .sort((a, b) => b.quantidade - a.quantidade);
 
-    // Count by status (normalizado) - apenas 3 opções
+    // Count by status (normalizado) - 4 opções
     const statusCount: Record<string, number> = {};
     leadsComStatusNormalizado.forEach(l => {
       const status = l.statusNormalizado;
       let statusLabel = "CPF Não Encontrado";
       if (status === "aprovado") statusLabel = "Aprovado";
       else if (status === "reprovado") statusLabel = "Reprovado";
+      else if (status === "pendente") statusLabel = "Pendente";
       statusCount[statusLabel] = (statusCount[statusLabel] || 0) + 1;
     });
 
