@@ -20,7 +20,7 @@ import PerfilIdealPanel from "@/components/leads/PerfilIdealPanel";
 import CBOsQueAprovamPanel from "@/components/leads/CBOsQueAprovamPanel";
 import EmpresasPanel from "@/components/leads/EmpresasPanel";
 import PorBancoPanel from "@/components/leads/PorBancoPanel";
-import { DashboardProvider, useDashboard } from "@/contexts/DashboardContext";
+import { useDashboard } from "@/contexts/DashboardContext";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 
 // Formata data como dd/mm/aaaa - hh:nn:ss
@@ -396,12 +396,10 @@ const LeadsContent = () => {
 
 const Leads = () => {
   return (
-    <DashboardProvider>
-      <div className="min-h-screen flex w-full bg-background">
-        <DashboardSidebar />
-        <LeadsContent />
-      </div>
-    </DashboardProvider>
+    <div className="min-h-screen flex w-full bg-background">
+      <DashboardSidebar />
+      <LeadsContent />
+    </div>
   );
 };
 

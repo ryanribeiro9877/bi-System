@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
+import { DashboardProvider } from "@/contexts/DashboardContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
@@ -15,6 +16,15 @@ import Alertas from "./pages/Alertas";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
+
+// Wrapper que inclui o DashboardProvider para rotas protegidas
+const ProtectedWithDashboard = ({ children, requireAdmin = false }: { children: React.ReactNode; requireAdmin?: boolean }) => (
+  <ProtectedRoute requireAdmin={requireAdmin}>
+    <DashboardProvider>
+      {children}
+    </DashboardProvider>
+  </ProtectedRoute>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -28,49 +38,49 @@ const App = () => (
             <Route
               path="/dashboard"
               element={
-                <ProtectedRoute>
+                <ProtectedWithDashboard>
                   <Dashboard />
-                </ProtectedRoute>
+                </ProtectedWithDashboard>
               }
             />
             <Route
               path="/dashboard/users"
               element={
-                <ProtectedRoute requireAdmin>
+                <ProtectedWithDashboard requireAdmin>
                   <UserManagement />
-                </ProtectedRoute>
+                </ProtectedWithDashboard>
               }
             />
             <Route
               path="/dashboard/importacoes"
               element={
-                <ProtectedRoute>
+                <ProtectedWithDashboard>
                   <Importacoes />
-                </ProtectedRoute>
+                </ProtectedWithDashboard>
               }
             />
             <Route
               path="/dashboard/leads"
               element={
-                <ProtectedRoute>
+                <ProtectedWithDashboard>
                   <Leads />
-                </ProtectedRoute>
+                </ProtectedWithDashboard>
               }
             />
             <Route
               path="/dashboard/cbos-bloqueados"
               element={
-                <ProtectedRoute>
+                <ProtectedWithDashboard>
                   <CBOsBloqueados />
-                </ProtectedRoute>
+                </ProtectedWithDashboard>
               }
             />
             <Route
               path="/dashboard/alertas"
               element={
-                <ProtectedRoute>
+                <ProtectedWithDashboard>
                   <Alertas />
-                </ProtectedRoute>
+                </ProtectedWithDashboard>
               }
             />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

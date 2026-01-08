@@ -100,11 +100,22 @@ const summarizeType = (fullText: string): string => {
   return cleanText;
 };
 
+// Exportar cores e funções para uso em outros componentes
+export { REJECTION_COLORS, extractCleanType, summarizeType };
+
+// Função para obter a cor de um tipo de reprovação
+export const getColorForType = (tipoReprovacao: string | null, tiposDisponiveis: { tipo: string; cor: string }[]): string | null => {
+  if (!tipoReprovacao) return null;
+  const found = tiposDisponiveis.find(t => t.tipo === tipoReprovacao);
+  return found?.cor || null;
+};
+
 const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) => {
   const { stats } = useDashboard();
   
-  // Obtém tipos de reprovação das estatísticas
+  // Obtém tipos de reprovação das estatísticas - usando o campo `tipo` que corresponde ao banco
   const tiposReprovacaoDisponiveis = stats.reprovacoesPorTipo.map((item, index) => ({
+    tipo: item.tipo, // Campo que corresponde ao tipo_reprovacao no banco
     original: item.tipoCompleto || item.tipo,
     resumido: summarizeType(item.tipoCompleto || item.tipo),
     limpo: extractCleanType(item.tipoCompleto || item.tipo),
@@ -116,6 +127,7 @@ const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) =
     onFiltersChange({ ...filters, [key]: value });
   };
 
+  // Usa o campo `tipo` (resumido) para filtrar, que corresponde ao tipo_reprovacao no banco
   const toggleTipoReprovacao = (tipo: string) => {
     const current = filters.tiposReprovacaoMultiplos || [];
     const newSelection = current.includes(tipo)
@@ -240,11 +252,11 @@ const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) =
               <ScrollArea className="h-[300px]">
                 <div className="p-2 space-y-1">
                   {tiposReprovacaoDisponiveis.map((tipo, index) => {
-                    const isSelected = filters.tiposReprovacaoMultiplos.includes(tipo.original);
+                    const isSelected = filters.tiposReprovacaoMultiplos.includes(tipo.tipo);
                     return (
                       <button
                         key={index}
-                        onClick={() => toggleTipoReprovacao(tipo.original)}
+                        onClick={() => toggleTipoReprovacao(tipo.tipo)}
                         className={cn(
                           "w-full flex items-center gap-3 p-2 rounded-md text-left transition-colors text-sm",
                           isSelected 
@@ -335,7 +347,7 @@ const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) =
       {filters.tiposReprovacaoMultiplos.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {filters.tiposReprovacaoMultiplos.map((tipo, index) => {
-            const tipoInfo = tiposReprovacaoDisponiveis.find(t => t.original === tipo);
+            const tipoInfo = tiposReprovacaoDisponiveis.find(t => t.tipo === tipo);
             const cor = tipoInfo?.cor || REJECTION_COLORS[index % REJECTION_COLORS.length];
             return (
               <Badge 
