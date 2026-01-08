@@ -21,7 +21,7 @@
  * - Segue mesma lógica dos demais bancos
  */
 
-export type StatusNormalizado = "aprovado" | "reprovado" | "cpf_nao_encontrado" | "pendente";
+export type StatusNormalizado = "aprovado" | "reprovado" | "pendente";
 
 interface LeadData {
   banco?: string | null;
@@ -227,10 +227,7 @@ export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
     }
     
     if (detailsStatus === "REJECTED" || detailsStatus === "FAILED") {
-      const error = String(simulacao.details?.error || simulacao.details?.description || "");
-      if (error.includes("não encontrado") || error.includes("inelegível") || error.includes("não elegível")) {
-        return "cpf_nao_encontrado";
-      }
+      // CPF não encontrado/inelegível = REPROVADO (não é status separado)
       return "reprovado";
     }
     
@@ -250,10 +247,10 @@ export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
   }
   
   // =====================================
-  // SEM RETORNOS = CPF NÃO ENCONTRADO
+  // SEM RETORNOS = REPROVADO (sem dados para processar)
   // =====================================
   if (!margem && !simulacao && !proposta && !getProposta) {
-    return "cpf_nao_encontrado";
+    return "reprovado";
   }
   
   // =====================================
@@ -271,12 +268,13 @@ export const normalizarStatus = (status: string | null, lead?: LeadData): Status
   if (s === "aprovado" || s === "approved") return "aprovado";
   if (s === "reprovado" || s === "rejected" || s === "recusado") return "reprovado";
   if (s === "pendente" || s === "pending") return "pendente";
-  if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "cpf_nao_encontrado";
+  // CPF não encontrado agora é considerado REPROVADO
+  if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "reprovado";
   
   // Se tem lead, usar lógica por banco
   if (lead) {
     return normalizarStatusLead(lead);
   }
   
-  return "cpf_nao_encontrado";
+  return "reprovado";
 };
