@@ -21,6 +21,7 @@ import CBOsQueAprovamPanel from "@/components/leads/CBOsQueAprovamPanel";
 import EmpresasPanel from "@/components/leads/EmpresasPanel";
 import PorBancoPanel from "@/components/leads/PorBancoPanel";
 import { DashboardProvider, useDashboard } from "@/contexts/DashboardContext";
+import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 
 // Formata data como dd/mm/aaaa - hh:nn:ss
 const formatDateTime = (dateString: string | null): string => {
@@ -63,88 +64,9 @@ const LeadsContent = () => {
   const [detailOpen, setDetailOpen] = useState(false);
   const leadsPerPage = 15;
 
-  // Helper para normalizar status do lead - verifica TODAS as fontes de dados
+  // Helper para normalizar status do lead - usa utilitário centralizado
   const getNormalizedStatus = (lead: Lead): string => {
-    const margem = lead.retorno_margem as any;
-    const simulacao = lead.retorno_simulacao as any;
-    const proposta = lead.retorno_proposta as any;
-    const getProposta = lead.retorno_get_proposta as any;
-    
-    // === VERIFICAR PROPOSTA PRIMEIRO (V8) ===
-    // Só é aprovado se retorno_proposta tem "status": "success" e NÃO tem "error"
-    if (proposta) {
-      // Se tem error = REPROVADO
-      if (proposta.error) {
-        return "reprovado";
-      }
-      // Se tem status = success = APROVADO
-      if (proposta.status?.toLowerCase() === "success") {
-        return "aprovado";
-      }
-    }
-    
-    // Verificar retorno_get_proposta também
-    if (getProposta) {
-      if (getProposta.error) {
-        return "reprovado";
-      }
-      const getPropostaStatus = String(getProposta.status || "").toLowerCase();
-      if (getPropostaStatus === "success") {
-        return "aprovado";
-      }
-    }
-    
-    // === FORMATO V8 - Simulação ===
-    const detailsStatus = typeof simulacao?.details?.status === 'string' 
-      ? simulacao.details.status.toUpperCase() 
-      : String(simulacao?.details?.status || "").toUpperCase();
-    
-    // Se simulação retornou erro/failed = verificar tipo
-    if (detailsStatus === "FAILED" || detailsStatus === "REJECTED") {
-      const error = String(simulacao?.details?.error || simulacao?.details?.description || "");
-      if (error.includes("não encontrado") || error.includes("inelegível") || error.includes("não elegível")) {
-        return "cpf_nao_encontrado";
-      }
-      return "reprovado";
-    }
-    
-    // Se simulação teve margem > 0 mas NÃO gerou proposta com success = ainda não aprovado
-    // Apenas margens com proposta success são aprovados
-    
-    // === FORMATO PRESENÇA ===
-    // Se tem margem disponível > 0 = aprovado (Presença não usa retorno_proposta)
-    const valorMargem = margem?.valorMargemDisponivel;
-    if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
-      return "aprovado";
-    }
-    
-    // Se tem retorno_margem mas com erro = reprovado
-    const erroMargem = margem?.error || "";
-    if (erroMargem) {
-      if (erroMargem.includes("timeout") || erroMargem.includes("cURL error") || erroMargem.includes("Rate limit")) {
-        return "cpf_nao_encontrado";
-      }
-      return "reprovado";
-    }
-    
-    // Se tem retorno_margem mas margem é 0 ou null = reprovado
-    if (margem && (valorMargem === 0 || valorMargem === null)) {
-      return "reprovado";
-    }
-    
-    // Se não tem nenhum retorno = CPF não encontrado
-    if (!margem && !simulacao && !proposta && !getProposta) {
-      return "cpf_nao_encontrado";
-    }
-    
-    // Se tem erro de timeout ou rate limit = CPF não encontrado
-    const erro = simulacao?.error || "";
-    if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
-      return "cpf_nao_encontrado";
-    }
-    
-    // Fallback: se tem algum retorno mas não identificou = reprovado
-    return "reprovado";
+    return normalizarStatusLead(lead);
   };
 
   // Extrai nome de todas as fontes possíveis
