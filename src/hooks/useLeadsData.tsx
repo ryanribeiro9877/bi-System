@@ -177,14 +177,13 @@ export const useLeadsData = (filters?: FilterState) => {
     setError(null);
 
     try {
-      const pageSize = 1000;
-      let from = 0;
-      let allRows: any[] = [];
-
+      // Buscar apenas campos necessários para melhor performance
+      const selectFields = "id,cpf,nome,banco,cbo,status,tipo_reprovacao,valor,data_envio,data_retorno,observacoes,created_at,updated_at,retorno_autorizacao,retorno_margem,retorno_simulacao,retorno_proposta,retorno_get_proposta,ultimo_log,cbo_block_code,cbo_block_name";
+      
       const buildBaseQuery = () => {
         let query = supabase
           .from("leads")
-          .select("*")
+          .select(selectFields)
           .order("created_at", { ascending: false });
 
         // Apply filters
@@ -200,7 +199,6 @@ export const useLeadsData = (filters?: FilterState) => {
         if (filters?.tipoReprovacao) {
           query = query.eq("tipo_reprovacao", filters.tipoReprovacao);
         }
-        // Filtro múltiplo de tipos de reprovação (usa ilike para match parcial)
         if (filters?.tiposReprovacaoMultiplos && filters.tiposReprovacaoMultiplos.length > 0) {
           query = query.in("tipo_reprovacao", filters.tiposReprovacaoMultiplos);
         }
@@ -214,18 +212,45 @@ export const useLeadsData = (filters?: FilterState) => {
         return query;
       };
 
-      // PostgREST tem limite padrão de 1000 linhas por request.
-      // Aqui buscamos em páginas para montar estatísticas corretas.
-      while (true) {
-        const { data, error: fetchError } = await buildBaseQuery().range(from, from + pageSize - 1);
+      // Usar paginação paralela para maior velocidade
+      const pageSize = 1000;
+      
+      // Primeiro, pegar a contagem total para saber quantas páginas buscar
+      const { count } = await supabase
+        .from("leads")
+        .select("*", { count: "exact", head: true });
+      
+      const totalRecords = count || 0;
+      const totalPages = Math.ceil(totalRecords / pageSize);
+      
+      if (totalRecords === 0) {
+        setLeads([]);
+        setIsLoading(false);
+        return;
+      }
 
-        if (fetchError) throw fetchError;
-
-        const batch = data || [];
-        allRows = allRows.concat(batch);
-
-        if (batch.length < pageSize) break;
-        from += pageSize;
+      // Buscar todas as páginas em paralelo (máximo 5 requisições simultâneas)
+      const maxConcurrent = 5;
+      let allRows: any[] = [];
+      
+      for (let batch = 0; batch < Math.ceil(totalPages / maxConcurrent); batch++) {
+        const startPage = batch * maxConcurrent;
+        const endPage = Math.min(startPage + maxConcurrent, totalPages);
+        
+        const pagePromises = [];
+        for (let page = startPage; page < endPage; page++) {
+          const from = page * pageSize;
+          pagePromises.push(
+            buildBaseQuery().range(from, from + pageSize - 1)
+          );
+        }
+        
+        const results = await Promise.all(pagePromises);
+        
+        for (const result of results) {
+          if (result.error) throw result.error;
+          if (result.data) allRows = allRows.concat(result.data);
+        }
       }
 
       // Parse JSONB fields
