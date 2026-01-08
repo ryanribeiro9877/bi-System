@@ -36,11 +36,11 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
     }
 
     return (
-      <ScrollArea className="max-h-[300px]">
+      <div className="max-h-[300px] overflow-y-auto">
         <pre className="bg-muted/50 rounded-lg p-4 text-xs overflow-x-auto whitespace-pre-wrap break-words font-mono text-foreground">
           {JSON.stringify(data, null, 2)}
         </pre>
-      </ScrollArea>
+      </div>
     );
   };
 
