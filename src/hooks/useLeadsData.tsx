@@ -40,6 +40,7 @@ export interface FilterState {
   dataFinal: Date | undefined;
   banco: string;
   tipoReprovacao: string;
+  tiposReprovacaoMultiplos: string[]; // Novo: suporte a múltiplos tipos
   status: string;
   cpf: string;
 }
@@ -191,6 +192,10 @@ export const useLeadsData = (filters?: FilterState) => {
         if (filters?.tipoReprovacao) {
           query = query.eq("tipo_reprovacao", filters.tipoReprovacao);
         }
+        // Filtro múltiplo de tipos de reprovação (usa ilike para match parcial)
+        if (filters?.tiposReprovacaoMultiplos && filters.tiposReprovacaoMultiplos.length > 0) {
+          query = query.in("tipo_reprovacao", filters.tiposReprovacaoMultiplos);
+        }
         if (filters?.status) {
           query = query.eq("status", filters.status);
         }
@@ -236,7 +241,7 @@ export const useLeadsData = (filters?: FilterState) => {
 
   useEffect(() => {
     fetchLeads();
-  }, [filters?.dataInicial, filters?.dataFinal, filters?.banco, filters?.tipoReprovacao, filters?.status, filters?.cpf]);
+  }, [filters?.dataInicial, filters?.dataFinal, filters?.banco, filters?.tipoReprovacao, filters?.tiposReprovacaoMultiplos, filters?.status, filters?.cpf]);
 
   // Sincronização global: refetch quando houver nova importação
   useEffect(() => {

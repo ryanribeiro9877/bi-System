@@ -25,6 +25,7 @@ export const DashboardProvider = ({ children }: { children: ReactNode }) => {
     dataFinal: undefined,
     banco: "",
     tipoReprovacao: "",
+    tiposReprovacaoMultiplos: [],
     status: "",
     cpf: "",
   });
