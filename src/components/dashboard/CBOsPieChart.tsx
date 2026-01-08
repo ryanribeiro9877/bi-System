@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useDashboard } from "@/contexts/DashboardContext";
@@ -11,15 +12,16 @@ const COLORS = [
   "hsl(142 71% 55%)",
 ];
 
-const CBOsPieChart = () => {
+const CBOsPieChart = memo(() => {
   const { stats } = useDashboard();
 
-  const totalReprovacoes = stats.reprovacoesPorCBO.reduce((acc, item) => acc + item.quantidade, 0);
-  
-  const data = stats.reprovacoesPorCBO.slice(0, 6).map(item => ({
-    name: item.cbo,
-    value: totalReprovacoes > 0 ? Math.round((item.quantidade / totalReprovacoes) * 100 * 10) / 10 : 0,
-  }));
+  const data = useMemo(() => {
+    const totalReprovacoes = stats.reprovacoesPorCBO.reduce((acc, item) => acc + item.quantidade, 0);
+    return stats.reprovacoesPorCBO.slice(0, 6).map(item => ({
+      name: item.cbo,
+      value: totalReprovacoes > 0 ? Math.round((item.quantidade / totalReprovacoes) * 100 * 10) / 10 : 0,
+    }));
+  }, [stats.reprovacoesPorCBO]);
 
   if (data.length === 0) {
     return (
@@ -79,6 +81,8 @@ const CBOsPieChart = () => {
       </CardContent>
     </Card>
   );
-};
+});
+
+CBOsPieChart.displayName = "CBOsPieChart";
 
 export default CBOsPieChart;
