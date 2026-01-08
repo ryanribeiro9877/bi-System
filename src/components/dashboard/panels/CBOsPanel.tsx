@@ -41,7 +41,10 @@ const CBOsPanel = () => {
 
       <Card className="glass-card">
         <CardHeader>
-          <CardTitle className="text-lg font-semibold text-foreground">Top CBOs por Reprovação</CardTitle>
+          <CardTitle className="text-lg font-semibold text-foreground">Top 10 CBOs por Reprovação</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Ocupações com maior número de reprovações
+          </p>
         </CardHeader>
         <CardContent>
           {!hasCboData ? (
@@ -55,16 +58,22 @@ const CBOsPanel = () => {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>CBO</TableHead>
-                    <TableHead className="text-right">Reprovações</TableHead>
+                  <TableRow className="border-border">
+                    <TableHead className="text-muted-foreground w-12">#</TableHead>
+                    <TableHead className="text-muted-foreground">CBO</TableHead>
+                    <TableHead className="text-right text-muted-foreground">Reprovações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {stats.reprovacoesPorCBO.slice(0, 20).map((c) => (
-                    <TableRow key={c.cbo}>
-                      <TableCell className="text-foreground">{c.cbo}</TableCell>
-                      <TableCell className="text-right text-muted-foreground">{c.quantidade.toLocaleString("pt-BR")}</TableCell>
+                  {stats.reprovacoesPorCBO.slice(0, 10).map((c, index) => (
+                    <TableRow key={c.cbo} className="border-border">
+                      <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
+                      <TableCell className="text-foreground font-medium">{c.cbo}</TableCell>
+                      <TableCell className="text-right">
+                        <span className="inline-flex items-center px-2 py-1 rounded-md bg-destructive/10 text-destructive text-sm font-medium">
+                          {c.quantidade.toLocaleString("pt-BR")}
+                        </span>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
