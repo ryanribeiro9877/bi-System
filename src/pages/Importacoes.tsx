@@ -12,6 +12,7 @@ import { importEvents } from "@/events/importEvents";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import { parseJsonSafe } from "@/types/lead";
+import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 
 interface ImportRecord {
   id: string;
@@ -250,46 +251,25 @@ const extrairValorMargem = (simulacao: any, margem: any, getProposta?: any, prop
 };
 
 // Função para determinar status baseado nos retornos - suporta múltiplos formatos
-const determinarStatus = (simulacao: any, proposta: any, getProposta: any, margem: any): string => {
-  // Se tem proposta, provavelmente foi aprovado
-  if (proposta && Object.keys(proposta).length > 0) return "aprovado";
-  if (getProposta && Object.keys(getProposta).length > 0) return "aprovado";
-  
-  // Verificar status explícito no retorno_simulacao.details (novo formato)
-  const detailsStatus = typeof simulacao?.details?.status === 'string' 
-    ? simulacao.details.status.toUpperCase() 
-    : String(simulacao?.details?.status || "").toUpperCase();
-  
-  if (detailsStatus === "APPROVED" || detailsStatus === "SUCCESS") return "aprovado";
-  if (detailsStatus === "REJECTED" || detailsStatus === "FAILED") {
-    return "reprovado";
-  }
-  
-  // Se tem margem disponível > 0 = aprovado (retorno_margem)
-  const valorMargem = margem?.valorMargemDisponivel;
-  if (valorMargem !== undefined && valorMargem !== null && valorMargem > 0) {
-    return "aprovado";
-  }
-  
-  // Se tem availableMarginValue > 0 = aprovado (retorno_simulacao.details)
-  const availableMargin = simulacao?.details?.availableMarginValue;
-  if (availableMargin !== undefined && availableMargin !== null && parseFloat(availableMargin) > 0) {
-    return "aprovado";
-  }
-  
-  // Se não tem margem ou tem erro = pendente ou reprovado
-  if (!margem && !simulacao?.details) {
-    return "pendente";
-  }
-  
-  // Se tem erro de timeout ou rate limit = pendente
-  const erro = margem?.error || simulacao?.error || "";
-  if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
-    return "pendente";
-  }
-  
-  // Se tem margem <= 0 ou erro de margem indisponível = reprovado
-  return "reprovado";
+/**
+ * Determina o status do lead usando a lógica centralizada
+ * que prioriza valores financeiros sobre mensagens de erro
+ */
+const determinarStatus = (
+  simulacao: any, 
+  proposta: any, 
+  getProposta: any, 
+  margem: any,
+  banco?: string
+): string => {
+  // Usar a função centralizada que implementa o "filtro de sucesso"
+  return normalizarStatusLead({
+    banco: banco || null,
+    retorno_margem: margem,
+    retorno_simulacao: simulacao,
+    retorno_proposta: proposta,
+    retorno_get_proposta: getProposta,
+  });
 };
 
 const Importacoes = () => {
@@ -466,7 +446,7 @@ const Importacoes = () => {
             // O banco é SEMPRE definido pelo nome do arquivo
             lead.banco = extrairBancoDoNomeArquivo(file.name);
             if (!lead.status) {
-              lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem);
+              lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem, lead.banco);
             }
             // Extrair tipo de reprovação se status for reprovado
             if (!lead.tipo_reprovacao && lead.status === "reprovado") {
@@ -560,7 +540,7 @@ const Importacoes = () => {
             // O banco é SEMPRE definido pelo nome do arquivo
             lead.banco = extrairBancoDoNomeArquivo(file.name);
             if (!lead.status) {
-              lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem);
+              lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem, lead.banco);
             }
             // Extrair tipo de reprovação se status for reprovado
             if (!lead.tipo_reprovacao && lead.status === "reprovado") {
