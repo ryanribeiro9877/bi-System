@@ -149,14 +149,16 @@ const normalizarStatus = (status: string | null, lead?: Lead): string => {
   // Status explícitos sempre respeitados
   if (s === "aprovado" || s === "approved") return "aprovado";
   if (s === "reprovado" || s === "rejected" || s === "recusado") return "reprovado";
-  if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "cpf_nao_encontrado";
+  if (s === "pendente" || s === "pending") return "pendente";
+  // CPF não encontrado agora é considerado REPROVADO
+  if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "reprovado";
   
   // Para outros status, usar lógica centralizada por banco
   if (lead) {
     return normalizarStatusLead(lead);
   }
   
-  return "cpf_nao_encontrado";
+  return "reprovado";
 };
 
 export const useLeadsData = (filters?: FilterState) => {
@@ -290,7 +292,7 @@ export const useLeadsData = (filters?: FilterState) => {
     const leadsAprovados = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "aprovado").length;
     const leadsReprovados = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovado").length;
     const leadsPendentes = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "pendente").length;
-    const leadsCpfNaoEncontrado = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "cpf_nao_encontrado").length;
+    // leadsCpfNaoEncontrado não existe mais - todos são: aprovado, reprovado ou pendente
     
     const taxaReprovacao = totalLeads > 0 ? parseFloat(((leadsReprovados / totalLeads) * 100).toFixed(2)) : 0;
     const taxaAprovacao = totalLeads > 0 ? parseFloat(((leadsAprovados / totalLeads) * 100).toFixed(2)) : 0;
@@ -354,7 +356,7 @@ export const useLeadsData = (filters?: FilterState) => {
         return "CBO bloqueado";
       }
       if (motivoLower.includes("cpf") && (motivoLower.includes("não encontrado") || motivoLower.includes("not found"))) {
-        return "CPF não encontrado";
+        return "CPF inelegível";
       }
       if (motivoLower.includes("idade") || motivoLower.includes("age")) {
         return "Idade incompatível";
@@ -466,11 +468,11 @@ export const useLeadsData = (filters?: FilterState) => {
       .map(([cbo, quantidade]) => ({ cbo, quantidade }))
       .sort((a, b) => b.quantidade - a.quantidade);
 
-    // Count by status (normalizado) - 4 opções
+    // Count by status (normalizado) - apenas 3 opções: Aprovado, Reprovado, Pendente
     const statusCount: Record<string, number> = {};
     leadsComStatusNormalizado.forEach(l => {
       const status = l.statusNormalizado;
-      let statusLabel = "CPF Não Encontrado";
+      let statusLabel = "Pendente"; // fallback é pendente
       if (status === "aprovado") statusLabel = "Aprovado";
       else if (status === "reprovado") statusLabel = "Reprovado";
       else if (status === "pendente") statusLabel = "Pendente";

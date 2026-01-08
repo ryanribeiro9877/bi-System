@@ -164,11 +164,6 @@ const determinarStatus = (simulacao: any, proposta: any, getProposta: any, marge
   
   if (detailsStatus === "APPROVED" || detailsStatus === "SUCCESS") return "aprovado";
   if (detailsStatus === "REJECTED" || detailsStatus === "FAILED") {
-    // Verificar se é CPF não encontrado ou reprovado por margem
-    const error = String(simulacao?.details?.error || simulacao?.details?.description || "");
-    if (error.includes("não encontrado") || error.includes("inelegível") || error.includes("não elegível")) {
-      return "cpf_nao_encontrado";
-    }
     return "reprovado";
   }
   
@@ -184,15 +179,15 @@ const determinarStatus = (simulacao: any, proposta: any, getProposta: any, marge
     return "aprovado";
   }
   
-  // Se não tem margem ou tem erro = CPF não encontrado ou reprovado
+  // Se não tem margem ou tem erro = pendente ou reprovado
   if (!margem && !simulacao?.details) {
-    return "cpf_nao_encontrado";
+    return "pendente";
   }
   
-  // Se tem erro de timeout ou rate limit = CPF não encontrado
+  // Se tem erro de timeout ou rate limit = pendente
   const erro = margem?.error || simulacao?.error || "";
   if (erro.includes("timeout") || erro.includes("cURL error") || erro.includes("Rate limit")) {
-    return "cpf_nao_encontrado";
+    return "pendente";
   }
   
   // Se tem margem <= 0 ou erro de margem indisponível = reprovado
