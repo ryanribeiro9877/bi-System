@@ -149,14 +149,36 @@ const CBOsQueAprovamPanel = () => {
                   contentStyle={{ 
                     backgroundColor: 'hsl(var(--popover))', 
                     border: '1px solid hsl(var(--border))', 
-                    borderRadius: '8px',
-                    color: 'hsl(var(--foreground))'
+                    borderRadius: '12px',
+                    color: 'hsl(var(--foreground))',
+                    padding: '12px 16px',
+                    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)',
                   }}
-                  formatter={(value: number, name: string, props: any) => [
-                    `${value} aprovações`,
-                    props.payload.descricao
-                  ]}
-                  labelFormatter={() => ""}
+                  cursor={{ fill: 'rgba(16, 185, 129, 0.1)' }}
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div className="bg-popover border border-border rounded-xl p-3 shadow-xl min-w-[200px]">
+                          <p className="font-semibold text-foreground text-sm mb-1">
+                            {data.descricao}
+                          </p>
+                          {data.codigo && (
+                            <p className="text-xs text-muted-foreground mb-2">
+                              Código CBO: {data.codigo}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border">
+                            <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
+                            <span className="text-emerald-400 font-bold">
+                              {data.quantidade} leads aprovados
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
                 />
                 <Bar dataKey="quantidade" radius={[0, 4, 4, 0]}>
                   {top10CBOs.map((entry, index) => (
