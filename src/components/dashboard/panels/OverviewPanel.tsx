@@ -93,7 +93,7 @@ const OverviewPanel = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <KPICard
           title="CBOs Bloqueados Identificados"
-          value={stats.cbosUnicos.toString()}
+          value={stats.cbosBloqueados.length.toString()}
           icon={FileX}
           variant="warning"
         />
