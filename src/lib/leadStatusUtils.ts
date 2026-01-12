@@ -425,15 +425,53 @@ export const extrairMotivoErro = (lead: LeadData): string | null => {
  * Aplicável apenas a: V8, UY3 (PRESENÇA desconsiderado por falta de dados válidos)
  */
 export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
-  // =====================================================
-  // PRESENÇA: Desconsiderar - dados incompletos/inválidos
-  // O banco PRESENÇA não retorna status da proposta (success/error)
-  // =====================================================
   const banco = (lead.banco || "").toLowerCase().trim();
+  const proposta = lead.retorno_proposta as any;
+  const getProposta = lead.retorno_get_proposta as any;
+  const simulacao = lead.retorno_simulacao as any;
+  
+  // =====================================================
+  // PRESENÇA: Lógica específica baseada em análise real
+  // =====================================================
   if (banco.includes("presença") || banco.includes("presenca")) {
-    return "pendente"; // Marcar como pendente para revisão manual
+    // APROVADO: retorno_proposta.status === "success" E retorno_get_proposta tem dados
+    if (proposta?.status === "success" && getProposta && Object.keys(getProposta).length > 0) {
+      // Verifica se getProposta tem dados reais (não apenas erro)
+      if (getProposta.id || getProposta.coreId || getProposta.status) {
+        return "aprovado";
+      }
+    }
+    
+    // REPROVADO: retorno_proposta contém error
+    if (proposta?.error) {
+      return "reprovado";
+    }
+    
+    // REPROVADO: retorno_simulacao contém message com erros
+    if (simulacao?.message) {
+      const msg = String(simulacao.message).toLowerCase();
+      if (msg.includes("erro") || msg.includes("não encontrado") || msg.includes("cpf")) {
+        return "reprovado";
+      }
+    }
+    
+    // REPROVADO: retorno_proposta.status === "success" mas retorno_get_proposta vazio
+    if (proposta?.status === "success" && (!getProposta || Object.keys(getProposta).length === 0)) {
+      return "reprovado";
+    }
+    
+    // Se tem valores financeiros na simulação mas sem proposta, ainda é reprovado
+    // (a proposta falhou em algum ponto)
+    if (!proposta && !getProposta) {
+      return "reprovado";
+    }
+    
+    return "reprovado";
   }
   
+  // =====================================================
+  // V8/UY3: Lógica padrão para outros bancos
+  // =====================================================
   const temValoresFinanceiros = hasValoresFinanceiros(lead);
   const temStatusSuccess = hasStatusSuccess(lead);
   const temBloqueio = hasBloqueioNegocio(lead);
