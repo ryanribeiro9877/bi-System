@@ -86,10 +86,10 @@ export const LeadImportSchema = z.object({
     .nullable(),
   
   valor: z.number()
-    .min(0, 'Valor não pode ser negativo')
     .max(100000000, 'Valor excede o limite máximo')
     .optional()
-    .nullable(),
+    .nullable()
+    .transform(v => (v !== null && v !== undefined && v < 0) ? 0 : v),
   
   data_envio: z.string()
     .optional()
