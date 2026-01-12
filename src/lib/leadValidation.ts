@@ -130,27 +130,38 @@ export const LeadImportSchema = z.object({
 
 export type ValidatedLead = z.infer<typeof LeadImportSchema>;
 
+export interface ValidationError {
+  linha: number;
+  cpf: string;
+  cpfOriginal: string;
+  errors: string[];
+  motivo: string;
+}
+
 export interface ValidationResult {
   valid: ValidatedLead[];
-  invalid: Array<{
-    cpf: string;
-    errors: string[];
-  }>;
+  invalid: ValidationError[];
 }
 
 /**
  * Validates an array of leads and separates valid from invalid
+ * Now includes line numbers for better error reporting
  */
 export function validateLeads(leads: any[]): ValidationResult {
   const valid: ValidatedLead[] = [];
-  const invalid: Array<{ cpf: string; errors: string[] }> = [];
+  const invalid: ValidationError[] = [];
   
-  for (const lead of leads) {
+  for (let i = 0; i < leads.length; i++) {
+    const lead = leads[i];
+    const linha = i + 2; // +2 porque linha 1 é header, e arrays começam em 0
+    const cpfOriginal = String(lead.cpf || '');
+    const cpfLimpo = cpfOriginal.replace(/\D/g, '');
+    
     try {
       // Clean CPF before validation
       const cleanedLead = {
         ...lead,
-        cpf: String(lead.cpf || '').replace(/\D/g, ''),
+        cpf: cpfLimpo,
         // Ensure valor is a number or undefined
         valor: lead.valor !== undefined && lead.valor !== null && !isNaN(parseFloat(lead.valor))
           ? parseFloat(lead.valor)
@@ -160,17 +171,39 @@ export function validateLeads(leads: any[]): ValidationResult {
       const validated = LeadImportSchema.parse(cleanedLead);
       valid.push(validated);
     } catch (error) {
+      let errors: string[] = [];
+      let motivo = '';
+      
       if (error instanceof z.ZodError) {
-        invalid.push({
-          cpf: String(lead.cpf || 'N/A').replace(/\D/g, '').substring(0, 11),
-          errors: error.errors.map(e => `${e.path.join('.')}: ${e.message}`),
-        });
+        errors = error.errors.map(e => `${e.path.join('.')}: ${e.message}`);
+        
+        // Determinar motivo principal de forma amigável
+        const cpfError = error.errors.find(e => e.path.includes('cpf'));
+        if (cpfError) {
+          if (!cpfLimpo || cpfLimpo.length === 0) {
+            motivo = 'CPF vazio ou ausente';
+          } else if (cpfLimpo.length !== 11) {
+            motivo = `CPF com ${cpfLimpo.length} dígitos (esperado: 11)`;
+          } else if (/^(\d)\1{10}$/.test(cpfLimpo)) {
+            motivo = 'CPF inválido (todos dígitos iguais)';
+          } else {
+            motivo = 'CPF com dígitos verificadores inválidos';
+          }
+        } else {
+          motivo = errors[0] || 'Erro de validação';
+        }
       } else {
-        invalid.push({
-          cpf: String(lead.cpf || 'N/A').replace(/\D/g, '').substring(0, 11),
-          errors: ['Erro desconhecido na validação'],
-        });
+        errors = ['Erro desconhecido na validação'];
+        motivo = 'Erro desconhecido';
       }
+      
+      invalid.push({
+        linha,
+        cpf: cpfLimpo.substring(0, 11) || 'N/A',
+        cpfOriginal: cpfOriginal.substring(0, 20),
+        errors,
+        motivo,
+      });
     }
   }
   

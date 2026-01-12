@@ -13,7 +13,7 @@ import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import { parseJsonSafe } from "@/types/lead";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
-import { validateLeads } from "@/lib/leadValidation";
+import { validateLeads, ValidationError } from "@/lib/leadValidation";
 
 interface ImportRecord {
   id: string;
@@ -290,6 +290,7 @@ const Importacoes = () => {
   const [imports, setImports] = useState<ImportRecord[]>([]);
   const [previewData, setPreviewData] = useState<ParsedLead[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
 
   // Fetch import history
   const fetchImports = useCallback(async () => {
@@ -655,9 +656,12 @@ const Importacoes = () => {
       // Validate leads before import
       const validationResult = validateLeads(parsed);
       
-      // Log validation errors for debugging (without sensitive data)
+      // Store validation errors for display
       if (validationResult.invalid.length > 0) {
         console.warn(`[Importacoes] ${validationResult.invalid.length} registros inválidos encontrados durante validação`);
+        setValidationErrors(validationResult.invalid);
+      } else {
+        setValidationErrors([]);
       }
 
       // Only proceed with valid leads
@@ -974,6 +978,62 @@ const Importacoes = () => {
                       ))}
                     </TableBody>
                   </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Validation Errors Panel */}
+          {validationErrors.length > 0 && (
+            <Card className="border-red-500/30 bg-red-500/5">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-red-400">
+                  <X className="w-5 h-5" />
+                  Registros com Erro de Validação ({validationErrors.length})
+                </CardTitle>
+                <CardDescription>
+                  Os seguintes registros não foram importados devido a erros de validação
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[80px]">Linha</TableHead>
+                        <TableHead className="w-[140px]">CPF Original</TableHead>
+                        <TableHead className="w-[140px]">CPF Limpo</TableHead>
+                        <TableHead>Motivo do Erro</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {validationErrors.map((err, index) => (
+                        <TableRow key={index} className="border-red-500/20">
+                          <TableCell className="font-mono font-bold text-red-400">
+                            {err.linha}
+                          </TableCell>
+                          <TableCell className="font-mono text-muted-foreground">
+                            {err.cpfOriginal || "-"}
+                          </TableCell>
+                          <TableCell className="font-mono">
+                            {err.cpf || "-"}
+                          </TableCell>
+                          <TableCell className="text-red-300">
+                            {err.motivo}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setValidationErrors([])}
+                  >
+                    Limpar Erros
+                  </Button>
                 </div>
               </CardContent>
             </Card>
