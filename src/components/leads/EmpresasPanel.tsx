@@ -7,9 +7,19 @@ import { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 
-const EmpresasPanel = () => {
+interface EmpresasPanelProps {
+  bancoFilter?: string;
+}
+
+const EmpresasPanel = ({ bancoFilter = "todos" }: EmpresasPanelProps) => {
   const navigate = useNavigate();
   const { leads, stats } = useDashboard();
+
+  // Filtra leads por banco se necessário
+  const leadsFiltrados = useMemo(() => {
+    if (bancoFilter === "todos") return leads;
+    return leads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
+  }, [leads, bancoFilter]);
 
   // Extrai empresa do lead aprovado
   const extrairEmpresa = (lead: any): { nome: string; cnpj: string } | null => {
@@ -47,7 +57,7 @@ const EmpresasPanel = () => {
 
   const top10Empresas = useMemo(() => {
     // Filtra apenas leads aprovados
-    const aprovados = leads.filter((l) => normalizarStatusLead(l) === "aprovado");
+    const aprovados = leadsFiltrados.filter((l) => normalizarStatusLead(l) === "aprovado");
 
     // Agrupa por empresa
     const empresaCount: Record<string, { nome: string; cnpj: string; quantidade: number }> = {};
@@ -76,11 +86,11 @@ const EmpresasPanel = () => {
           : item.nome,
         rank: index + 1,
       }));
-  }, [leads]);
+  }, [leadsFiltrados]);
 
   const totalAprovados = useMemo(() => {
-    return leads.filter((l) => normalizarStatusLead(l) === "aprovado").length;
-  }, [leads]);
+    return leadsFiltrados.filter((l) => normalizarStatusLead(l) === "aprovado").length;
+  }, [leadsFiltrados]);
 
   const COLORS = [
     "#3b82f6", "#60a5fa", "#93c5fd", "#bfdbfe", "#dbeafe",

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { CheckCircle, TrendingUp, DollarSign, Clock, Eye, ChevronLeft, ChevronRight, Loader2, Search, Settings, BarChart3, Building2, Zap, Users, Download } from "lucide-react";
+import { CheckCircle, TrendingUp, DollarSign, Clock, Eye, ChevronLeft, ChevronRight, Loader2, Search, Settings, BarChart3, Building2, Zap, Users, Download, Wallet, Filter } from "lucide-react";
 import LeadDetailDialog from "@/components/leads/LeadDetailDialog";
 import { Lead } from "@/hooks/useLeadsData";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +20,7 @@ import PerfilIdealPanel from "@/components/leads/PerfilIdealPanel";
 import CBOsQueAprovamPanel from "@/components/leads/CBOsQueAprovamPanel";
 import EmpresasPanel from "@/components/leads/EmpresasPanel";
 import PorBancoPanel from "@/components/leads/PorBancoPanel";
+import AnaliseImportacoesPanel from "@/components/leads/AnaliseImportacoesPanel";
 import { useDashboard } from "@/contexts/DashboardContext";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 
@@ -56,13 +57,60 @@ interface LeadSummary {
 }
 
 const LeadsContent = () => {
-  const { leads, stats, isLoading } = useDashboard();
+  const { leads, stats, isLoading, filterOptions } = useDashboard();
   const [currentPage, setCurrentPage] = useState(1);
   const [searchCpf, setSearchCpf] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
+  const [bancoFilter, setBancoFilter] = useState("todos");
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const leadsPerPage = 15;
+
+  // Filtra leads por banco selecionado (afeta KPIs e todos os painéis)
+  const leadsFiltradosPorBanco = useMemo(() => {
+    if (bancoFilter === "todos") return leads;
+    return leads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
+  }, [leads, bancoFilter]);
+
+  // Calcula estatísticas filtradas por banco
+  const statsFiltradas = useMemo(() => {
+    const leadsParaCalculo = leadsFiltradosPorBanco;
+    
+    if (leadsParaCalculo.length === 0) {
+      return {
+        totalLeads: 0,
+        leadsAprovados: 0,
+        taxaAprovacao: 0,
+        margemMedia: 0,
+        margemTotal: 0,
+      };
+    }
+
+    const aprovados = leadsParaCalculo.filter((l) => normalizarStatusLead(l) === "aprovado");
+    const totalLeads = leadsParaCalculo.length;
+    const leadsAprovados = aprovados.length;
+    const taxaAprovacao = totalLeads > 0 ? parseFloat(((leadsAprovados / totalLeads) * 100).toFixed(2)) : 0;
+
+    // Calcular margem média e total dos aprovados
+    let somaMargens = 0;
+    aprovados.forEach((l) => {
+      const margem = l.retorno_margem as any;
+      const simulacao = l.retorno_simulacao as any;
+      const valor = margem?.valorMargemDisponivel || simulacao?.details?.availableMarginValue || simulacao?.liquidValue || 0;
+      somaMargens += parseFloat(valor) || 0;
+    });
+
+    const margemMedia = leadsAprovados > 0 ? somaMargens / leadsAprovados : 0;
+    const margemTotal = somaMargens;
+
+    return {
+      totalLeads,
+      leadsAprovados,
+      taxaAprovacao,
+      margemMedia,
+      margemTotal,
+    };
+  }, [leadsFiltradosPorBanco]);
 
   // Helper para normalizar status do lead - usa utilitário centralizado
   const getNormalizedStatus = (lead: Lead): string => {
@@ -93,9 +141,9 @@ const LeadsContent = () => {
     return margem?.cbo || margem?.codigoCBO || simulacao?.details?.cbo || "";
   };
 
-  // Filtra e pagina os leads
+  // Filtra e pagina os leads (usa leads já filtrados por banco)
   const filteredLeads = useMemo(() => {
-    let list = leads;
+    let list = leadsFiltradosPorBanco;
 
     if (searchCpf) {
       const searchLower = searchCpf.toLowerCase().trim();
@@ -126,14 +174,14 @@ const LeadsContent = () => {
     }
 
     return list;
-  }, [leads, searchCpf, statusFilter]);
+  }, [leadsFiltradosPorBanco, searchCpf, statusFilter]);
 
   const totalPages = Math.ceil(filteredLeads.length / leadsPerPage);
   const paginatedLeads = filteredLeads.slice((currentPage - 1) * leadsPerPage, currentPage * leadsPerPage);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchCpf, statusFilter]);
+  }, [searchCpf, statusFilter, bancoFilter]);
 
   const formatCpf = (cpf: string) => {
     const cleaned = cpf.replace(/\D/g, "");
@@ -153,7 +201,7 @@ const LeadsContent = () => {
   const kpiCards = [
     {
       title: "Total Aprovados",
-      value: stats.leadsAprovados.toLocaleString("pt-BR"),
+      value: statsFiltradas.leadsAprovados.toLocaleString("pt-BR"),
       subtitle: "Leads com proposta aprovada",
       icon: CheckCircle,
       borderColor: "border-l-emerald-500",
@@ -162,7 +210,7 @@ const LeadsContent = () => {
     },
     {
       title: "Taxa de Aprovação",
-      value: `${stats.taxaAprovacao}%`,
+      value: `${statsFiltradas.taxaAprovacao}%`,
       subtitle: "Do total de leads analisados",
       icon: TrendingUp,
       borderColor: "border-l-purple-500",
@@ -171,7 +219,7 @@ const LeadsContent = () => {
     },
     {
       title: "Margem Média",
-      value: `R$ ${stats.margemMedia.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      value: `R$ ${statsFiltradas.margemMedia.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       subtitle: "Média dos leads aprovados",
       icon: DollarSign,
       borderColor: "border-l-amber-500",
@@ -179,8 +227,21 @@ const LeadsContent = () => {
       iconBg: "bg-amber-500/20",
     },
     {
+      title: "Margem Total",
+      value: statsFiltradas.margemTotal >= 1000000 
+        ? `R$ ${(statsFiltradas.margemTotal / 1000000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`
+        : statsFiltradas.margemTotal >= 1000
+        ? `R$ ${(statsFiltradas.margemTotal / 1000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}K`
+        : `R$ ${statsFiltradas.margemTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      subtitle: "Soma das margens aprovadas",
+      icon: Wallet,
+      borderColor: "border-l-cyan-500",
+      textColor: "text-cyan-400",
+      iconBg: "bg-cyan-500/20",
+    },
+    {
       title: "Total Leads",
-      value: stats.totalLeads.toLocaleString("pt-BR"),
+      value: statsFiltradas.totalLeads.toLocaleString("pt-BR"),
       subtitle: "Importados no sistema",
       icon: Users,
       borderColor: "border-l-blue-500",
@@ -203,13 +264,30 @@ const LeadsContent = () => {
     <main className="flex-1 p-8">
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Leads</h1>
-          <p className="text-muted-foreground mt-1">Visualize e analise os leads importados</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Leads</h1>
+            <p className="text-muted-foreground mt-1">Visualize e analise os leads importados</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            <select
+              className="h-10 px-4 rounded-md border border-input bg-background text-sm min-w-[180px]"
+              value={bancoFilter}
+              onChange={(e) => setBancoFilter(e.target.value)}
+            >
+              <option value="todos">Todos os Bancos</option>
+              {filterOptions.bancos.map((banco) => (
+                <option key={banco} value={banco}>
+                  {banco}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {kpiCards.map((kpi) => (
             <Card key={kpi.title} className={`bg-card border-l-4 ${kpi.borderColor} border-t-0 border-r-0 border-b-0`}>
               <CardContent className="p-6">
@@ -230,7 +308,11 @@ const LeadsContent = () => {
 
         {/* Topic Tabs */}
         <Tabs defaultValue="lista" className="w-full">
-          <TabsList className="w-full grid grid-cols-5 bg-muted/50 border border-border rounded-lg p-1 h-auto">
+          <TabsList className="w-full grid grid-cols-6 bg-muted/50 border border-border rounded-lg p-1 h-auto">
+            <TabsTrigger value="analise" className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md">
+              <TrendingUp className="w-4 h-4" />
+              Análise
+            </TabsTrigger>
             <TabsTrigger value="perfil" className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md">
               <Settings className="w-4 h-4" />
               Perfil Ideal
@@ -253,20 +335,24 @@ const LeadsContent = () => {
             </TabsTrigger>
           </TabsList>
 
+          <TabsContent value="analise" className="mt-6">
+            <AnaliseImportacoesPanel bancoFilter={bancoFilter} />
+          </TabsContent>
+
           <TabsContent value="perfil" className="mt-6">
-            <PerfilIdealPanel />
+            <PerfilIdealPanel bancoFilter={bancoFilter} />
           </TabsContent>
 
           <TabsContent value="cbos" className="mt-6">
-            <CBOsQueAprovamPanel />
+            <CBOsQueAprovamPanel bancoFilter={bancoFilter} />
           </TabsContent>
 
           <TabsContent value="empresas" className="mt-6">
-            <EmpresasPanel />
+            <EmpresasPanel bancoFilter={bancoFilter} />
           </TabsContent>
 
           <TabsContent value="banco" className="mt-6">
-            <PorBancoPanel />
+            <PorBancoPanel bancoFilter={bancoFilter} />
           </TabsContent>
 
           <TabsContent value="lista" className="mt-6">

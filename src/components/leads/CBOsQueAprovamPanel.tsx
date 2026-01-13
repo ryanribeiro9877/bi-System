@@ -7,20 +7,30 @@ import { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 
-const CBOsQueAprovamPanel = () => {
+interface CBOsQueAprovamPanelProps {
+  bancoFilter?: string;
+}
+
+const CBOsQueAprovamPanel = ({ bancoFilter = "todos" }: CBOsQueAprovamPanelProps) => {
   const navigate = useNavigate();
   const { leads, stats } = useDashboard();
 
+  // Filtra leads por banco se necessário
+  const leadsFiltrados = useMemo(() => {
+    if (bancoFilter === "todos") return leads;
+    return leads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
+  }, [leads, bancoFilter]);
+
   const top10CBOs = useMemo(() => {
-    // Filtra apenas leads aprovados do banco UY3
-    const aprovadosUY3 = leads.filter(
-      (l) => l.banco === "UY3" && normalizarStatusLead(l) === "aprovado"
+    // Filtra apenas leads aprovados (do banco filtrado ou todos)
+    const aprovados = leadsFiltrados.filter(
+      (l) => normalizarStatusLead(l) === "aprovado"
     );
 
     // Extrai CBO de cada lead aprovado
     const cboCount: Record<string, { codigo: string; descricao: string; quantidade: number }> = {};
 
-    aprovadosUY3.forEach((lead) => {
+    aprovados.forEach((lead) => {
       const margem = lead.retorno_margem as any;
       
       // UY3: retorno_margem é um array com result dentro
@@ -57,13 +67,13 @@ const CBOsQueAprovamPanel = () => {
           : item.descricao,
         rank: index + 1,
       }));
-  }, [leads]);
+  }, [leadsFiltrados]);
 
-  const totalAprovadosUY3 = useMemo(() => {
-    return leads.filter(
-      (l) => l.banco === "UY3" && normalizarStatusLead(l) === "aprovado"
+  const totalAprovados = useMemo(() => {
+    return leadsFiltrados.filter(
+      (l) => normalizarStatusLead(l) === "aprovado"
     ).length;
-  }, [leads]);
+  }, [leadsFiltrados]);
 
   const COLORS = [
     "#10b981", "#34d399", "#6ee7b7", "#a7f3d0", "#d1fae5",
@@ -122,7 +132,7 @@ const CBOsQueAprovamPanel = () => {
             Top 10 CBOs que Aprovam
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            CBOs com maior número de aprovações no banco UY3 • {totalAprovadosUY3} leads aprovados
+            CBOs com maior número de aprovações no banco UY3 • {totalAprovados} leads aprovados
           </p>
         </CardHeader>
         <CardContent>

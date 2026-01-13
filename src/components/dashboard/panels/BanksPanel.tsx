@@ -49,20 +49,43 @@ const BanksPanel = () => {
                   <TableHead>Banco</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead className="text-right">Aprovados</TableHead>
+                  <TableHead className="text-right">% Aprovação</TableHead>
+                  <TableHead className="text-right">Pendentes</TableHead>
+                  <TableHead className="text-right">% Pendência</TableHead>
                   <TableHead className="text-right">Reprovados</TableHead>
                   <TableHead className="text-right">% Reprovação</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {stats.reprovacoesPorBanco.slice(0, 12).map((b) => (
-                  <TableRow key={b.banco}>
-                    <TableCell className="font-medium text-foreground">{b.banco}</TableCell>
-                    <TableCell className="text-right text-muted-foreground">{b.total.toLocaleString("pt-BR")}</TableCell>
-                    <TableCell className="text-right text-muted-foreground">{b.aprovados.toLocaleString("pt-BR")}</TableCell>
-                    <TableCell className="text-right text-muted-foreground">{b.reprovados.toLocaleString("pt-BR")}</TableCell>
-                    <TableCell className="text-right text-foreground">{b.taxaReprovacao}%</TableCell>
-                  </TableRow>
-                ))}
+                {stats.reprovacoesPorBanco.slice(0, 12).map((b) => {
+                  const taxaAprovacao = b.total > 0 ? Math.round((b.aprovados / b.total) * 100) : 0;
+                  const taxaPendencia = b.total > 0 ? Math.round((b.pendentes / b.total) * 100) : 0;
+                  
+                  return (
+                    <TableRow key={b.banco}>
+                      <TableCell className="font-medium text-foreground">{b.banco}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{b.total.toLocaleString("pt-BR")}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {b.aprovados > 0 ? b.aprovados.toLocaleString("pt-BR") : "-"}
+                      </TableCell>
+                      <TableCell className="text-right text-emerald-400">
+                        {b.aprovados > 0 ? `${taxaAprovacao}%` : "-"}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {b.pendentes > 0 ? b.pendentes.toLocaleString("pt-BR") : "-"}
+                      </TableCell>
+                      <TableCell className="text-right text-amber-400">
+                        {b.pendentes > 0 ? `${taxaPendencia}%` : "-"}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {b.reprovados > 0 ? b.reprovados.toLocaleString("pt-BR") : "-"}
+                      </TableCell>
+                      <TableCell className="text-right text-red-400">
+                        {b.reprovados > 0 ? `${b.taxaReprovacao}%` : "-"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

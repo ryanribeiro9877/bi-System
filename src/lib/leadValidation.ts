@@ -80,7 +80,6 @@ export const LeadImportSchema = z.object({
     .nullable(),
   
   tipo_reprovacao: z.string()
-    .max(500, 'Tipo de reprovação deve ter no máximo 500 caracteres')
     .transform(sanitizeText)
     .optional()
     .nullable(),

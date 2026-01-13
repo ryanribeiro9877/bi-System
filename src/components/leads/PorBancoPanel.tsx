@@ -6,9 +6,18 @@ import { useNavigate } from "react-router-dom";
 import { useDashboard } from "@/contexts/DashboardContext";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
-const PorBancoPanel = () => {
+interface PorBancoPanelProps {
+  bancoFilter?: string;
+}
+
+const PorBancoPanel = ({ bancoFilter = "todos" }: PorBancoPanelProps) => {
   const navigate = useNavigate();
   const { stats } = useDashboard();
+
+  // Filtra dados por banco se necessário
+  const dadosBancos = bancoFilter === "todos" 
+    ? stats.reprovacoesPorBanco 
+    : stats.reprovacoesPorBanco.filter((b) => b.banco === bancoFilter);
 
   if (stats.totalLeads === 0) {
     return (
@@ -35,7 +44,7 @@ const PorBancoPanel = () => {
     );
   }
 
-  const chartData = stats.reprovacoesPorBanco.slice(0, 8).map((b) => ({
+  const chartData = dadosBancos.slice(0, 8).map((b) => ({
     name: b.banco,
     aprovados: b.aprovados,
     reprovados: b.reprovados,
@@ -86,7 +95,7 @@ const PorBancoPanel = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {stats.reprovacoesPorBanco.map((b) => (
+              {dadosBancos.map((b) => (
                 <TableRow key={b.banco}>
                   <TableCell className="font-medium text-foreground">{b.banco}</TableCell>
                   <TableCell className="text-right text-muted-foreground">{b.total.toLocaleString("pt-BR")}</TableCell>

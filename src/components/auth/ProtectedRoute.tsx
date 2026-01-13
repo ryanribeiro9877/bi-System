@@ -9,10 +9,6 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps) => {
-  // TEMPORARIAMENTE DESABILITADO - Remover este bloco para reativar autenticação
-  return <>{children}</>;
-  
-  /* AUTENTICAÇÃO DESABILITADA TEMPORARIAMENTE
   const { user, isAdmin, isLoading } = useAuth();
 
   // Show loading spinner while checking auth
@@ -35,7 +31,6 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
   }
 
   return <>{children}</>;
-  */
 };
 
 export default ProtectedRoute;

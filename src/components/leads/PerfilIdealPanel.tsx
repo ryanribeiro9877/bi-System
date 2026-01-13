@@ -1,19 +1,50 @@
-import { Star, Upload, DollarSign, Clock, Building2, Briefcase, CheckCircle, Award } from "lucide-react";
+import { Star, Upload, DollarSign, Clock, Building2, Briefcase, CheckCircle, Award, X, Eye } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useDashboard } from "@/contexts/DashboardContext";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Cell } from "recharts";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Lead } from "@/hooks/useLeadsData";
 
-const PerfilIdealPanel = () => {
+interface PerfilIdealPanelProps {
+  bancoFilter?: string;
+}
+
+interface LeadComDados {
+  lead: Lead;
+  margem: number;
+  tempoVinculoMeses: number;
+  porteEmpresa: string;
+  nome: string;
+  cpf: string;
+  banco: string;
+}
+
+interface LeadsDialogData {
+  titulo: string;
+  subtitulo: string;
+  leads: LeadComDados[];
+}
+
+const PerfilIdealPanel = ({ bancoFilter = "todos" }: PerfilIdealPanelProps) => {
   const navigate = useNavigate();
   const { leads, stats } = useDashboard();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogData, setDialogData] = useState<LeadsDialogData | null>(null);
+
+  // Filtra leads por banco se necessário
+  const leadsFiltrados = useMemo(() => {
+    if (bancoFilter === "todos") return leads;
+    return leads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
+  }, [leads, bancoFilter]);
 
   const perfil = useMemo(() => {
     // Usa a função centralizada de normalização de status
-    const aprovados = leads.filter((l) => normalizarStatusLead(l) === "aprovado");
+    const aprovados = leadsFiltrados.filter((l) => normalizarStatusLead(l) === "aprovado");
 
     if (aprovados.length === 0) return null;
 
@@ -97,7 +128,12 @@ const PerfilIdealPanel = () => {
         porteEmpresa = "Pequena";
       }
       
+      // Extrair nome do lead
+      const margemData = l.retorno_margem as any;
+      const nomeExtraido = l.nome || margemData?.registroEmpregaticio?.nomeEmpregado || margemData?.nomeEmpregado || result?.nomeEmpregado || "";
+      
       return {
+        lead: l,
         margem: valorMargem,
         tempoVinculoMeses,
         porteEmpresa,
@@ -105,6 +141,8 @@ const PerfilIdealPanel = () => {
         cbo: cbo?.descricao || (typeof cbo === 'string' ? cbo : ''),
         cnae: cnae?.descricao || (typeof cnae === 'string' ? cnae : ''),
         banco: l.banco || "Não informado",
+        nome: nomeExtraido,
+        cpf: l.cpf,
       };
     });
 
@@ -204,6 +242,7 @@ const PerfilIdealPanel = () => {
       faixasVinculo,
       portesData,
       radarData,
+      dadosAprovados,
       resumo: {
         margemIdeal: margemMaisComum.faixa,
         vinculoIdeal: vinculoMaisComum.faixa.replace('meses', '').replace('anos', '').trim(),
@@ -214,7 +253,7 @@ const PerfilIdealPanel = () => {
         contratosIdeal: `0 - ${Math.max(1, maxContratos)} contrato${maxContratos !== 1 ? 's' : ''}`,
       },
     };
-  }, [leads]);
+  }, [leadsFiltrados]);
 
   if (stats.totalLeads === 0) {
     return (
@@ -258,6 +297,60 @@ const PerfilIdealPanel = () => {
   }
 
   const PORTE_COLORS = ['#a855f7', '#8b5cf6', '#7c3aed', '#6d28d9'];
+
+  // Funções para abrir dialog com leads filtrados por categoria
+  const handleMargemClick = (data: { faixa?: string }) => {
+    if (!perfil || !data?.faixa) return;
+    const faixaInfo = perfil.faixasMargem.find(f => f.faixa === data.faixa);
+    if (!faixaInfo) return;
+    
+    const leadsNaFaixa = perfil.dadosAprovados.filter(
+      d => d.margem >= faixaInfo.min && d.margem <= faixaInfo.max
+    );
+    
+    setDialogData({
+      titulo: `Leads - Margem ${data.faixa}`,
+      subtitulo: `${leadsNaFaixa.length} leads aprovados nesta faixa de margem`,
+      leads: leadsNaFaixa,
+    });
+    setDialogOpen(true);
+  };
+
+  const handleVinculoClick = (data: { faixa?: string }) => {
+    if (!perfil || !data?.faixa) return;
+    const faixaInfo = perfil.faixasVinculo.find(f => f.faixa === data.faixa);
+    if (!faixaInfo) return;
+    
+    const leadsNaFaixa = perfil.dadosAprovados.filter(
+      d => d.tempoVinculoMeses >= faixaInfo.min && d.tempoVinculoMeses <= faixaInfo.max
+    );
+    
+    setDialogData({
+      titulo: `Leads - Vínculo ${data.faixa}`,
+      subtitulo: `${leadsNaFaixa.length} leads aprovados neste período de vínculo`,
+      leads: leadsNaFaixa,
+    });
+    setDialogOpen(true);
+  };
+
+  const handlePorteClick = (data: { porte?: string }) => {
+    if (!perfil || !data?.porte) return;
+    
+    const leadsNoPorte = perfil.dadosAprovados.filter(d => d.porteEmpresa === data.porte);
+    
+    setDialogData({
+      titulo: `Leads - Porte ${data.porte}`,
+      subtitulo: `${leadsNoPorte.length} leads aprovados em empresas de porte ${data.porte}`,
+      leads: leadsNoPorte,
+    });
+    setDialogOpen(true);
+  };
+
+  const formatCpf = (cpf: string) => {
+    const cleaned = cpf.replace(/\D/g, "");
+    if (cleaned.length !== 11) return cpf;
+    return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  };
 
   const resumoItems = [
     {
@@ -420,7 +513,7 @@ const PerfilIdealPanel = () => {
                     }}
                     formatter={(value: number) => [`${value} leads`, 'Quantidade']}
                   />
-                  <Bar dataKey="quantidade" fill="#10b981" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="quantidade" fill="#10b981" radius={[0, 4, 4, 0]} onClick={handleMargemClick} style={{ cursor: 'pointer' }} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -457,7 +550,7 @@ const PerfilIdealPanel = () => {
                     }}
                     formatter={(value: number) => [`${value} leads`, 'Quantidade']}
                   />
-                  <Bar dataKey="quantidade" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="quantidade" fill="#3b82f6" radius={[0, 4, 4, 0]} onClick={handleVinculoClick} style={{ cursor: 'pointer' }} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -497,7 +590,7 @@ const PerfilIdealPanel = () => {
                   }}
                   formatter={(value: number) => [`${value} leads aprovados`, 'Quantidade']}
                 />
-                <Bar dataKey="quantidade" radius={[4, 4, 0, 0]}>
+                <Bar dataKey="quantidade" radius={[4, 4, 0, 0]} onClick={handlePorteClick} style={{ cursor: 'pointer' }}>
                   {perfil.portesData.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={PORTE_COLORS[index % PORTE_COLORS.length]} />
                   ))}
@@ -507,6 +600,65 @@ const PerfilIdealPanel = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Dialog para exibir lista de leads */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-5 h-5 text-primary" />
+              {dialogData?.titulo}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">{dialogData?.subtitulo}</p>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto">
+            {dialogData && dialogData.leads.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>CPF</TableHead>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Banco</TableHead>
+                    <TableHead className="text-right">Margem</TableHead>
+                    <TableHead className="text-right">Vínculo</TableHead>
+                    <TableHead>Porte</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dialogData.leads.slice(0, 50).map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-mono text-sm">{formatCpf(item.cpf)}</TableCell>
+                      <TableCell className="max-w-[200px] truncate">{item.nome || "-"}</TableCell>
+                      <TableCell>{item.banco}</TableCell>
+                      <TableCell className="text-right text-emerald-400">
+                        R$ {item.margem.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {item.tempoVinculoMeses > 0 
+                          ? item.tempoVinculoMeses >= 12 
+                            ? `${Math.floor(item.tempoVinculoMeses / 12)} ano${Math.floor(item.tempoVinculoMeses / 12) > 1 ? 's' : ''}`
+                            : `${item.tempoVinculoMeses} meses`
+                          : "-"
+                        }
+                      </TableCell>
+                      <TableCell>{item.porteEmpresa}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                Nenhum lead encontrado nesta categoria.
+              </div>
+            )}
+            {dialogData && dialogData.leads.length > 50 && (
+              <p className="text-xs text-muted-foreground text-center py-2">
+                Exibindo 50 de {dialogData.leads.length} leads
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
