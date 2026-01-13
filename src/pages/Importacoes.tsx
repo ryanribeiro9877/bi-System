@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { Upload, FileSpreadsheet, FileText, Check, X, Loader2, AlertCircle, Download } from "lucide-react";
+import { Upload, FileSpreadsheet, FileText, Check, X, Loader2, AlertCircle, Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -14,6 +14,17 @@ import Papa from "papaparse";
 import { parseJsonSafe } from "@/types/lead";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 import { validateLeads, ValidationError } from "@/lib/leadValidation";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface ImportRecord {
   id: string;
@@ -291,6 +302,68 @@ const Importacoes = () => {
   const [previewData, setPreviewData] = useState<ParsedLead[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
+
+  // Função para excluir uma importação e seus leads associados
+  const handleDeleteImport = async (importId: string, fileName: string) => {
+    setDeletingImportId(importId);
+    
+    try {
+      // 1. Primeiro, excluir todos os leads associados a essa importação
+      const { error: leadsError } = await supabase
+        .from("leads")
+        .delete()
+        .eq("import_batch_id", importId);
+      
+      if (leadsError) {
+        console.error("Erro ao excluir leads:", leadsError);
+        toast({
+          title: "Erro ao excluir leads",
+          description: leadsError.message,
+          variant: "destructive",
+        });
+        setDeletingImportId(null);
+        return;
+      }
+      
+      // 2. Depois, excluir o registro de importação
+      const { error: importError } = await supabase
+        .from("imports")
+        .delete()
+        .eq("id", importId);
+      
+      if (importError) {
+        console.error("Erro ao excluir importação:", importError);
+        toast({
+          title: "Erro ao excluir importação",
+          description: importError.message,
+          variant: "destructive",
+        });
+        setDeletingImportId(null);
+        return;
+      }
+      
+      // 3. Atualizar a lista de importações
+      setImports(prev => prev.filter(imp => imp.id !== importId));
+      
+      // 4. Emitir evento para atualizar dashboard
+      importEvents.emit();
+      
+      toast({
+        title: "Importação excluída",
+        description: `A importação "${fileName}" e todos os leads associados foram removidos com sucesso.`,
+      });
+    } catch (error) {
+      console.error("Erro ao excluir:", error);
+      toast({
+        title: "Erro inesperado",
+        description: "Ocorreu um erro ao tentar excluir a importação.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingImportId(null);
+    }
+  };
 
   // Fetch import history
   const fetchImports = useCallback(async () => {
@@ -1064,6 +1137,7 @@ const Importacoes = () => {
                       <TableHead>Falhas</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Data</TableHead>
+                      <TableHead className="w-[80px]">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1081,6 +1155,53 @@ const Importacoes = () => {
                         <TableCell>{getStatusBadge(imp.status)}</TableCell>
                         <TableCell className="text-muted-foreground">
                           {new Date(imp.created_at).toLocaleString("pt-BR")}
+                        </TableCell>
+                        <TableCell>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                disabled={deletingImportId === imp.id}
+                              >
+                                {deletingImportId === imp.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Excluir Importação</AlertDialogTitle>
+                                <AlertDialogDescription className="space-y-2">
+                                  <p>
+                                    Tem certeza que deseja excluir a importação <strong>"{imp.file_name}"</strong>?
+                                  </p>
+                                  <p className="text-red-400 font-medium">
+                                    Esta ação irá remover permanentemente:
+                                  </p>
+                                  <ul className="list-disc list-inside text-red-400">
+                                    <li>O registro de importação</li>
+                                    <li>Todos os {imp.total_records} leads associados</li>
+                                  </ul>
+                                  <p className="text-muted-foreground text-sm">
+                                    Esta ação não pode ser desfeita.
+                                  </p>
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteImport(imp.id, imp.file_name)}
+                                  className="bg-red-600 hover:bg-red-700"
+                                >
+                                  Excluir Permanentemente
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </TableCell>
                       </TableRow>
                     ))}
