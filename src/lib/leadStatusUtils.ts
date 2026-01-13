@@ -250,19 +250,16 @@ const hasBloqueioNegocio = (lead: LeadData): boolean => {
  * Verifica se a API retornou status "success" ou equivalente
  * REGRA PRINCIPAL: retorno_proposta.status = "success" indica proposta aceita
  * 
- * Padrão para V8 e UY3:
+ * CRITÉRIO ÚNICO DE APROVAÇÃO:
  * - retorno_proposta.status = "success" = proposta aceita pelo banco
- * - retorno_get_proposta.status = "formalization" ou "pending" = em andamento (válido)
  */
 const hasStatusSuccess = (lead: LeadData): boolean => {
   const proposta = lead.retorno_proposta as any;
   const getProposta = lead.retorno_get_proposta as any;
-  const simulacao = lead.retorno_simulacao as any;
-  const margem = lead.retorno_margem as any;
   
   // =====================================================
   // REGRA PRINCIPAL: retorno_proposta.status = "success"
-  // Este é o indicador MAIS CONFIÁVEL de aprovação
+  // Este é o ÚNICO indicador confiável de aprovação
   // =====================================================
   if (proposta?.status) {
     const status = String(proposta.status).toLowerCase();
@@ -277,38 +274,10 @@ const hasStatusSuccess = (lead: LeadData): boolean => {
   }
   
   // V8/UY3: retorno_get_proposta.status indica proposta em andamento
-  if (getProposta?.status) {
+  // Apenas se retorno_proposta.status também for success
+  if (getProposta?.status && proposta?.status === "success") {
     const status = String(getProposta.status).toLowerCase();
-    // "formalization" = em formalização (V8)
-    // "pending" = aguardando formalização (UY3)
-    // Ambos indicam que a proposta foi ACEITA pelo banco
     if (status === "success" || status === "formalization" || status === "pending" || status === "approved") {
-      return true;
-    }
-  }
-  
-  // Genérico: retorno_simulacao.details.status
-  if (simulacao?.details?.status) {
-    const status = String(simulacao.details.status).toUpperCase();
-    if (status === "APPROVED" || status === "SUCCESS") {
-      return true;
-    }
-  }
-  
-  // PRESENÇA/UY3: Se tem dados de margem SEM erro, considera sucesso na consulta
-  if (margem && !margem.error) {
-    // Se tem dados do funcionário, a consulta foi bem sucedida
-    if (margem.valorMargemDisponivel !== undefined || 
-        margem.details?.dataprevValidationResponses) {
-      return true;
-    }
-  }
-  
-  // UY3: Se tem dataprevValidationResponses com dados, é sucesso (mesmo com erro wrapper)
-  // MAS apenas se não houver bloqueio de negócio
-  if (margem?.details?.dataprevValidationResponses) {
-    const responses = margem.details.dataprevValidationResponses;
-    if (Array.isArray(responses) && responses.length > 0) {
       return true;
     }
   }
@@ -324,9 +293,15 @@ const hasStatusSuccess = (lead: LeadData): boolean => {
  * Verifica se o lead está pendente por erro de sistema
  */
 const isPendente = (lead: LeadData): boolean => {
+  const proposta = lead.retorno_proposta as any;
   const autorizacao = lead.retorno_autorizacao as any;
   const margem = lead.retorno_margem as any;
   const simulacao = lead.retorno_simulacao as any;
+  
+  // Se tem proposta com status success, NUNCA é pendente
+  if (proposta?.status === "success") {
+    return false;
+  }
   
   // Se tem valores financeiros, NUNCA é pendente
   if (hasValoresFinanceiros(lead)) {
@@ -425,81 +400,26 @@ export const extrairMotivoErro = (lead: LeadData): string | null => {
  * Aplicável apenas a: V8, UY3 (PRESENÇA desconsiderado por falta de dados válidos)
  */
 export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
-  const banco = (lead.banco || "").toLowerCase().trim();
-  const proposta = lead.retorno_proposta as any;
-  const getProposta = lead.retorno_get_proposta as any;
-  const simulacao = lead.retorno_simulacao as any;
+  const proposta = lead.retorno_proposta as Record<string, unknown> | null;
   
   // =====================================================
-  // PRESENÇA: Lógica específica baseada em análise real
+  // CRITÉRIO ÚNICO DE APROVAÇÃO (TODOS OS BANCOS):
+  // retorno_proposta.status === "success"
+  // Verifica de múltiplas formas para garantir precisão
   // =====================================================
-  if (banco.includes("presença") || banco.includes("presenca")) {
-    // APROVADO: retorno_proposta.status === "success" E retorno_get_proposta tem dados
-    if (proposta?.status === "success" && getProposta && Object.keys(getProposta).length > 0) {
-      // Verifica se getProposta tem dados reais (não apenas erro)
-      if (getProposta.id || getProposta.coreId || getProposta.status) {
-        return "aprovado";
-      }
+  if (proposta) {
+    const status = proposta.status;
+    if (status === "success" || status === "Success" || status === "SUCCESS") {
+      return "aprovado";
     }
-    
-    // REPROVADO: retorno_proposta contém error
-    if (proposta?.error) {
-      return "reprovado";
+    // Também verifica como string
+    if (typeof status === "string" && status.toLowerCase() === "success") {
+      return "aprovado";
     }
-    
-    // REPROVADO: retorno_simulacao contém message com erros
-    if (simulacao?.message) {
-      const msg = String(simulacao.message).toLowerCase();
-      if (msg.includes("erro") || msg.includes("não encontrado") || msg.includes("cpf")) {
-        return "reprovado";
-      }
-    }
-    
-    // REPROVADO: retorno_proposta.status === "success" mas retorno_get_proposta vazio
-    if (proposta?.status === "success" && (!getProposta || Object.keys(getProposta).length === 0)) {
-      return "reprovado";
-    }
-    
-    // Se tem valores financeiros na simulação mas sem proposta, ainda é reprovado
-    // (a proposta falhou em algum ponto)
-    if (!proposta && !getProposta) {
-      return "reprovado";
-    }
-    
-    return "reprovado";
   }
   
   // =====================================================
-  // V8/UY3: Lógica padrão para outros bancos
-  // =====================================================
-  const temValoresFinanceiros = hasValoresFinanceiros(lead);
-  const temStatusSuccess = hasStatusSuccess(lead);
-  const temBloqueio = hasBloqueioNegocio(lead);
-  
-  // =====================================================
-  // 1. APROVADO: Todos os critérios atendidos
-  //    - Status success
-  //    - Valores financeiros > 0
-  //    - SEM bloqueio de negócio (CBO, Compliance, etc.)
-  // =====================================================
-  if (temStatusSuccess && temValoresFinanceiros && !temBloqueio) {
-    return "aprovado";
-  }
-  
-  // =====================================================
-  // 2. PENDENTE: Erros de sistema (timeout, limite, etc.)
-  //    Apenas se não tem valores financeiros
-  // =====================================================
-  if (isPendente(lead)) {
-    return "pendente";
-  }
-  
-  // =====================================================
-  // 3. REPROVADO: Tudo mais
-  //    - Status success mas com bloqueio (CBO, Compliance)
-  //    - Status success mas sem valores financeiros
-  //    - Erro de negócio (margem indisponível)
-  //    - Sem dados para processar
+  // REPROVADO: Tudo mais (sem verificação de pendente)
   // =====================================================
   return "reprovado";
 };

@@ -91,17 +91,46 @@ const LeadsContent = () => {
     const leadsAprovados = aprovados.length;
     const taxaAprovacao = totalLeads > 0 ? parseFloat(((leadsAprovados / totalLeads) * 100).toFixed(2)) : 0;
 
-    // Calcular margem média e total dos aprovados
+    // Calcular margem total e média dos aprovados
+    // Margem Total = soma dos valores de empréstimo liberados (liquidValue da simulação/proposta)
+    // Margem Média = Margem Total / quantidade de leads aprovados
     let somaMargens = 0;
     aprovados.forEach((l) => {
-      const margem = l.retorno_margem as any;
-      const simulacao = l.retorno_simulacao as any;
-      const valor = margem?.valorMargemDisponivel || simulacao?.details?.availableMarginValue || simulacao?.liquidValue || 0;
-      somaMargens += parseFloat(valor) || 0;
+      const simulacao = l.retorno_simulacao as Record<string, unknown> | null;
+      const proposta = l.retorno_proposta as Record<string, unknown> | null;
+      const getProposta = l.retorno_get_proposta as Record<string, unknown> | null;
+      
+      // Prioridade: liquidValue da simulação (valor do empréstimo liberado)
+      let valorEmprestimo = 0;
+      
+      // 1. Tenta do retorno_simulacao.liquidValue (valor liberado para proposta)
+      if (simulacao?.liquidValue) {
+        valorEmprestimo = parseFloat(String(simulacao.liquidValue)) || 0;
+        // Presença: valores em centavos, dividir por 100
+        if (valorEmprestimo > 100000) {
+          valorEmprestimo = valorEmprestimo / 100;
+        }
+      }
+      // 2. Tenta do retorno_get_proposta.liquidValue
+      else if (getProposta?.liquidValue) {
+        valorEmprestimo = parseFloat(String(getProposta.liquidValue)) || 0;
+        if (valorEmprestimo > 100000) {
+          valorEmprestimo = valorEmprestimo / 100;
+        }
+      }
+      // 3. Tenta do retorno_simulacao.requestedAmount
+      else if (simulacao?.requestedAmount) {
+        valorEmprestimo = parseFloat(String(simulacao.requestedAmount)) || 0;
+        if (valorEmprestimo > 100000) {
+          valorEmprestimo = valorEmprestimo / 100;
+        }
+      }
+      
+      somaMargens += valorEmprestimo;
     });
 
-    const margemMedia = leadsAprovados > 0 ? somaMargens / leadsAprovados : 0;
     const margemTotal = somaMargens;
+    const margemMedia = leadsAprovados > 0 ? margemTotal / leadsAprovados : 0;
 
     return {
       totalLeads,

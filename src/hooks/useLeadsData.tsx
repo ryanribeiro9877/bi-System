@@ -203,7 +203,6 @@ export const useLeadsData = (filters?: FilterState) => {
           .select("*")
           .order("created_at", { ascending: false });
 
-        // Apply filters
         if (filters?.dataInicial) {
           query = query.gte("created_at", filters.dataInicial.toISOString());
         }
@@ -216,7 +215,6 @@ export const useLeadsData = (filters?: FilterState) => {
         if (filters?.tipoReprovacao) {
           query = query.eq("tipo_reprovacao", filters.tipoReprovacao);
         }
-        // Filtro múltiplo de tipos de reprovação (usa ilike para match parcial)
         if (filters?.tiposReprovacaoMultiplos && filters.tiposReprovacaoMultiplos.length > 0) {
           query = query.in("tipo_reprovacao", filters.tiposReprovacaoMultiplos);
         }
@@ -230,8 +228,7 @@ export const useLeadsData = (filters?: FilterState) => {
         return query;
       };
 
-      // PostgREST tem limite padrão de 1000 linhas por request.
-      // Aqui buscamos em páginas para montar estatísticas corretas.
+      // Carregar todos os leads em páginas sequenciais
       while (true) {
         const { data, error: fetchError } = await buildBaseQuery().range(from, from + pageSize - 1);
 

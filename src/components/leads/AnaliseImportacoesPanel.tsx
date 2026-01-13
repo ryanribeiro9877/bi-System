@@ -508,26 +508,6 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPa
         </Card>
       </div>
 
-      {/* KPI Row 2 - Valor Total de Margem */}
-      <Card className="bg-card border-border">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Soma Total de Margem Disponível</p>
-              <p className="text-3xl font-bold text-cyan-400">
-                R$ {analise.somaMargemDisponivel.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                De {analise.leadsComMargem.length} leads com margem
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-cyan-500/20">
-              <DollarSign className="w-8 h-8 text-cyan-400" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Charts Row - Pie Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Distribuição de Margem */}
