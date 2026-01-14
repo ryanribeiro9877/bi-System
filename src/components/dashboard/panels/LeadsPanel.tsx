@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { FileText, Upload, Eye, ChevronLeft, ChevronRight, Search, Users, Download } from "lucide-react";
+import { useState } from "react";
+import { FileText, Upload, Eye, ChevronLeft, ChevronRight, Search, Users, Download, ChevronsLeft, ChevronsRight, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,9 +14,8 @@ import {
 } from "@/components/ui/table";
 import { useNavigate } from "react-router-dom";
 import { useDashboard } from "@/contexts/DashboardContext";
-import { Lead } from "@/hooks/useLeadsData";
+import { LeadListItem } from "@/hooks/useLeadsPaginated";
 import LeadDetailDialog from "@/components/leads/LeadDetailDialog";
-import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 
 // Formata data como dd/mm/aaaa - hh:nn:ss
 const formatDateTime = (dateString: string | null): string => {
@@ -39,106 +38,12 @@ const formatDateTime = (dateString: string | null): string => {
   }
 };
 
-// Helper para normalizar status do lead - usa utilitário centralizado
-const getNormalizedStatus = (lead: Lead): string => {
-  return normalizarStatusLead(lead);
-};
-
-// Helper para extrair valor da proposta de leads aprovados - busca em múltiplos campos
-const getValorProposta = (lead: Lead): number => {
-  const margem = lead.retorno_margem as any;
-  const simulacao = lead.retorno_simulacao as any;
-  const proposta = lead.retorno_proposta as any;
-  const getProposta = lead.retorno_get_proposta as any;
-  
-  // Busca em ordem de prioridade - campos mais comuns primeiro
-  const possiveisValores = [
-    // retorno_simulacao (vários formatos de bancos)
-    simulacao?.liquidValue, // PRESENÇA e outros
-    simulacao?.availableBalance,
-    simulacao?.requestedAmount,
-    simulacao?.valorMargem,
-    simulacao?.details?.availableMarginValue,
-    simulacao?.details?.liquidValue,
-    simulacao?.details?.requestedAmount,
-    // retorno_margem
-    margem?.valorMargemDisponivel,
-    margem?.valorMargem,
-    margem?.valorMargemBase,
-    // retorno_proposta
-    proposta?.liquidValue,
-    proposta?.requestedAmount,
-    proposta?.valor,
-    // retorno_get_proposta
-    getProposta?.liquidValue,
-    getProposta?.requestedAmount,
-    getProposta?.valor,
-    // Campo direto do lead
-    lead.valor,
-  ];
-  
-  // Retorna o primeiro valor válido encontrado
-  for (const valor of possiveisValores) {
-    if (valor !== undefined && valor !== null) {
-      const parsed = parseFloat(String(valor));
-      // Verifica se o valor está em centavos (muito grande) e converte
-      if (!isNaN(parsed) && parsed > 0) {
-        // Se o valor for maior que 100000, provavelmente está em centavos
-        return parsed > 100000 ? parsed / 100 : parsed;
-      }
-    }
-  }
-  
-  return 0;
-};
-
-// Helper para extrair nome
-const getNome = (lead: Lead): string => {
-  if (lead.nome) return lead.nome;
-  
-  const margem = lead.retorno_margem as any;
-  const simulacao = lead.retorno_simulacao as any;
-  
-  if (margem?.registroEmpregaticio?.nomeEmpregado) return margem.registroEmpregaticio.nomeEmpregado;
-  if (margem?.nomeEmpregado) return margem.nomeEmpregado;
-  if (simulacao?.details?.name) return simulacao.details.name;
-  if (simulacao?.name) return simulacao.name;
-  
-  return "-";
-};
-
 const LeadsPanel = () => {
   const navigate = useNavigate();
-  const { leads, stats } = useDashboard();
-  const [currentPage, setCurrentPage] = useState(1);
+  const { leads, stats, pagination, goToPage, isLoading, filters, setFilters } = useDashboard();
   const [searchCpf, setSearchCpf] = useState("");
-  const [statusFilter, setStatusFilter] = useState("todos");
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const leadsPerPage = 15;
-
-  // Filtra e pagina os leads
-  const filteredLeads = useMemo(() => {
-    let list = leads;
-
-    if (searchCpf) {
-      const q = searchCpf.replace(/\D/g, "").toLowerCase();
-      list = list.filter((l) => l.cpf.includes(q) || (l.nome ?? "").toLowerCase().includes(searchCpf.toLowerCase()));
-    }
-
-    if (statusFilter !== "todos") {
-      list = list.filter((l) => getNormalizedStatus(l) === statusFilter);
-    }
-
-    return list;
-  }, [leads, searchCpf, statusFilter]);
-
-  const totalPages = Math.ceil(filteredLeads.length / leadsPerPage);
-  const paginatedLeads = filteredLeads.slice((currentPage - 1) * leadsPerPage, currentPage * leadsPerPage);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchCpf, statusFilter]);
 
   const formatCpf = (cpf: string) => {
     const cleaned = cpf.replace(/\D/g, "");
@@ -155,7 +60,23 @@ const LeadsPanel = () => {
     return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">⏳ Pendente</Badge>;
   };
 
-  if (stats.totalLeads === 0) {
+  // Busca por CPF - atualiza filtros do contexto
+  const handleSearch = () => {
+    setFilters({ ...filters, cpf: searchCpf });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleSearch();
+    }
+  };
+
+  // Filtro por status
+  const handleStatusFilter = (status: string) => {
+    setFilters({ ...filters, status: status === "todos" ? "" : status });
+  };
+
+  if (stats.totalLeads === 0 && !isLoading) {
     return (
       <Card className="glass-card">
         <CardHeader>
@@ -192,16 +113,30 @@ const LeadsPanel = () => {
           <div className="flex items-center gap-2">
             <Badge variant="secondary">Aprovados: {stats.leadsAprovados.toLocaleString("pt-BR")}</Badge>
             <Badge variant="secondary">Reprovados: {stats.leadsReprovados.toLocaleString("pt-BR")}</Badge>
-            <span className="text-sm text-muted-foreground ml-2">{filteredLeads.length} leads</span>
+            <span className="text-sm text-muted-foreground ml-2">{pagination.totalCount.toLocaleString("pt-BR")} leads</span>
           </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 mt-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Buscar por CPF ou nome..." value={searchCpf} onChange={(e) => setSearchCpf(e.target.value)} className="pl-9 bg-background" />
+            <Input 
+              placeholder="Buscar por CPF..." 
+              value={searchCpf} 
+              onChange={(e) => setSearchCpf(e.target.value)} 
+              onKeyDown={handleKeyDown}
+              className="pl-9 bg-background" 
+            />
           </div>
-          <select className="h-10 px-3 rounded-md border border-input bg-background text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <Button variant="outline" onClick={handleSearch} className="gap-2">
+            <Search className="w-4 h-4" />
+            Buscar
+          </Button>
+          <select 
+            className="h-10 px-3 rounded-md border border-input bg-background text-sm" 
+            value={filters.status || "todos"} 
+            onChange={(e) => handleStatusFilter(e.target.value)}
+          >
             <option value="todos">Todos</option>
             <option value="aprovado">Aprovados</option>
             <option value="reprovado">Reprovados</option>
@@ -214,7 +149,12 @@ const LeadsPanel = () => {
         </div>
       </CardHeader>
       <CardContent>
-        {paginatedLeads.length === 0 ? (
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+            <Loader2 className="w-12 h-12 mb-4 animate-spin" />
+            <p className="text-lg font-medium text-foreground">Carregando leads...</p>
+          </div>
+        ) : leads.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
             <Users className="w-12 h-12 mb-4 opacity-50" />
             <p className="text-lg font-medium text-foreground">Nenhum lead encontrado</p>
@@ -229,40 +169,36 @@ const LeadsPanel = () => {
                     <TableHead className="text-muted-foreground">CPF</TableHead>
                     <TableHead className="text-muted-foreground">Nome</TableHead>
                     <TableHead className="text-muted-foreground">Banco</TableHead>
-                    <TableHead className="text-muted-foreground">CBO</TableHead>
                     <TableHead className="text-muted-foreground">Valor</TableHead>
                     <TableHead className="text-muted-foreground">Status</TableHead>
-                    <TableHead className="text-muted-foreground">Último Log</TableHead>
+                    <TableHead className="text-muted-foreground">Data</TableHead>
                     <TableHead className="text-muted-foreground text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedLeads.map((lead) => {
-                    const nome = getNome(lead);
-                    const valorProposta = getValorProposta(lead);
+                  {leads.map((lead: LeadListItem) => {
                     const banco = lead.banco || "-";
-                    const statusNormalizado = getNormalizedStatus(lead);
+                    const status = lead.status || "pendente";
 
                     return (
                       <TableRow key={lead.id} className="border-border/50 hover:bg-muted/30">
                         <TableCell className="font-mono text-foreground">{formatCpf(lead.cpf)}</TableCell>
-                        <TableCell className="text-muted-foreground truncate max-w-[160px]">{nome}</TableCell>
+                        <TableCell className="text-muted-foreground truncate max-w-[160px]">{lead.nome || "-"}</TableCell>
                         <TableCell className="text-muted-foreground">{banco}</TableCell>
-                        <TableCell className="text-muted-foreground truncate max-w-[100px]">{lead.cbo || "-"}</TableCell>
                         <TableCell className="text-foreground">
-                          {statusNormalizado === "aprovado" && valorProposta > 0 
-                            ? `R$ ${valorProposta.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
+                          {lead.valor && lead.valor > 0 
+                            ? `R$ ${lead.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
                             : "-"}
                         </TableCell>
-                        <TableCell>{getStatusBadge(statusNormalizado)}</TableCell>
-                        <TableCell className="text-muted-foreground whitespace-nowrap">{formatDateTime(lead.ultimo_log)}</TableCell>
+                        <TableCell>{getStatusBadge(status)}</TableCell>
+                        <TableCell className="text-muted-foreground whitespace-nowrap">{formatDateTime(lead.created_at)}</TableCell>
                         <TableCell className="text-right">
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 text-muted-foreground hover:text-foreground"
                             onClick={() => {
-                              setSelectedLead(lead);
+                              setSelectedLeadId(lead.id);
                               setDetailOpen(true);
                             }}
                           >
@@ -276,18 +212,50 @@ const LeadsPanel = () => {
               </Table>
             </div>
 
-            {/* Pagination */}
+            {/* Pagination - usando paginação do servidor */}
             <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
               <span className="text-sm text-muted-foreground">
-                Mostrando {(currentPage - 1) * leadsPerPage + 1} a {Math.min(currentPage * leadsPerPage, filteredLeads.length)} de {filteredLeads.length.toLocaleString("pt-BR")}
+                Página {pagination.page} de {pagination.totalPages} ({pagination.totalCount.toLocaleString("pt-BR")} leads)
               </span>
-              <div className="flex gap-2">
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
+              <div className="flex gap-1">
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-8 w-8" 
+                  onClick={() => goToPage(1)} 
+                  disabled={pagination.page === 1}
+                >
+                  <ChevronsLeft className="h-4 w-4" />
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-8 w-8" 
+                  onClick={() => goToPage(pagination.page - 1)} 
+                  disabled={pagination.page === 1}
+                >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="flex items-center px-3 text-sm text-muted-foreground">Página {currentPage} de {totalPages || 1}</span>
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages || totalPages === 0}>
+                <span className="flex items-center px-3 text-sm text-muted-foreground">
+                  {pagination.page}
+                </span>
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-8 w-8" 
+                  onClick={() => goToPage(pagination.page + 1)} 
+                  disabled={pagination.page === pagination.totalPages || pagination.totalPages === 0}
+                >
                   <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-8 w-8" 
+                  onClick={() => goToPage(pagination.totalPages)} 
+                  disabled={pagination.page === pagination.totalPages || pagination.totalPages === 0}
+                >
+                  <ChevronsRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -295,8 +263,8 @@ const LeadsPanel = () => {
         )}
       </CardContent>
 
-      {/* Lead Detail Dialog */}
-      <LeadDetailDialog lead={selectedLead} open={detailOpen} onOpenChange={setDetailOpen} />
+      {/* Lead Detail Dialog - agora carrega detalhes sob demanda */}
+      <LeadDetailDialog leadId={selectedLeadId} open={detailOpen} onOpenChange={setDetailOpen} />
     </Card>
   );
 };

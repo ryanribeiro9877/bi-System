@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { CheckCircle, TrendingUp, DollarSign, Clock, Eye, ChevronLeft, ChevronRight, Loader2, Search, Settings, BarChart3, Building2, Zap, Users, Download, Wallet, Filter } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle, TrendingUp, DollarSign, Eye, ChevronLeft, ChevronRight, Loader2, Search, Settings, BarChart3, Building2, Zap, Users, Download, Wallet, Filter } from "lucide-react";
 import LeadDetailDialog from "@/components/leads/LeadDetailDialog";
 import { Lead } from "@/hooks/useLeadsData";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +22,6 @@ import EmpresasPanel from "@/components/leads/EmpresasPanel";
 import PorBancoPanel from "@/components/leads/PorBancoPanel";
 import AnaliseImportacoesPanel from "@/components/leads/AnaliseImportacoesPanel";
 import { useDashboard } from "@/contexts/DashboardContext";
-import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 
 // Formata data como dd/mm/aaaa - hh:nn:ss
 const formatDateTime = (dateString: string | null): string => {
@@ -57,160 +56,32 @@ interface LeadSummary {
 }
 
 const LeadsContent = () => {
-  const { leads, stats, isLoading, filterOptions } = useDashboard();
-  const [currentPage, setCurrentPage] = useState(1);
+  const { leads, stats, isLoading, filterOptions, pagination, goToPage, filters, setFilters } = useDashboard();
   const [searchCpf, setSearchCpf] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [bancoFilter, setBancoFilter] = useState("todos");
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const leadsPerPage = 15;
 
-  // Filtra leads por banco selecionado (afeta KPIs e todos os painéis)
-  const leadsFiltradosPorBanco = useMemo(() => {
-    if (bancoFilter === "todos") return leads;
-    return leads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
-  }, [leads, bancoFilter]);
+  // Usa estatísticas do contexto (calculadas no banco)
+  const statsFiltradas = {
+    totalLeads: stats.totalLeads,
+    leadsAprovados: stats.leadsAprovados,
+    taxaAprovacao: stats.taxaAprovacao,
+    margemMedia: stats.margemMedia,
+    margemTotal: stats.valorSimulacaoTotal,
+  };
 
-  // Calcula estatísticas filtradas por banco
-  const statsFiltradas = useMemo(() => {
-    const leadsParaCalculo = leadsFiltradosPorBanco;
-    
-    if (leadsParaCalculo.length === 0) {
-      return {
-        totalLeads: 0,
-        leadsAprovados: 0,
-        taxaAprovacao: 0,
-        margemMedia: 0,
-        margemTotal: 0,
-      };
+  // Aplica filtros via contexto
+  const handleSearch = () => {
+    setFilters({ ...filters, cpf: searchCpf, status: statusFilter === "todos" ? "" : statusFilter, banco: bancoFilter === "todos" ? "" : bancoFilter });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleSearch();
     }
-
-    const aprovados = leadsParaCalculo.filter((l) => normalizarStatusLead(l) === "aprovado");
-    const totalLeads = leadsParaCalculo.length;
-    const leadsAprovados = aprovados.length;
-    const taxaAprovacao = totalLeads > 0 ? parseFloat(((leadsAprovados / totalLeads) * 100).toFixed(2)) : 0;
-
-    // Calcular margem total e média dos aprovados
-    // Margem Total = soma dos valores de empréstimo liberados (liquidValue da simulação/proposta)
-    // Margem Média = Margem Total / quantidade de leads aprovados
-    let somaMargens = 0;
-    aprovados.forEach((l) => {
-      const simulacao = l.retorno_simulacao as Record<string, unknown> | null;
-      const proposta = l.retorno_proposta as Record<string, unknown> | null;
-      const getProposta = l.retorno_get_proposta as Record<string, unknown> | null;
-      
-      // Prioridade: liquidValue da simulação (valor do empréstimo liberado)
-      let valorEmprestimo = 0;
-      
-      // 1. Tenta do retorno_simulacao.liquidValue (valor liberado para proposta)
-      if (simulacao?.liquidValue) {
-        valorEmprestimo = parseFloat(String(simulacao.liquidValue)) || 0;
-        // Presença: valores em centavos, dividir por 100
-        if (valorEmprestimo > 100000) {
-          valorEmprestimo = valorEmprestimo / 100;
-        }
-      }
-      // 2. Tenta do retorno_get_proposta.liquidValue
-      else if (getProposta?.liquidValue) {
-        valorEmprestimo = parseFloat(String(getProposta.liquidValue)) || 0;
-        if (valorEmprestimo > 100000) {
-          valorEmprestimo = valorEmprestimo / 100;
-        }
-      }
-      // 3. Tenta do retorno_simulacao.requestedAmount
-      else if (simulacao?.requestedAmount) {
-        valorEmprestimo = parseFloat(String(simulacao.requestedAmount)) || 0;
-        if (valorEmprestimo > 100000) {
-          valorEmprestimo = valorEmprestimo / 100;
-        }
-      }
-      
-      somaMargens += valorEmprestimo;
-    });
-
-    const margemTotal = somaMargens;
-    const margemMedia = leadsAprovados > 0 ? margemTotal / leadsAprovados : 0;
-
-    return {
-      totalLeads,
-      leadsAprovados,
-      taxaAprovacao,
-      margemMedia,
-      margemTotal,
-    };
-  }, [leadsFiltradosPorBanco]);
-
-  // Helper para normalizar status do lead - usa utilitário centralizado
-  const getNormalizedStatus = (lead: Lead): string => {
-    return normalizarStatusLead(lead);
   };
-
-  // Extrai nome de todas as fontes possíveis
-  const extrairNome = (lead: Lead): string => {
-    if (lead.nome) return lead.nome;
-    const margem = lead.retorno_margem as any;
-    const simulacao = lead.retorno_simulacao as any;
-    const getProposta = lead.retorno_get_proposta as any;
-    return margem?.nome || simulacao?.details?.name || getProposta?.name || "";
-  };
-
-  // Extrai banco de todas as fontes possíveis
-  const extrairBanco = (lead: Lead): string => {
-    if (lead.banco) return lead.banco;
-    const simulacao = lead.retorno_simulacao as any;
-    return simulacao?.bank || simulacao?.details?.bank || "";
-  };
-
-  // Extrai CBO de todas as fontes possíveis
-  const extrairCBO = (lead: Lead): string => {
-    if (lead.cbo) return lead.cbo;
-    const margem = lead.retorno_margem as any;
-    const simulacao = lead.retorno_simulacao as any;
-    return margem?.cbo || margem?.codigoCBO || simulacao?.details?.cbo || "";
-  };
-
-  // Filtra e pagina os leads (usa leads já filtrados por banco)
-  const filteredLeads = useMemo(() => {
-    let list = leadsFiltradosPorBanco;
-
-    if (searchCpf) {
-      const searchLower = searchCpf.toLowerCase().trim();
-      const searchClean = searchCpf.replace(/\D/g, ""); // CPF sem formatação
-      
-      list = list.filter((l) => {
-        // Busca por CPF (com ou sem formatação)
-        if (l.cpf.includes(searchClean)) return true;
-        
-        // Busca por nome (todas as fontes)
-        const nome = extrairNome(l).toLowerCase();
-        if (nome.includes(searchLower)) return true;
-        
-        // Busca por banco
-        const banco = extrairBanco(l).toLowerCase();
-        if (banco.includes(searchLower)) return true;
-        
-        // Busca por CBO
-        const cbo = extrairCBO(l).toLowerCase();
-        if (cbo.includes(searchLower)) return true;
-        
-        return false;
-      });
-    }
-
-    if (statusFilter !== "todos") {
-      list = list.filter((l) => getNormalizedStatus(l) === statusFilter);
-    }
-
-    return list;
-  }, [leadsFiltradosPorBanco, searchCpf, statusFilter]);
-
-  const totalPages = Math.ceil(filteredLeads.length / leadsPerPage);
-  const paginatedLeads = filteredLeads.slice((currentPage - 1) * leadsPerPage, currentPage * leadsPerPage);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchCpf, statusFilter, bancoFilter]);
 
   const formatCpf = (cpf: string) => {
     const cleaned = cpf.replace(/\D/g, "");
@@ -395,15 +266,29 @@ const LeadsContent = () => {
                     </CardTitle>
                     <p className="text-sm text-muted-foreground mt-1">Visualize e filtre todos os leads</p>
                   </div>
-                  <span className="text-sm text-muted-foreground">{filteredLeads.length} leads</span>
+                  <span className="text-sm text-muted-foreground">{pagination.totalCount.toLocaleString("pt-BR")} leads</span>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-3 mt-4">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input placeholder="Buscar por CPF ou nome..." value={searchCpf} onChange={(e) => setSearchCpf(e.target.value)} className="pl-9 bg-background" />
+                    <Input 
+                      placeholder="Buscar por CPF..." 
+                      value={searchCpf} 
+                      onChange={(e) => setSearchCpf(e.target.value)} 
+                      onKeyDown={handleKeyDown}
+                      className="pl-9 bg-background" 
+                    />
                   </div>
-                  <select className="h-10 px-3 rounded-md border border-input bg-background text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                  <Button variant="outline" onClick={handleSearch} className="gap-2">
+                    <Search className="w-4 h-4" />
+                    Buscar
+                  </Button>
+                  <select className="h-10 px-3 rounded-md border border-input bg-background text-sm" value={statusFilter} onChange={(e) => { 
+                    const newStatus = e.target.value;
+                    setStatusFilter(newStatus);
+                    setFilters({ ...filters, status: newStatus === "todos" ? "" : newStatus });
+                  }}>
                     <option value="todos">Todos</option>
                     <option value="aprovado">Aprovados</option>
                     <option value="reprovado">Reprovados</option>
@@ -416,7 +301,7 @@ const LeadsContent = () => {
                 </div>
               </CardHeader>
               <CardContent>
-                {paginatedLeads.length === 0 ? (
+                {leads.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
                     <Users className="w-12 h-12 mb-4 opacity-50" />
                     <p className="text-lg font-medium text-foreground">Nenhum lead encontrado</p>
@@ -431,7 +316,6 @@ const LeadsContent = () => {
                             <TableHead className="text-muted-foreground">CPF</TableHead>
                             <TableHead className="text-muted-foreground">Nome</TableHead>
                             <TableHead className="text-muted-foreground">Banco</TableHead>
-                            <TableHead className="text-muted-foreground">CBO</TableHead>
                             <TableHead className="text-muted-foreground">Valor</TableHead>
                             <TableHead className="text-muted-foreground">Status</TableHead>
                             <TableHead className="text-muted-foreground">Data</TableHead>
@@ -439,57 +323,48 @@ const LeadsContent = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {paginatedLeads.map((lead) => {
-                            const margem = lead.retorno_margem as any;
-                            const nome = lead.nome || margem?.registroEmpregaticio?.nomeEmpregado || margem?.nomeEmpregado || "-";
-                            const valorMargemDisponivel = margem?.valorMargemDisponivel || 0;
-                            const banco = lead.banco || "-";
-                            const statusNormalizado = getNormalizedStatus(lead);
-
-                            return (
-                              <TableRow key={lead.id} className="border-border/50 hover:bg-muted/30">
-                                <TableCell className="font-mono text-foreground">{formatCpf(lead.cpf)}</TableCell>
-                                <TableCell className="text-muted-foreground truncate max-w-[160px]">{nome}</TableCell>
-                                <TableCell className="text-muted-foreground">{banco}</TableCell>
-                                <TableCell className="text-muted-foreground truncate max-w-[100px]">{lead.cbo || "-"}</TableCell>
-                                <TableCell className="text-foreground">
-                                  {statusNormalizado === "aprovado" && valorMargemDisponivel > 0 
-                                    ? `R$ ${valorMargemDisponivel.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
-                                    : "-"}
-                                </TableCell>
-                                <TableCell>{getStatusBadge(statusNormalizado)}</TableCell>
-                                <TableCell className="text-muted-foreground whitespace-nowrap">{formatDateTime(lead.ultimo_log)}</TableCell>
-                                <TableCell className="text-right">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                    onClick={() => {
-                                      setSelectedLead(lead);
-                                      setDetailOpen(true);
-                                    }}
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
+                          {leads.map((lead: Lead) => (
+                            <TableRow key={lead.id} className="border-border/50 hover:bg-muted/30">
+                              <TableCell className="font-mono text-foreground">{formatCpf(lead.cpf)}</TableCell>
+                              <TableCell className="text-muted-foreground truncate max-w-[160px]">{lead.nome || "-"}</TableCell>
+                              <TableCell className="text-muted-foreground">{lead.banco || "-"}</TableCell>
+                              <TableCell className="text-foreground">
+                                {lead.valor && lead.valor > 0 
+                                  ? `R$ ${lead.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
+                                  : "-"}
+                              </TableCell>
+                              <TableCell>{getStatusBadge(lead.status)}</TableCell>
+                              <TableCell className="text-muted-foreground whitespace-nowrap">{formatDateTime(lead.created_at)}</TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                  onClick={() => {
+                                    setSelectedLead(lead);
+                                    setDetailOpen(true);
+                                  }}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
                         </TableBody>
                       </Table>
                     </div>
 
-                    {/* Pagination */}
+                    {/* Pagination - usando paginação do servidor */}
                     <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
                       <span className="text-sm text-muted-foreground">
-                        Mostrando {(currentPage - 1) * leadsPerPage + 1} a {Math.min(currentPage * leadsPerPage, filteredLeads.length)} de {filteredLeads.length.toLocaleString("pt-BR")}
+                        Página {pagination.page} de {pagination.totalPages} ({pagination.totalCount.toLocaleString("pt-BR")} leads)
                       </span>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(pagination.page - 1)} disabled={pagination.page === 1}>
                           <ChevronLeft className="h-4 w-4" />
                         </Button>
-                        <span className="flex items-center px-3 text-sm text-muted-foreground">Página {currentPage} de {totalPages || 1}</span>
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages || totalPages === 0}>
+                        <span className="flex items-center px-3 text-sm text-muted-foreground">{pagination.page}</span>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(pagination.page + 1)} disabled={pagination.page === pagination.totalPages || pagination.totalPages === 0}>
                           <ChevronRight className="h-4 w-4" />
                         </Button>
                       </div>

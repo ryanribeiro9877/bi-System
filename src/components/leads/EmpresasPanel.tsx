@@ -13,13 +13,13 @@ interface EmpresasPanelProps {
 
 const EmpresasPanel = ({ bancoFilter = "todos" }: EmpresasPanelProps) => {
   const navigate = useNavigate();
-  const { leads, stats } = useDashboard();
+  const { allLeads, stats } = useDashboard();
 
   // Filtra leads por banco se necessário
   const leadsFiltrados = useMemo(() => {
-    if (bancoFilter === "todos") return leads;
-    return leads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
-  }, [leads, bancoFilter]);
+    if (bancoFilter === "todos") return allLeads;
+    return allLeads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
+  }, [allLeads, bancoFilter]);
 
   // Extrai empresa do lead aprovado
   const extrairEmpresa = (lead: any): { nome: string; cnpj: string } | null => {

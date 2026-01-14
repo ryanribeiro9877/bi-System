@@ -2,6 +2,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { BarChart3, LayoutDashboard, LogOut, Users, UserPlus, UserX, Upload, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import ImportFileFilter from "./ImportFileFilter";
 
 const DashboardSidebar = () => {
   const navigate = useNavigate();
@@ -47,6 +48,12 @@ const DashboardSidebar = () => {
       <div className="px-6 py-4 border-b border-sidebar-border">
         <p className="text-xs text-muted-foreground">Logado como:</p>
         <p className="text-sm text-sidebar-foreground truncate">{user?.email}</p>
+      </div>
+
+      {/* Filtro por Arquivo Importado */}
+      <div className="px-4 py-3 border-b border-sidebar-border">
+        <p className="text-xs text-muted-foreground mb-2">Filtrar por arquivo:</p>
+        <ImportFileFilter />
       </div>
 
       {/* Navigation */}

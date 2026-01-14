@@ -32,15 +32,15 @@ interface LeadsDialogData {
 
 const PerfilIdealPanel = ({ bancoFilter = "todos" }: PerfilIdealPanelProps) => {
   const navigate = useNavigate();
-  const { leads, stats } = useDashboard();
+  const { allLeads, stats } = useDashboard();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogData, setDialogData] = useState<LeadsDialogData | null>(null);
 
   // Filtra leads por banco se necessário
   const leadsFiltrados = useMemo(() => {
-    if (bancoFilter === "todos") return leads;
-    return leads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
-  }, [leads, bancoFilter]);
+    if (bancoFilter === "todos") return allLeads;
+    return allLeads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
+  }, [allLeads, bancoFilter]);
 
   const perfil = useMemo(() => {
     // Usa a função centralizada de normalização de status

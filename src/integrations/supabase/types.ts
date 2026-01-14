@@ -192,6 +192,32 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      get_dashboard_stats: {
+        Args: {
+          p_data_inicial?: string | null
+          p_data_final?: string | null
+          p_banco?: string | null
+          p_status?: string | null
+          p_tipo_reprovacao?: string | null
+          p_tipos_reprovacao_multiplos?: string[] | null
+        }
+        Returns: Json
+      }
+      get_filter_options: {
+        Args: Record<string, never>
+        Returns: Json
+      }
+      count_leads: {
+        Args: {
+          p_data_inicial?: string | null
+          p_data_final?: string | null
+          p_banco?: string | null
+          p_status?: string | null
+          p_tipo_reprovacao?: string | null
+          p_cpf?: string | null
+        }
+        Returns: number
+      }
     }
     Enums: {
       app_role: "admin" | "user"

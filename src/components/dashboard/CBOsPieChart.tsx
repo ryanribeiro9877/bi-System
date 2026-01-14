@@ -6,27 +6,16 @@ import { agruparCBOsPorSetor } from "@/lib/cboSetorMapping";
 import { Layers } from "lucide-react";
 
 const CBOsPieChart = () => {
-  const { leads } = useDashboard();
+  const { stats } = useDashboard();
 
-  // Extrair CBOs bloqueados dos leads (mesma lógica do PorSetorCBOsPanel)
+  // Usar CBOs bloqueados já calculados nas estatísticas
   const cbosBloqueados = useMemo(() => {
-    const cboMap: Record<string, { code: string; name: string; count: number }> = {};
-    
-    leads.forEach(lead => {
-      const code = (lead as any).cbo_block_code;
-      const name = (lead as any).cbo_block_name;
-      
-      if (code && name) {
-        const key = code;
-        if (!cboMap[key]) {
-          cboMap[key] = { code, name, count: 0 };
-        }
-        cboMap[key].count++;
-      }
-    });
-    
-    return Object.values(cboMap).sort((a, b) => b.count - a.count);
-  }, [leads]);
+    return stats.cbosBloqueados.map(cbo => ({
+      code: cbo.code,
+      name: cbo.name || "",
+      count: cbo.quantidade,
+    }));
+  }, [stats.cbosBloqueados]);
 
   // Agrupar por setor
   const cbosPorSetor = useMemo(() => {
@@ -47,7 +36,7 @@ const CBOsPieChart = () => {
     return cbosPorSetor.reduce((acc, setor) => acc + setor.totalLeads, 0);
   }, [cbosPorSetor]);
 
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: { name: string; value: number; cbos: Array<unknown> } }> }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (

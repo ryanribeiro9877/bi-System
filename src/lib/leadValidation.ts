@@ -143,10 +143,26 @@ export interface ValidationResult {
 }
 
 /**
+ * Validates CPF format only (11 digits, not all same)
+ * Does NOT validate checksum - use for forced imports
+ */
+export function validarCPFRelaxado(cpf: string): boolean {
+  // Must be exactly 11 digits
+  if (cpf.length !== 11 || !/^\d{11}$/.test(cpf)) return false;
+  
+  // Reject common invalid patterns (all same digit)
+  if (/^(\d)\1{10}$/.test(cpf)) return false;
+  
+  return true;
+}
+
+/**
  * Validates an array of leads and separates valid from invalid
  * Now includes line numbers for better error reporting
+ * @param leads - Array of leads to validate
+ * @param forceImport - If true, uses relaxed CPF validation (ignores checksum)
  */
-export function validateLeads(leads: any[]): ValidationResult {
+export function validateLeads(leads: any[], forceImport: boolean = false): ValidationResult {
   const valid: ValidatedLead[] = [];
   const invalid: ValidationError[] = [];
   
@@ -167,8 +183,21 @@ export function validateLeads(leads: any[]): ValidationResult {
           : undefined,
       };
       
-      const validated = LeadImportSchema.parse(cleanedLead);
-      valid.push(validated);
+      // Se forceImport está ativo, usar validação relaxada de CPF
+      if (forceImport) {
+        // Validar apenas formato do CPF (11 dígitos, não todos iguais)
+        if (!validarCPFRelaxado(cpfLimpo)) {
+          throw new Error('CPF com formato inválido');
+        }
+        // Validar outros campos sem a validação rigorosa de CPF
+        const { cpf, ...otherFields } = cleanedLead;
+        const partialSchema = LeadImportSchema.omit({ cpf: true });
+        partialSchema.parse(otherFields);
+        valid.push({ ...cleanedLead, cpf: cpfLimpo } as ValidatedLead);
+      } else {
+        const validated = LeadImportSchema.parse(cleanedLead);
+        valid.push(validated);
+      }
     } catch (error) {
       let errors: string[] = [];
       let motivo = '';

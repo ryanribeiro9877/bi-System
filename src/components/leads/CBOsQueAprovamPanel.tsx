@@ -13,13 +13,13 @@ interface CBOsQueAprovamPanelProps {
 
 const CBOsQueAprovamPanel = ({ bancoFilter = "todos" }: CBOsQueAprovamPanelProps) => {
   const navigate = useNavigate();
-  const { leads, stats } = useDashboard();
+  const { allLeads, stats } = useDashboard();
 
   // Filtra leads por banco se necessário
   const leadsFiltrados = useMemo(() => {
-    if (bancoFilter === "todos") return leads;
-    return leads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
-  }, [leads, bancoFilter]);
+    if (bancoFilter === "todos") return allLeads;
+    return allLeads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
+  }, [allLeads, bancoFilter]);
 
   const top10CBOs = useMemo(() => {
     // Filtra apenas leads aprovados (do banco filtrado ou todos)

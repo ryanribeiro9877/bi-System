@@ -1,9 +1,8 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Lead } from "@/hooks/useLeadsData";
-import { FileText, CheckCircle, XCircle, Clock, User, Building2, CreditCard, FileJson, AlertTriangle } from "lucide-react";
+import { FileText, CheckCircle, Clock, User, CreditCard, FileJson, AlertTriangle } from "lucide-react";
 import { normalizarStatusLead, extrairMotivoErro } from "@/lib/leadStatusUtils";
 
 interface LeadDetailDialogProps {
@@ -26,7 +25,7 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
     return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">✕ Reprovado</Badge>;
   };
 
-  const renderJsonContent = (data: any, label: string) => {
+  const renderJsonContent = (data: unknown, label: string) => {
     if (!data || (typeof data === "object" && Object.keys(data).length === 0)) {
       return (
         <div className="text-muted-foreground text-sm italic py-2">
@@ -42,19 +41,20 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
     );
   };
 
-  const hasData = (data: any) => data && typeof data === "object" && Object.keys(data).length > 0;
+  const hasData = (data: unknown) => data && typeof data === "object" && Object.keys(data as object).length > 0;
 
-  // Early return AFTER all hooks/functions that could contain hooks
+  // Early return if no lead
   if (!lead) return null;
 
   // Usa o status normalizado do utilitário
   const statusNormalizado = normalizarStatusLead(lead);
   const motivoErro = extrairMotivoErro(lead);
 
-  const margem = lead.retorno_margem as any;
-  const nome = lead.nome || margem?.registroEmpregaticio?.nomeEmpregado || margem?.nomeEmpregado || "-";
-  const sim = lead.retorno_simulacao as any;
-  const valor = lead.valor || sim?.requestedAmount || sim?.liquidValue || 0;
+  const margem = lead.retorno_margem as Record<string, unknown> | null;
+  const nomeFromMargem = (margem?.registroEmpregaticio as Record<string, unknown>)?.nomeEmpregado as string | undefined;
+  const nome = lead.nome || nomeFromMargem || (margem?.nomeEmpregado as string) || "-";
+  const sim = lead.retorno_simulacao as Record<string, unknown> | null;
+  const valor = lead.valor || (sim?.requestedAmount as number) || (sim?.liquidValue as number) || 0;
 
   const consultaSections = [
     { key: "retorno_autorizacao", label: "Autorização", icon: CheckCircle, data: lead.retorno_autorizacao },

@@ -90,21 +90,26 @@ const PorBancoPanel = ({ bancoFilter = "todos" }: PorBancoPanelProps) => {
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Aprovados</TableHead>
                 <TableHead className="text-right">Reprovados</TableHead>
+                <TableHead className="text-right">Pendentes</TableHead>
                 <TableHead className="text-right">% Aprovação</TableHead>
                 <TableHead className="text-right">% Reprovação</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {dadosBancos.map((b) => (
-                <TableRow key={b.banco}>
-                  <TableCell className="font-medium text-foreground">{b.banco}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">{b.total.toLocaleString("pt-BR")}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">{b.aprovados.toLocaleString("pt-BR")}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">{b.reprovados.toLocaleString("pt-BR")}</TableCell>
-                  <TableCell className="text-right text-emerald-400">{b.total > 0 ? Math.round((b.aprovados / b.total) * 100) : 0}%</TableCell>
-                  <TableCell className="text-right text-red-400">{b.taxaReprovacao}%</TableCell>
-                </TableRow>
-              ))}
+              {dadosBancos.map((b) => {
+                const pendentes = b.total - b.aprovados - b.reprovados;
+                return (
+                  <TableRow key={b.banco}>
+                    <TableCell className="font-medium text-foreground">{b.banco}</TableCell>
+                    <TableCell className="text-right text-muted-foreground">{b.total.toLocaleString("pt-BR")}</TableCell>
+                    <TableCell className="text-right text-muted-foreground">{b.aprovados.toLocaleString("pt-BR")}</TableCell>
+                    <TableCell className="text-right text-muted-foreground">{b.reprovados.toLocaleString("pt-BR")}</TableCell>
+                    <TableCell className="text-right text-amber-400">{pendentes > 0 ? pendentes.toLocaleString("pt-BR") : "-"}</TableCell>
+                    <TableCell className="text-right text-emerald-400">{b.total > 0 ? Math.round((b.aprovados / b.total) * 100) : 0}%</TableCell>
+                    <TableCell className="text-right text-red-400">{b.taxaReprovacao}%</TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>

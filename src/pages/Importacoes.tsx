@@ -303,17 +303,33 @@ const Importacoes = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
+  const [forceImport, setForceImport] = useState(false);
 
   // Função para excluir uma importação e seus leads associados
   const handleDeleteImport = async (importId: string, fileName: string) => {
+    console.log(`[Importacoes] Iniciando exclusão da importação: ${importId} (${fileName})`);
     setDeletingImportId(importId);
     
     try {
-      // 1. Primeiro, excluir todos os leads associados a essa importação
-      const { error: leadsError } = await supabase
+      // 1. Primeiro, contar quantos leads serão excluídos
+      const { count: leadsCount, error: countError } = await supabase
         .from("leads")
-        .delete()
+        .select("*", { count: "exact", head: true })
         .eq("import_batch_id", importId);
+      
+      console.log(`[Importacoes] Leads a serem excluídos: ${leadsCount}`);
+      
+      if (countError) {
+        console.error("Erro ao contar leads:", countError);
+      }
+      
+      // 2. Excluir todos os leads associados a essa importação
+      const { error: leadsError, count: deletedLeadsCount } = await supabase
+        .from("leads")
+        .delete({ count: "exact" })
+        .eq("import_batch_id", importId);
+      
+      console.log(`[Importacoes] Leads excluídos: ${deletedLeadsCount}, Erro: ${leadsError?.message || 'nenhum'}`);
       
       if (leadsError) {
         console.error("Erro ao excluir leads:", leadsError);
@@ -326,11 +342,13 @@ const Importacoes = () => {
         return;
       }
       
-      // 2. Depois, excluir o registro de importação
+      // 3. Excluir o registro de importação
       const { error: importError } = await supabase
         .from("imports")
         .delete()
         .eq("id", importId);
+      
+      console.log(`[Importacoes] Importação excluída, Erro: ${importError?.message || 'nenhum'}`);
       
       if (importError) {
         console.error("Erro ao excluir importação:", importError);
@@ -343,15 +361,16 @@ const Importacoes = () => {
         return;
       }
       
-      // 3. Atualizar a lista de importações
+      // 4. Atualizar a lista de importações localmente
       setImports(prev => prev.filter(imp => imp.id !== importId));
       
-      // 4. Emitir evento para atualizar dashboard
+      // 5. Emitir evento para atualizar dashboard e outras páginas
+      console.log(`[Importacoes] Emitindo evento de atualização...`);
       importEvents.emit();
       
       toast({
-        title: "Importação excluída",
-        description: `A importação "${fileName}" e todos os leads associados foram removidos com sucesso.`,
+        title: "Importação excluída com sucesso",
+        description: `A importação "${fileName}" e ${deletedLeadsCount || leadsCount || 0} leads foram removidos permanentemente.`,
       });
     } catch (error) {
       console.error("Erro ao excluir:", error);
@@ -726,8 +745,8 @@ const Importacoes = () => {
         parsed = await parseExcel(selectedFile);
       }
 
-      // Validate leads before import
-      const validationResult = validateLeads(parsed);
+      // Validate leads before import (usar validação relaxada se forceImport estiver ativo)
+      const validationResult = validateLeads(parsed, forceImport);
       
       // Store validation errors for display
       if (validationResult.invalid.length > 0) {
@@ -976,6 +995,7 @@ const Importacoes = () => {
 
               {/* Action Buttons */}
               {selectedFile && !isProcessing && (
+                <>
                 <div className="flex justify-end gap-3 mt-4">
                   <Button
                     variant="outline"
@@ -992,6 +1012,19 @@ const Importacoes = () => {
                     Importar {previewData.length > 0 && `(${previewData.length}+ registros)`}
                   </Button>
                 </div>
+                <div className="flex items-center gap-2 mt-3">
+                  <input
+                    type="checkbox"
+                    id="forceImport"
+                    checked={forceImport}
+                    onChange={(e) => setForceImport(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500"
+                  />
+                  <label htmlFor="forceImport" className="text-sm text-muted-foreground">
+                    Forçar importação (ignorar validação de dígitos verificadores do CPF)
+                  </label>
+                </div>
+              </>
               )}
             </CardContent>
           </Card>
@@ -1132,8 +1165,8 @@ const Importacoes = () => {
                     <TableRow>
                       <TableHead>Arquivo</TableHead>
                       <TableHead>Tipo</TableHead>
-                      <TableHead>Registros</TableHead>
-                      <TableHead>Sucesso</TableHead>
+                      <TableHead>Importados</TableHead>
+                      <TableHead>Original</TableHead>
                       <TableHead>Falhas</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Data</TableHead>
@@ -1149,8 +1182,8 @@ const Importacoes = () => {
                             {imp.file_type}
                           </Badge>
                         </TableCell>
-                        <TableCell>{imp.total_records}</TableCell>
-                        <TableCell className="text-emerald-400">{imp.successful_records}</TableCell>
+                        <TableCell className="text-emerald-400 font-medium">{imp.successful_records}</TableCell>
+                        <TableCell className="text-muted-foreground">{imp.total_records}</TableCell>
                         <TableCell className="text-red-400">{imp.failed_records}</TableCell>
                         <TableCell>{getStatusBadge(imp.status)}</TableCell>
                         <TableCell className="text-muted-foreground">
@@ -1184,7 +1217,7 @@ const Importacoes = () => {
                                   </p>
                                   <ul className="list-disc list-inside text-red-400">
                                     <li>O registro de importação</li>
-                                    <li>Todos os {imp.total_records} leads associados</li>
+                                    <li>Todos os {imp.successful_records} leads importados</li>
                                   </ul>
                                   <p className="text-muted-foreground text-sm">
                                     Esta ação não pode ser desfeita.

@@ -43,7 +43,7 @@ const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'
 const ITEMS_PER_PAGE = 50;
 
 const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPanelProps) => {
-  const { leads, stats } = useDashboard();
+  const { allLeads, stats } = useDashboard();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogData, setDialogData] = useState<DialogData | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
@@ -106,9 +106,9 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPa
 
   // Filtra leads por banco se necessário
   const leadsFiltrados = useMemo(() => {
-    if (bancoFilter === "todos") return leads;
-    return leads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
-  }, [leads, bancoFilter]);
+    if (bancoFilter === "todos") return allLeads;
+    return allLeads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
+  }, [allLeads, bancoFilter]);
 
   // Análise completa dos dados importados
   const analise = useMemo(() => {

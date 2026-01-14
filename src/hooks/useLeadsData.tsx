@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { importEvents } from "@/events/importEvents";
 import { 
@@ -26,6 +26,7 @@ export interface Lead {
   observacoes: string | null;
   created_at: string;
   updated_at: string;
+  import_batch_id: string | null;
   // Campos JSONB
   retorno_autorizacao: RetornoAutorizacao | null;
   retorno_margem: RetornoMargem | null;
@@ -46,6 +47,7 @@ export interface FilterState {
   tiposReprovacaoMultiplos: string[]; // Novo: suporte a múltiplos tipos
   status: string;
   cpf: string;
+  importBatchId: string; // Filtro por arquivo importado
 }
 
 export interface DashboardStats {
@@ -188,7 +190,8 @@ export const useLeadsData = (filters?: FilterState) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchLeads = async () => {
+  const fetchLeads = useCallback(async () => {
+    console.log('[useLeadsData] Fetching leads with filters:', filters);
     setIsLoading(true);
     setError(null);
 
@@ -224,6 +227,9 @@ export const useLeadsData = (filters?: FilterState) => {
         if (filters?.cpf) {
           query = query.ilike("cpf", `%${filters.cpf}%`);
         }
+        if (filters?.importBatchId) {
+          query = query.eq("import_batch_id", filters.importBatchId);
+        }
 
         return query;
       };
@@ -258,21 +264,21 @@ export const useLeadsData = (filters?: FilterState) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [filters]);
 
   useEffect(() => {
     fetchLeads();
-  }, [filters?.dataInicial, filters?.dataFinal, filters?.banco, filters?.tipoReprovacao, filters?.tiposReprovacaoMultiplos, filters?.status, filters?.cpf]);
+  }, [fetchLeads]);
 
-  // Sincronização global: refetch quando houver nova importação
+  // Sincronização global: refetch quando houver nova importação ou exclusão
   useEffect(() => {
     const unsubscribe = importEvents.subscribe(() => {
-      console.log('[useLeadsData] Recebido evento de importação, atualizando dados...');
+      console.log('[useLeadsData] Recebido evento de importação/exclusão, atualizando dados...');
       fetchLeads();
     });
     
     return unsubscribe;
-  }, []);
+  }, [fetchLeads]);
 
   const stats = useMemo<DashboardStats>(() => {
     if (leads.length === 0) {
