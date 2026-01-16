@@ -1,73 +1,84 @@
-# Welcome to your Lovable project
+# Credit Analyzer Pro
 
-## Project info
+Sistema profissional de análise de crédito e gestão de leads para instituições financeiras.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Funcionalidades
 
-## How can I edit this code?
+- **Dashboard Analítico**: Visualização completa de métricas e KPIs
+- **Gestão de Leads**: Importação, análise e acompanhamento de leads
+- **Análise de Crédito CLT**: Simulações e aprovações de crédito consignado
+- **Relatórios**: Gráficos e estatísticas detalhadas
+- **Multi-banco**: Suporte a múltiplas instituições financeiras
 
-There are several ways of editing your application.
+## Tecnologias
 
-**Use Lovable**
+- **Frontend**: React 18 + TypeScript
+- **Build**: Vite
+- **UI**: shadcn/ui + Tailwind CSS
+- **Gráficos**: Recharts
+- **Backend**: Supabase (PostgreSQL + Auth + Storage)
+- **State Management**: TanStack Query
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Instalação
 
-Changes made via Lovable will be committed automatically to this repo.
+```bash
+# Clonar o repositório
+git clone https://github.com/ryanribeiro9877/bi-System.git
 
-**Use your preferred IDE**
+# Entrar no diretório
+cd bi-System
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+# Instalar dependências
+npm install
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Iniciar servidor de desenvolvimento
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+## Scripts Disponíveis
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+- `npm run dev` - Inicia o servidor de desenvolvimento
+- `npm run build` - Gera build de produção
+- `npm run preview` - Preview do build de produção
+- `npm run lint` - Executa o linter
 
-**Use GitHub Codespaces**
+## Deploy
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### Netlify
 
-## What technologies are used for this project?
+1. Conecte seu repositório GitHub ao Netlify
+2. Configure:
+   - **Build command**: `npm run build`
+   - **Publish directory**: `dist`
+3. Adicione as variáveis de ambiente do Supabase
 
-This project is built with:
+### Vercel
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+1. Importe o projeto do GitHub
+2. O Vercel detectará automaticamente as configurações do Vite
+3. Adicione as variáveis de ambiente do Supabase
 
-## How can I deploy this project?
+### Variáveis de Ambiente
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+Crie um arquivo `.env` na raiz do projeto:
 
-## Can I connect a custom domain to my Lovable project?
+```env
+VITE_SUPABASE_URL=sua_url_do_supabase
+VITE_SUPABASE_ANON_KEY=sua_chave_anonima
+```
 
-Yes, you can!
+## Estrutura do Projeto
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+```
+src/
+├── components/     # Componentes React
+├── contexts/       # Contextos React
+├── hooks/          # Custom hooks
+├── integrations/   # Integrações (Supabase)
+├── pages/          # Páginas da aplicação
+└── lib/            # Utilitários
+```
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## Licença
+
+Projeto proprietário - Todos os direitos reservados.
