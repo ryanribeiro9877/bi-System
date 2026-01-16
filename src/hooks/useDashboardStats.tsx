@@ -3,6 +3,32 @@ import { useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { importEvents } from "@/events/importEvents";
 
+interface ReprovacaoPorBanco {
+  banco: string;
+  total: number;
+  aprovados: number;
+  reprovados: number;
+  pendentes: number;
+  taxaReprovacao: number;
+}
+
+interface ReprovacaoPorTipo {
+  tipo: string;
+  tipoCompleto: string;
+  quantidade: number;
+}
+
+interface LeadPorStatus {
+  status: string;
+  quantidade: number;
+}
+
+interface CBOBloqueado {
+  code: string;
+  name: string;
+  quantidade: number;
+}
+
 export interface DashboardStatsResult {
   totalLeads: number;
   leadsAprovados: number;
@@ -10,8 +36,14 @@ export interface DashboardStatsResult {
   leadsPendentes: number;
   taxaAprovacao: number;
   taxaReprovacao: number;
-  bancos: string[];
-  tiposReprovacao: string[];
+  valorTotal: number;
+  reprovacoesPorBanco: ReprovacaoPorBanco[];
+  reprovacoesPorTipo: ReprovacaoPorTipo[];
+  leadsPorStatus: LeadPorStatus[];
+  cbosBloqueados: CBOBloqueado[];
+  totalCBOsBloqueados: number;
+  margemMedia: number;
+  valorSimulacaoTotal: number;
 }
 
 interface StatsFilters {
@@ -25,15 +57,20 @@ interface StatsFilters {
 const fetchDashboardStats = async (filters?: StatsFilters): Promise<DashboardStatsResult> => {
   console.log('[useDashboardStats] Fetching stats with filters:', filters);
   
+  // Usar a versão completa da RPC com 6 parâmetros (timestamptz)
   const { data, error: rpcError } = await supabase.rpc('get_dashboard_stats', {
-    p_import_batch_id: filters?.importBatchId || '',
+    p_data_inicial: filters?.dataInicial || null,
+    p_data_final: filters?.dataFinal || null,
     p_banco: filters?.banco || '',
     p_status: filters?.status || '',
-    p_data_inicial: filters?.dataInicial?.toISOString() || '',
-    p_data_final: filters?.dataFinal?.toISOString() || '',
+    p_tipo_reprovacao: '',
+    p_tipos_reprovacao_multiplos: null,
   });
 
-  if (rpcError) throw rpcError;
+  if (rpcError) {
+    console.error('[useDashboardStats] RPC error:', rpcError);
+    throw rpcError;
+  }
 
   if (data) {
     const result = data as {
@@ -43,8 +80,14 @@ const fetchDashboardStats = async (filters?: StatsFilters): Promise<DashboardSta
       leadsPendentes: number;
       taxaAprovacao: number;
       taxaReprovacao: number;
-      bancos: string[];
-      tiposReprovacao: string[];
+      valorTotal: number;
+      reprovacoesPorBanco: ReprovacaoPorBanco[];
+      reprovacoesPorTipo: ReprovacaoPorTipo[];
+      leadsPorStatus: LeadPorStatus[];
+      cbosBloqueados: CBOBloqueado[];
+      totalCBOsBloqueados: number;
+      margemMedia: number;
+      valorSimulacaoTotal: number;
     };
     return {
       totalLeads: result.totalLeads || 0,
@@ -53,8 +96,14 @@ const fetchDashboardStats = async (filters?: StatsFilters): Promise<DashboardSta
       leadsPendentes: result.leadsPendentes || 0,
       taxaAprovacao: result.taxaAprovacao || 0,
       taxaReprovacao: result.taxaReprovacao || 0,
-      bancos: result.bancos || [],
-      tiposReprovacao: result.tiposReprovacao || [],
+      valorTotal: result.valorTotal || 0,
+      reprovacoesPorBanco: result.reprovacoesPorBanco || [],
+      reprovacoesPorTipo: result.reprovacoesPorTipo || [],
+      leadsPorStatus: result.leadsPorStatus || [],
+      cbosBloqueados: result.cbosBloqueados || [],
+      totalCBOsBloqueados: result.totalCBOsBloqueados || 0,
+      margemMedia: result.margemMedia || 0,
+      valorSimulacaoTotal: result.valorSimulacaoTotal || 0,
     };
   }
 
@@ -65,8 +114,14 @@ const fetchDashboardStats = async (filters?: StatsFilters): Promise<DashboardSta
     leadsPendentes: 0,
     taxaAprovacao: 0,
     taxaReprovacao: 0,
-    bancos: [],
-    tiposReprovacao: [],
+    valorTotal: 0,
+    reprovacoesPorBanco: [],
+    reprovacoesPorTipo: [],
+    leadsPorStatus: [],
+    cbosBloqueados: [],
+    totalCBOsBloqueados: 0,
+    margemMedia: 0,
+    valorSimulacaoTotal: 0,
   };
 };
 
@@ -108,8 +163,14 @@ export const useDashboardStats = (filters?: StatsFilters) => {
       leadsPendentes: 0,
       taxaAprovacao: 0,
       taxaReprovacao: 0,
-      bancos: [],
-      tiposReprovacao: [],
+      valorTotal: 0,
+      reprovacoesPorBanco: [],
+      reprovacoesPorTipo: [],
+      leadsPorStatus: [],
+      cbosBloqueados: [],
+      totalCBOsBloqueados: 0,
+      margemMedia: 0,
+      valorSimulacaoTotal: 0,
     }, 
     isLoading, 
     error: error instanceof Error ? error.message : null, 

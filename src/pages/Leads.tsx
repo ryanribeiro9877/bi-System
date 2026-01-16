@@ -159,7 +159,6 @@ const LeadsContent = () => {
       </main>
     );
   }
-
   return (
     <main className="flex-1 p-8">
       <div className="max-w-7xl mx-auto space-y-8">

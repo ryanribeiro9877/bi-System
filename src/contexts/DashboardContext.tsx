@@ -146,42 +146,72 @@ const DashboardProviderInner = ({ children }: { children: ReactNode }) => {
   };
 
   // Converter stats do hook para o formato esperado
-  const stats: DashboardStats = useMemo(() => ({
-    totalLeads: dashboardStats.totalLeads,
-    leadsAprovados: dashboardStats.leadsAprovados,
-    leadsReprovados: dashboardStats.leadsReprovados,
-    leadsPendentes: dashboardStats.leadsPendentes,
-    taxaReprovacao: dashboardStats.taxaReprovacao,
-    taxaAprovacao: dashboardStats.taxaAprovacao,
-    valorTotal: 0,
-    principalMotivo: "-",
-    principalMotivoCompleto: "-",
-    principalMotivoPercentual: 0,
-    bancoMaiorReprovacao: "-",
-    bancoMaiorReprovacaoPercentual: 0,
-    cbosUnicos: 0,
-    tiposReprovacaoUnicos: dashboardStats.tiposReprovacao.length,
-    reprovacoesPorBanco: [],
-    reprovacoesPorCBO: [],
-    reprovacoesPorTipo: [],
-    leadsPorStatus: [
-      { status: "aprovado", quantidade: dashboardStats.leadsAprovados },
-      { status: "reprovado", quantidade: dashboardStats.leadsReprovados },
-      { status: "pendente", quantidade: dashboardStats.leadsPendentes },
-    ],
-    cbosBloqueados: [],
-    totalCBOsBloqueados: 0,
-    margemMedia: 0,
-    valorSimulacaoTotal: 0,
-  }), [dashboardStats]);
+  const stats: DashboardStats = useMemo(() => {
+    // Calcular principal motivo de reprovação
+    const tiposReprovacao = dashboardStats.reprovacoesPorTipo || [];
+    const principalTipo = tiposReprovacao.length > 0 ? tiposReprovacao[0] : null;
+    const totalReprovacoes = tiposReprovacao.reduce((acc, t) => acc + t.quantidade, 0);
+    
+    // Calcular banco com maior reprovação
+    const bancos = dashboardStats.reprovacoesPorBanco || [];
+    const bancoMaiorReprovacao = bancos.length > 0 
+      ? bancos.reduce((prev, curr) => curr.taxaReprovacao > prev.taxaReprovacao ? curr : prev, bancos[0])
+      : null;
 
-  // Filter options
-  const filterOptions = useMemo(() => ({
-    bancos: dashboardStats.bancos || [],
-    tiposReprovacao: dashboardStats.tiposReprovacao || [],
-    statuses: ["aprovado", "reprovado", "pendente"],
-    cbos: [],
-  }), [dashboardStats]);
+    return {
+      totalLeads: dashboardStats.totalLeads,
+      leadsAprovados: dashboardStats.leadsAprovados,
+      leadsReprovados: dashboardStats.leadsReprovados,
+      leadsPendentes: dashboardStats.leadsPendentes,
+      taxaReprovacao: dashboardStats.taxaReprovacao,
+      taxaAprovacao: dashboardStats.taxaAprovacao,
+      valorTotal: dashboardStats.valorTotal || 0,
+      principalMotivo: principalTipo?.tipo || "-",
+      principalMotivoCompleto: principalTipo?.tipoCompleto || "-",
+      principalMotivoPercentual: principalTipo && totalReprovacoes > 0 
+        ? Math.round((principalTipo.quantidade / totalReprovacoes) * 100) 
+        : 0,
+      bancoMaiorReprovacao: bancoMaiorReprovacao?.banco || "-",
+      bancoMaiorReprovacaoPercentual: bancoMaiorReprovacao?.taxaReprovacao || 0,
+      cbosUnicos: dashboardStats.cbosBloqueados?.length || 0,
+      tiposReprovacaoUnicos: tiposReprovacao.length,
+      reprovacoesPorBanco: bancos.map(b => ({
+        banco: b.banco,
+        total: b.total,
+        aprovados: b.aprovados,
+        reprovados: b.reprovados,
+        pendentes: b.pendentes,
+        taxaReprovacao: b.taxaReprovacao,
+      })),
+      reprovacoesPorCBO: [],
+      reprovacoesPorTipo: tiposReprovacao.map(t => ({
+        tipo: t.tipo,
+        tipoCompleto: t.tipoCompleto,
+        quantidade: t.quantidade,
+      })),
+      leadsPorStatus: dashboardStats.leadsPorStatus || [
+        { status: "Aprovado", quantidade: dashboardStats.leadsAprovados },
+        { status: "Reprovado", quantidade: dashboardStats.leadsReprovados },
+        { status: "Pendente", quantidade: dashboardStats.leadsPendentes },
+      ],
+      cbosBloqueados: dashboardStats.cbosBloqueados || [],
+      totalCBOsBloqueados: dashboardStats.totalCBOsBloqueados || 0,
+      margemMedia: dashboardStats.margemMedia || 0,
+      valorSimulacaoTotal: dashboardStats.valorSimulacaoTotal || 0,
+    };
+  }, [dashboardStats]);
+
+  // Filter options - extrair dos dados retornados
+  const filterOptions = useMemo(() => {
+    const bancos = (dashboardStats.reprovacoesPorBanco || []).map(b => b.banco).filter(b => b && b !== 'Não Informado');
+    const tiposReprovacao = (dashboardStats.reprovacoesPorTipo || []).map(t => t.tipo);
+    return {
+      bancos,
+      tiposReprovacao,
+      statuses: ["aprovado", "reprovado", "pendente"],
+      cbos: [],
+    };
+  }, [dashboardStats]);
 
   const refetch = useCallback(() => {
     refetchLeads();

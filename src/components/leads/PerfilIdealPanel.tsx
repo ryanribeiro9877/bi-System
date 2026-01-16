@@ -1,264 +1,146 @@
-import { Star, Upload, DollarSign, Clock, Building2, Briefcase, CheckCircle, Award, X, Eye } from "lucide-react";
+import { Star, Upload, DollarSign, Clock, Building2, Briefcase, CheckCircle, Award, Eye } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { useDashboard } from "@/contexts/DashboardContext";
 import { useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Cell } from "recharts";
-import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Lead } from "@/hooks/useLeadsData";
+import { supabase } from "@/integrations/supabase/client";
+import { useApprovedLeadsAnalysis } from "@/hooks/useApprovedLeadsAnalysis";
 
 interface PerfilIdealPanelProps {
   bancoFilter?: string;
 }
 
-interface LeadComDados {
-  lead: Lead;
-  margem: number;
-  tempoVinculoMeses: number;
-  porteEmpresa: string;
-  nome: string;
+interface LeadPorPorte {
   cpf: string;
+  nome: string;
   banco: string;
+  empresa: string;
+  porte: string;
 }
 
-interface LeadsDialogData {
+interface DialogData {
   titulo: string;
   subtitulo: string;
-  leads: LeadComDados[];
+  leads: LeadPorPorte[];
 }
 
 const PerfilIdealPanel = ({ bancoFilter = "todos" }: PerfilIdealPanelProps) => {
   const navigate = useNavigate();
-  const { allLeads, stats } = useDashboard();
+  const { analysis, isLoading } = useApprovedLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogData, setDialogData] = useState<LeadsDialogData | null>(null);
+  const [dialogData, setDialogData] = useState<DialogData | null>(null);
+  const [loadingLeads, setLoadingLeads] = useState(false);
 
-  // Filtra leads por banco se necessário
-  const leadsFiltrados = useMemo(() => {
-    if (bancoFilter === "todos") return allLeads;
-    return allLeads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
-  }, [allLeads, bancoFilter]);
+  const formatCpf = (cpf: string) => {
+    const cleaned = cpf.replace(/\D/g, "");
+    if (cleaned.length !== 11) return cpf;
+    return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  };
+
+  const handlePorteClick = async (data: { porte: string; quantidade: number }) => {
+    if (!data?.porte) return;
+    
+    setLoadingLeads(true);
+    setDialogOpen(true);
+    setDialogData({
+      titulo: `Leads Aprovados - ${data.porte}`,
+      subtitulo: `Carregando...`,
+      leads: [],
+    });
+
+    try {
+      // Usar RPC para buscar leads por porte (mesma lógica de classificação do gráfico)
+      const { data: leads, error } = await (supabase.rpc as unknown as (name: string, params: Record<string, unknown>) => Promise<{ data: LeadPorPorte[] | null; error: Error | null }>)('get_leads_by_porte', {
+        p_porte: data.porte,
+        p_limit: 100,
+      });
+
+      if (error) throw error;
+
+      const leadsDoPorte = leads || [];
+
+      setDialogData({
+        titulo: `Leads Aprovados - ${data.porte}`,
+        subtitulo: `${leadsDoPorte.length} leads encontrados`,
+        leads: leadsDoPorte,
+      });
+    } catch (err) {
+      console.error('Erro ao buscar leads por porte:', err);
+      setDialogData({
+        titulo: `Leads Aprovados - ${data.porte}`,
+        subtitulo: `Erro ao carregar leads`,
+        leads: [],
+      });
+    } finally {
+      setLoadingLeads(false);
+    }
+  };
 
   const perfil = useMemo(() => {
-    // Usa a função centralizada de normalização de status
-    const aprovados = leadsFiltrados.filter((l) => normalizarStatusLead(l) === "aprovado");
+    if (analysis.totalAprovados === 0) return null;
 
-    if (aprovados.length === 0) return null;
-
-    // Função auxiliar para extrair dados de margem de múltiplas estruturas
-    const extrairDadosMargem = (l: any) => {
-      const margem = l.retorno_margem as any;
-      const simulacao = l.retorno_simulacao as any;
-      const getProposta = l.retorno_get_proposta as any;
-      
-      // UY3: retorno_margem é um array com result dentro
-      if (Array.isArray(margem) && margem[0]?.result?.[0]) {
-        return margem[0].result[0];
-      }
-      
-      // UY3: retorno_margem.result array
-      if (margem?.result?.[0]) {
-        return margem.result[0];
-      }
-      
-      // UY3: dataprevValidationResponses
-      if (margem?.details?.dataprevValidationResponses?.[0]?.employeeRelationShip) {
-        return margem.details.dataprevValidationResponses[0].employeeRelationShip;
-      }
-      
-      // V8 ou fallback: usar dados de simulação e proposta
-      return {
-        valorMargemDisponivel: simulacao?.liquidValue || simulacao?.initialValue || 0,
-        dataAdmissao: null,
-        nomeEmpregador: getProposta?.name || "",
-        qtdEmprestimosAtivosSuspensos: null,
-        cbo: null,
-        cnae: null,
-        // Dados específicos V8
-        monthlyInterest: simulacao?.monthlyInterest,
-        numberOfPayments: simulacao?.numberOfPayments,
-      };
-    };
-
-    // Extrai dados dos aprovados
-    const dadosAprovados = aprovados.map((l) => {
-      const result = extrairDadosMargem(l);
-      
-      // Dados extraídos
-      const valorMargem = result?.valorMargemDisponivel || 0;
-      const dataAdmissao = result?.dataAdmissao;
-      const nomeEmpregador = result?.nomeEmpregador || "";
-      const qtdEmprestimos = result?.qtdEmprestimosAtivosSuspensos ?? null;
-      const cbo = result?.cbo;
-      const cnae = result?.cnae;
-      
-      // Calcular tempo de vínculo em meses
-      let tempoVinculoMeses = 0;
-      if (dataAdmissao) {
-        let dataAdm: Date | null = null;
-        if (typeof dataAdmissao === 'string') {
-          if (dataAdmissao.length === 8 && !dataAdmissao.includes('-')) {
-            // Formato DDMMAAAA
-            const dia = parseInt(dataAdmissao.substring(0, 2));
-            const mes = parseInt(dataAdmissao.substring(2, 4)) - 1;
-            const ano = parseInt(dataAdmissao.substring(4, 8));
-            dataAdm = new Date(ano, mes, dia);
-          } else {
-            dataAdm = new Date(dataAdmissao);
-          }
-        }
-        if (dataAdm && !isNaN(dataAdm.getTime())) {
-          tempoVinculoMeses = Math.floor((Date.now() - dataAdm.getTime()) / (1000 * 60 * 60 * 24 * 30));
-        }
-      }
-      
-      // Classificar porte da empresa pelo nome
-      let porteEmpresa = "Não identificado";
-      const nomeUpper = nomeEmpregador.toUpperCase();
-      if (nomeUpper.includes("S.A.") || nomeUpper.includes("S/A") || nomeUpper.includes(" SA ") || nomeEmpregador.endsWith(" SA")) {
-        porteEmpresa = "Grande";
-      } else if (nomeUpper.includes("LTDA") || nomeUpper.includes("EIRELI")) {
-        porteEmpresa = "Média";
-      } else if (nomeUpper.includes("MEI") || nomeUpper.includes("ME ") || nomeEmpregador.endsWith(" ME")) {
-        porteEmpresa = "ME";
-      } else if (nomeEmpregador.length > 0) {
-        porteEmpresa = "Pequena";
-      }
-      
-      // Extrair nome do lead
-      const margemData = l.retorno_margem as any;
-      const nomeExtraido = l.nome || margemData?.registroEmpregaticio?.nomeEmpregado || margemData?.nomeEmpregado || result?.nomeEmpregado || "";
-      
-      return {
-        lead: l,
-        margem: valorMargem,
-        tempoVinculoMeses,
-        porteEmpresa,
-        qtdEmprestimos,
-        cbo: cbo?.descricao || (typeof cbo === 'string' ? cbo : ''),
-        cnae: cnae?.descricao || (typeof cnae === 'string' ? cnae : ''),
-        banco: l.banco || "Não informado",
-        nome: nomeExtraido,
-        cpf: l.cpf,
-      };
-    });
-
-    // === Distribuição por Faixa de Margem ===
-    const faixasMargem = [
-      { faixa: 'R$ 0-300', min: 0, max: 300, quantidade: 0 },
-      { faixa: 'R$ 301-500', min: 301, max: 500, quantidade: 0 },
-      { faixa: 'R$ 501-800', min: 501, max: 800, quantidade: 0 },
-      { faixa: 'R$ 801-1200', min: 801, max: 1200, quantidade: 0 },
-      { faixa: 'R$ 1200+', min: 1201, max: Infinity, quantidade: 0 },
-    ];
+    // Usar dados da RPC
+    const faixasMargem = analysis.faixasMargem || [];
+    const topCBO = analysis.topCBOs?.[0];
+    const topEmpresa = analysis.topEmpresas?.[0];
     
-    dadosAprovados.forEach(d => {
-      const faixa = faixasMargem.find(f => d.margem >= f.min && d.margem <= f.max);
-      if (faixa) faixa.quantidade++;
-    });
+    // Encontrar faixa de margem mais comum
+    const margemMaisComum = faixasMargem.reduce(
+      (max, f) => f.quantidade > max.quantidade ? f : max, 
+      { faixa: 'N/A', quantidade: 0 }
+    );
 
-    // === Distribuição por Tempo de Vínculo ===
-    const faixasVinculo = [
-      { faixa: '6-12 meses', min: 6, max: 12, quantidade: 0 },
-      { faixa: '1-2 anos', min: 13, max: 24, quantidade: 0 },
-      { faixa: '2-3 anos', min: 25, max: 36, quantidade: 0 },
-      { faixa: '3-5 anos', min: 37, max: 60, quantidade: 0 },
-      { faixa: '5+ anos', min: 61, max: Infinity, quantidade: 0 },
-    ];
-    
-    dadosAprovados.forEach(d => {
-      if (d.tempoVinculoMeses > 0) {
-        const faixa = faixasVinculo.find(f => d.tempoVinculoMeses >= f.min && d.tempoVinculoMeses <= f.max);
-        if (faixa) faixa.quantidade++;
-      }
-    });
+    // Distribuição por tempo de vínculo (carteira assinada)
+    const vinculoData = (analysis.distribuicaoVinculo || []).map(v => ({
+      faixa: v.faixa,
+      quantidade: v.quantidade,
+    }));
 
-    // === Distribuição por Porte da Empresa ===
-    const portesEmpresa: Record<string, number> = {
-      'Grande': 0,
-      'Média': 0,
-      'Pequena': 0,
-      'ME': 0,
-    };
-    
-    dadosAprovados.forEach(d => {
-      if (portesEmpresa[d.porteEmpresa] !== undefined) {
-        portesEmpresa[d.porteEmpresa]++;
-      }
-    });
-    
-    const portesData = Object.entries(portesEmpresa)
-      .map(([porte, quantidade]) => ({ porte, quantidade }))
-      .sort((a, b) => b.quantidade - a.quantidade);
+    // Distribuição por porte da empresa
+    const portesData = (analysis.distribuicaoPorte || []).map(p => ({
+      porte: p.porte,
+      quantidade: p.quantidade,
+    }));
 
-    // === Encontrar o perfil ideal (moda/mais comum) ===
-    const margemMaisComum = faixasMargem.reduce((max, f) => f.quantidade > max.quantidade ? f : max, faixasMargem[0]);
-    const vinculoMaisComum = faixasVinculo.reduce((max, f) => f.quantidade > max.quantidade ? f : max, faixasVinculo[0]);
-    const porteMaisComum = portesData[0] || { porte: 'N/A', quantidade: 0 };
-    
-    // CBO mais comum
-    const cboCount: Record<string, number> = {};
-    dadosAprovados.forEach(d => {
-      if (d.cbo) {
-        cboCount[d.cbo] = (cboCount[d.cbo] || 0) + 1;
-      }
-    });
-    const cboMaisComum = Object.entries(cboCount).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
-    
-    // Contratos ativos mais comum
-    const contratosCount: Record<number, number> = {};
-    dadosAprovados.forEach(d => {
-      if (d.qtdEmprestimos !== null) {
-        contratosCount[d.qtdEmprestimos] = (contratosCount[d.qtdEmprestimos] || 0) + 1;
-      }
-    });
-    const contratosMaisComum = Object.entries(contratosCount).sort((a, b) => b[1] - a[1])[0];
-    const maxContratos = contratosMaisComum ? parseInt(contratosMaisComum[0]) : 0;
-
-    // === Radar Chart Data ===
-    // Calcular scores baseados nos dados
-    const margemMedia = dadosAprovados.reduce((acc, d) => acc + d.margem, 0) / dadosAprovados.length || 0;
-    const tempoMedio = dadosAprovados.filter(d => d.tempoVinculoMeses > 0).reduce((acc, d, _, arr) => acc + d.tempoVinculoMeses / arr.length, 0) || 0;
-    const taxaGrande = (portesEmpresa['Grande'] + portesEmpresa['Média']) / aprovados.length * 100 || 0;
-    const taxaCboElegivel = Object.keys(cboCount).length > 0 ? 80 : 0; // Se tem CBOs, assume 80% elegíveis
-    const taxaCnaeElegivel = 75; // Estimativa baseada nos aprovados
-    const taxaBaixosContratos = dadosAprovados.filter(d => d.qtdEmprestimos !== null && d.qtdEmprestimos <= 1).length / aprovados.length * 100 || 0;
-
+    // Radar Chart Data baseado nos dados reais
+    const margemScore = Math.min(100, (analysis.margemMedia / 2000) * 100);
     const radarData = [
-      { caracteristica: 'Margem', valor: Math.min(100, (margemMedia / 1000) * 100), fullMark: 100 },
-      { caracteristica: 'Tempo Vínculo', valor: Math.min(100, (tempoMedio / 60) * 100), fullMark: 100 },
-      { caracteristica: 'Porte Empresa', valor: Math.min(100, taxaGrande), fullMark: 100 },
-      { caracteristica: 'CBO Elegível', valor: taxaCboElegivel, fullMark: 100 },
-      { caracteristica: 'CNAE Elegível', valor: taxaCnaeElegivel, fullMark: 100 },
-      { caracteristica: 'Contratos Ativos', valor: Math.min(100, taxaBaixosContratos), fullMark: 100 },
+      { caracteristica: 'Margem Média', valor: margemScore, fullMark: 100 },
+      { caracteristica: 'Com Margem', valor: (analysis.comMargem / analysis.totalAprovados) * 100, fullMark: 100 },
+      { caracteristica: 'Top CBO', valor: topCBO ? Math.min(100, (topCBO.quantidade / analysis.totalAprovados) * 500) : 0, fullMark: 100 },
+      { caracteristica: 'Top Empresa', valor: topEmpresa ? Math.min(100, (topEmpresa.quantidade / analysis.totalAprovados) * 500) : 0, fullMark: 100 },
+      { caracteristica: 'Diversidade', valor: Math.min(100, (analysis.topCBOs?.length || 0) * 10), fullMark: 100 },
     ];
 
     return {
-      totalAprovados: aprovados.length,
+      totalAprovados: analysis.totalAprovados,
       faixasMargem,
-      faixasVinculo,
+      faixasVinculo: vinculoData,
       portesData,
       radarData,
-      dadosAprovados,
       resumo: {
         margemIdeal: margemMaisComum.faixa,
-        vinculoIdeal: vinculoMaisComum.faixa.replace('meses', '').replace('anos', '').trim(),
-        porteIdeal: porteMaisComum.porte === 'Grande' || portesData[1]?.porte === 'Média' 
-          ? 'Grande / Média' 
-          : porteMaisComum.porte,
-        cboIdeal: cboMaisComum.length > 25 ? cboMaisComum.substring(0, 22) + '...' : cboMaisComum,
-        contratosIdeal: `0 - ${Math.max(1, maxContratos)} contrato${maxContratos !== 1 ? 's' : ''}`,
+        vinculoIdeal: vinculoData[0]?.faixa || 'N/A',
+        porteIdeal: portesData[0]?.porte || 'N/A',
+        cboIdeal: topCBO?.descricao 
+          ? (topCBO.descricao.length > 25 ? topCBO.descricao.substring(0, 22) + '...' : topCBO.descricao)
+          : 'N/A',
+        contratosIdeal: `R$ ${analysis.margemMedia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       },
     };
-  }, [leadsFiltrados]);
+  }, [analysis]);
 
-  if (stats.totalLeads === 0) {
+  if (isLoading) {
     return (
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Star className="w-5 h-5 text-amber-400" />
+            Perfil Ideal do Lead Aprovado
+          </CardTitle>
           <CardTitle className="text-lg">Perfil Ideal</CardTitle>
         </CardHeader>
         <CardContent>
@@ -297,60 +179,6 @@ const PerfilIdealPanel = ({ bancoFilter = "todos" }: PerfilIdealPanelProps) => {
   }
 
   const PORTE_COLORS = ['#a855f7', '#8b5cf6', '#7c3aed', '#6d28d9'];
-
-  // Funções para abrir dialog com leads filtrados por categoria
-  const handleMargemClick = (data: { faixa?: string }) => {
-    if (!perfil || !data?.faixa) return;
-    const faixaInfo = perfil.faixasMargem.find(f => f.faixa === data.faixa);
-    if (!faixaInfo) return;
-    
-    const leadsNaFaixa = perfil.dadosAprovados.filter(
-      d => d.margem >= faixaInfo.min && d.margem <= faixaInfo.max
-    );
-    
-    setDialogData({
-      titulo: `Leads - Margem ${data.faixa}`,
-      subtitulo: `${leadsNaFaixa.length} leads aprovados nesta faixa de margem`,
-      leads: leadsNaFaixa,
-    });
-    setDialogOpen(true);
-  };
-
-  const handleVinculoClick = (data: { faixa?: string }) => {
-    if (!perfil || !data?.faixa) return;
-    const faixaInfo = perfil.faixasVinculo.find(f => f.faixa === data.faixa);
-    if (!faixaInfo) return;
-    
-    const leadsNaFaixa = perfil.dadosAprovados.filter(
-      d => d.tempoVinculoMeses >= faixaInfo.min && d.tempoVinculoMeses <= faixaInfo.max
-    );
-    
-    setDialogData({
-      titulo: `Leads - Vínculo ${data.faixa}`,
-      subtitulo: `${leadsNaFaixa.length} leads aprovados neste período de vínculo`,
-      leads: leadsNaFaixa,
-    });
-    setDialogOpen(true);
-  };
-
-  const handlePorteClick = (data: { porte?: string }) => {
-    if (!perfil || !data?.porte) return;
-    
-    const leadsNoPorte = perfil.dadosAprovados.filter(d => d.porteEmpresa === data.porte);
-    
-    setDialogData({
-      titulo: `Leads - Porte ${data.porte}`,
-      subtitulo: `${leadsNoPorte.length} leads aprovados em empresas de porte ${data.porte}`,
-      leads: leadsNoPorte,
-    });
-    setDialogOpen(true);
-  };
-
-  const formatCpf = (cpf: string) => {
-    const cleaned = cpf.replace(/\D/g, "");
-    if (cleaned.length !== 11) return cpf;
-    return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-  };
 
   const resumoItems = [
     {
@@ -513,7 +341,7 @@ const PerfilIdealPanel = ({ bancoFilter = "todos" }: PerfilIdealPanelProps) => {
                     }}
                     formatter={(value: number) => [`${value} leads`, 'Quantidade']}
                   />
-                  <Bar dataKey="quantidade" fill="#10b981" radius={[0, 4, 4, 0]} onClick={handleMargemClick} style={{ cursor: 'pointer' }} />
+                  <Bar dataKey="quantidade" fill="#10b981" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -550,7 +378,7 @@ const PerfilIdealPanel = ({ bancoFilter = "todos" }: PerfilIdealPanelProps) => {
                     }}
                     formatter={(value: number) => [`${value} leads`, 'Quantidade']}
                   />
-                  <Bar dataKey="quantidade" fill="#3b82f6" radius={[0, 4, 4, 0]} onClick={handleVinculoClick} style={{ cursor: 'pointer' }} />
+                  <Bar dataKey="quantidade" fill="#3b82f6" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -590,7 +418,12 @@ const PerfilIdealPanel = ({ bancoFilter = "todos" }: PerfilIdealPanelProps) => {
                   }}
                   formatter={(value: number) => [`${value} leads aprovados`, 'Quantidade']}
                 />
-                <Bar dataKey="quantidade" radius={[4, 4, 0, 0]} onClick={handlePorteClick} style={{ cursor: 'pointer' }}>
+                <Bar 
+                  dataKey="quantidade" 
+                  radius={[4, 4, 0, 0]}
+                  onClick={(data) => handlePorteClick(data)}
+                  style={{ cursor: 'pointer' }}
+                >
                   {perfil.portesData.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={PORTE_COLORS[index % PORTE_COLORS.length]} />
                   ))}
@@ -601,7 +434,7 @@ const PerfilIdealPanel = ({ bancoFilter = "todos" }: PerfilIdealPanelProps) => {
         </CardContent>
       </Card>
 
-      {/* Dialog para exibir lista de leads */}
+      {/* Dialog para exibir leads por porte */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
@@ -612,36 +445,32 @@ const PerfilIdealPanel = ({ bancoFilter = "todos" }: PerfilIdealPanelProps) => {
             <p className="text-sm text-muted-foreground">{dialogData?.subtitulo}</p>
           </DialogHeader>
           <div className="flex-1 overflow-auto">
-            {dialogData && dialogData.leads.length > 0 ? (
+            {loadingLeads ? (
+              <div className="py-8 text-center">
+                <div className="animate-pulse flex flex-col items-center">
+                  <div className="h-8 w-48 bg-muted rounded mb-4"></div>
+                  <div className="h-4 w-32 bg-muted rounded"></div>
+                </div>
+              </div>
+            ) : dialogData && dialogData.leads.length > 0 ? (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>CPF</TableHead>
                     <TableHead>Nome</TableHead>
                     <TableHead>Banco</TableHead>
-                    <TableHead className="text-right">Margem</TableHead>
-                    <TableHead className="text-right">Vínculo</TableHead>
+                    <TableHead>Empresa</TableHead>
                     <TableHead>Porte</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {dialogData.leads.slice(0, 50).map((item, index) => (
+                  {dialogData.leads.map((item, index) => (
                     <TableRow key={index}>
                       <TableCell className="font-mono text-sm">{formatCpf(item.cpf)}</TableCell>
                       <TableCell className="max-w-[200px] truncate">{item.nome || "-"}</TableCell>
                       <TableCell>{item.banco}</TableCell>
-                      <TableCell className="text-right text-emerald-400">
-                        R$ {item.margem.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {item.tempoVinculoMeses > 0 
-                          ? item.tempoVinculoMeses >= 12 
-                            ? `${Math.floor(item.tempoVinculoMeses / 12)} ano${Math.floor(item.tempoVinculoMeses / 12) > 1 ? 's' : ''}`
-                            : `${item.tempoVinculoMeses} meses`
-                          : "-"
-                        }
-                      </TableCell>
-                      <TableCell>{item.porteEmpresa}</TableCell>
+                      <TableCell className="max-w-[200px] truncate">{item.empresa}</TableCell>
+                      <TableCell>{item.porte}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -650,11 +479,6 @@ const PerfilIdealPanel = ({ bancoFilter = "todos" }: PerfilIdealPanelProps) => {
               <div className="py-8 text-center text-muted-foreground">
                 Nenhum lead encontrado nesta categoria.
               </div>
-            )}
-            {dialogData && dialogData.leads.length > 50 && (
-              <p className="text-xs text-muted-foreground text-center py-2">
-                Exibindo 50 de {dialogData.leads.length} leads
-              </p>
             )}
           </div>
         </DialogContent>

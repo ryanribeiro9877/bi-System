@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useDashboard } from "@/contexts/DashboardContext";
+import { useLeadsAnalysis } from "@/hooks/useLeadsAnalysis";
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, Legend 
@@ -44,6 +45,7 @@ const ITEMS_PER_PAGE = 50;
 
 const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPanelProps) => {
   const { allLeads, stats } = useDashboard();
+  const { analysis: leadsAnalysis, isLoading: isLoadingAnalysis } = useLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogData, setDialogData] = useState<DialogData | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
@@ -412,7 +414,25 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPa
     setDialogOpen(true);
   };
 
-  if (stats.totalLeads === 0 || !analise) {
+  if (isLoadingAnalysis) {
+    return (
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Análise de Importações</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="py-12 text-center">
+            <div className="animate-pulse flex flex-col items-center">
+              <div className="h-8 w-48 bg-muted rounded mb-4"></div>
+              <div className="h-4 w-32 bg-muted rounded"></div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (leadsAnalysis.totalLeads === 0) {
     return (
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
@@ -427,6 +447,30 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPa
     );
   }
 
+  // Dados para gráficos de pizza usando dados da RPC
+  const margemPieData = [
+    { name: "Com Margem", value: leadsAnalysis.comMargem },
+    { name: "Sem Margem", value: leadsAnalysis.semMargem },
+  ];
+
+  const simulacaoPieData = [
+    { name: "Aprovadas", value: leadsAnalysis.simulacoesAprovadas },
+    { name: "Recusadas", value: leadsAnalysis.simulacoesRecusadas },
+  ];
+
+  // Dados de parcelas formatados para o gráfico
+  const parcelasData = (leadsAnalysis.distribuicaoParcelas || []).map(p => ({
+    parcela: `${p.parcelas}x`,
+    quantidade: p.quantidade,
+  }));
+
+  // Dados de produtos formatados para o gráfico
+  const produtosData = (leadsAnalysis.produtosMaisProcurados || []).map(p => ({
+    produto: p.produto.length > 25 ? p.produto.substring(0, 22) + '...' : p.produto,
+    produtoCompleto: p.produto,
+    quantidade: p.quantidade,
+  }));
+
   return (
     <div className="space-y-6">
       {/* KPIs Row 1 - Margem */}
@@ -437,10 +481,10 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPa
               <div>
                 <p className="text-sm text-muted-foreground">Com Margem Disponível</p>
                 <p className="text-2xl font-bold text-emerald-400">
-                  {analise.leadsComMargem.length.toLocaleString("pt-BR")}
+                  {leadsAnalysis.comMargem.toLocaleString("pt-BR")}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {analise.percentualComMargem}% do total
+                  {leadsAnalysis.percentualComMargem}% do total
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-emerald-500/20">
@@ -456,10 +500,10 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPa
               <div>
                 <p className="text-sm text-muted-foreground">Sem Margem Disponível</p>
                 <p className="text-2xl font-bold text-red-400">
-                  {analise.leadsSemMargem.length.toLocaleString("pt-BR")}
+                  {leadsAnalysis.semMargem.toLocaleString("pt-BR")}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {analise.percentualSemMargem}% do total
+                  {leadsAnalysis.percentualSemMargem}% do total
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-red-500/20">
@@ -475,10 +519,10 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPa
               <div>
                 <p className="text-sm text-muted-foreground">Simulações Aprovadas</p>
                 <p className="text-2xl font-bold text-emerald-400">
-                  {analise.simulacoesAprovadas.length.toLocaleString("pt-BR")}
+                  {leadsAnalysis.simulacoesAprovadas.toLocaleString("pt-BR")}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {analise.percentualSimAprovadas}% das simulações
+                  {leadsAnalysis.percentualSimAprovadas}% das simulações
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-emerald-500/20">
@@ -494,10 +538,10 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPa
               <div>
                 <p className="text-sm text-muted-foreground">Simulações Recusadas</p>
                 <p className="text-2xl font-bold text-red-400">
-                  {analise.simulacoesRecusadas.length.toLocaleString("pt-BR")}
+                  {leadsAnalysis.simulacoesRecusadas.toLocaleString("pt-BR")}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {analise.percentualSimRecusadas}% das simulações
+                  {leadsAnalysis.percentualSimRecusadas}% das simulações
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-red-500/20">
@@ -525,7 +569,7 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPa
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={analise.margemPieData}
+                    data={margemPieData}
                     cx="50%"
                     cy="50%"
                     labelLine={false}
@@ -570,7 +614,7 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPa
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={analise.simulacaoPieData}
+                    data={simulacaoPieData}
                     cx="50%"
                     cy="50%"
                     labelLine={false}
@@ -616,9 +660,9 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPa
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
-              {analise.parcelamentosData.length > 0 ? (
+              {parcelasData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={analise.parcelamentosData} margin={{ left: 10, right: 20, bottom: 20 }}>
+                  <BarChart data={parcelasData} margin={{ left: 10, right: 20, bottom: 20 }}>
                     <XAxis 
                       dataKey="parcela" 
                       tick={{ fill: '#9ca3af', fontSize: 12 }} 
@@ -668,10 +712,10 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPa
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
-              {analise.produtosData.length > 0 ? (
+              {produtosData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart 
-                    data={analise.produtosData} 
+                    data={produtosData} 
                     layout="vertical" 
                     margin={{ left: 10, right: 20 }}
                   >

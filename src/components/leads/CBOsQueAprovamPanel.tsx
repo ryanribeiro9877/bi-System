@@ -2,10 +2,9 @@ import { Briefcase, Upload, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { useDashboard } from "@/contexts/DashboardContext";
 import { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { normalizarStatusLead } from "@/lib/leadStatusUtils";
+import { useApprovedLeadsAnalysis } from "@/hooks/useApprovedLeadsAnalysis";
 
 interface CBOsQueAprovamPanelProps {
   bancoFilter?: string;
@@ -13,74 +12,46 @@ interface CBOsQueAprovamPanelProps {
 
 const CBOsQueAprovamPanel = ({ bancoFilter = "todos" }: CBOsQueAprovamPanelProps) => {
   const navigate = useNavigate();
-  const { allLeads, stats } = useDashboard();
-
-  // Filtra leads por banco se necessário
-  const leadsFiltrados = useMemo(() => {
-    if (bancoFilter === "todos") return allLeads;
-    return allLeads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
-  }, [allLeads, bancoFilter]);
+  const { analysis, isLoading } = useApprovedLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter);
 
   const top10CBOs = useMemo(() => {
-    // Filtra apenas leads aprovados (do banco filtrado ou todos)
-    const aprovados = leadsFiltrados.filter(
-      (l) => normalizarStatusLead(l) === "aprovado"
-    );
+    return (analysis.topCBOs || []).map((item, index) => ({
+      codigo: item.codigo,
+      descricao: item.descricao,
+      quantidade: item.quantidade,
+      nomeExibicao: item.descricao.length > 25 
+        ? item.descricao.substring(0, 22) + "..." 
+        : item.descricao,
+      rank: index + 1,
+    }));
+  }, [analysis.topCBOs]);
 
-    // Extrai CBO de cada lead aprovado
-    const cboCount: Record<string, { codigo: string; descricao: string; quantidade: number }> = {};
-
-    aprovados.forEach((lead) => {
-      const margem = lead.retorno_margem as any;
-      
-      // UY3: retorno_margem é um array com result dentro
-      let cbo = null;
-      if (Array.isArray(margem) && margem[0]?.result?.[0]?.cbo) {
-        cbo = margem[0].result[0].cbo;
-      } else if (margem?.result?.[0]?.cbo) {
-        cbo = margem.result[0].cbo;
-      } else if (margem?.details?.dataprevValidationResponses?.[0]?.employeeRelationShip?.cbo) {
-        cbo = margem.details.dataprevValidationResponses[0].employeeRelationShip.cbo;
-      }
-
-      if (cbo) {
-        const codigo = cbo.codigo?.toString() || "";
-        const descricao = cbo.descricao || codigo;
-        const key = codigo || descricao;
-        
-        if (!cboCount[key]) {
-          cboCount[key] = { codigo, descricao, quantidade: 0 };
-        }
-        cboCount[key].quantidade++;
-      }
-    });
-
-    // Ordena por quantidade e pega top 10
-    return Object.values(cboCount)
-      .sort((a, b) => b.quantidade - a.quantidade)
-      .slice(0, 10)
-      .map((item, index) => ({
-        ...item,
-        // Trunca nome para exibição no gráfico
-        nomeExibicao: item.descricao.length > 25 
-          ? item.descricao.substring(0, 22) + "..." 
-          : item.descricao,
-        rank: index + 1,
-      }));
-  }, [leadsFiltrados]);
-
-  const totalAprovados = useMemo(() => {
-    return leadsFiltrados.filter(
-      (l) => normalizarStatusLead(l) === "aprovado"
-    ).length;
-  }, [leadsFiltrados]);
+  const totalAprovados = analysis.totalAprovados;
 
   const COLORS = [
     "#10b981", "#34d399", "#6ee7b7", "#a7f3d0", "#d1fae5",
     "#059669", "#047857", "#065f46", "#064e3b", "#022c22"
   ];
 
-  if (stats.totalLeads === 0) {
+  if (isLoading) {
+    return (
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">CBOs que Aprovam</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="py-12 text-center">
+            <div className="animate-pulse flex flex-col items-center">
+              <div className="h-8 w-48 bg-muted rounded mb-4"></div>
+              <div className="h-4 w-32 bg-muted rounded"></div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (totalAprovados === 0) {
     return (
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">

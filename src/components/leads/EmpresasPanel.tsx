@@ -2,10 +2,9 @@ import { Building2, Upload, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { useDashboard } from "@/contexts/DashboardContext";
 import { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { normalizarStatusLead } from "@/lib/leadStatusUtils";
+import { useApprovedLeadsAnalysis } from "@/hooks/useApprovedLeadsAnalysis";
 
 interface EmpresasPanelProps {
   bancoFilter?: string;
@@ -13,91 +12,46 @@ interface EmpresasPanelProps {
 
 const EmpresasPanel = ({ bancoFilter = "todos" }: EmpresasPanelProps) => {
   const navigate = useNavigate();
-  const { allLeads, stats } = useDashboard();
-
-  // Filtra leads por banco se necessário
-  const leadsFiltrados = useMemo(() => {
-    if (bancoFilter === "todos") return allLeads;
-    return allLeads.filter((l) => (l.banco || "Não Informado") === bancoFilter);
-  }, [allLeads, bancoFilter]);
-
-  // Extrai empresa do lead aprovado
-  const extrairEmpresa = (lead: any): { nome: string; cnpj: string } | null => {
-    const margem = lead.retorno_margem as any;
-    
-    // UY3: retorno_margem é um array com result dentro
-    if (Array.isArray(margem) && margem[0]?.result?.[0]) {
-      const result = margem[0].result[0];
-      return {
-        nome: result.nomeEmpregador || "",
-        cnpj: result.numeroInscricaoEmpregador || "",
-      };
-    }
-    
-    // UY3: retorno_margem.result array
-    if (margem?.result?.[0]) {
-      const result = margem.result[0];
-      return {
-        nome: result.nomeEmpregador || "",
-        cnpj: result.numeroInscricaoEmpregador || "",
-      };
-    }
-    
-    // UY3: dataprevValidationResponses
-    if (margem?.details?.dataprevValidationResponses?.[0]?.employeeRelationShip) {
-      const emp = margem.details.dataprevValidationResponses[0].employeeRelationShip;
-      return {
-        nome: emp.nomeEmpregador || "",
-        cnpj: emp.numeroInscricaoEmpregador || "",
-      };
-    }
-    
-    return null;
-  };
+  const { analysis, isLoading } = useApprovedLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter);
 
   const top10Empresas = useMemo(() => {
-    // Filtra apenas leads aprovados
-    const aprovados = leadsFiltrados.filter((l) => normalizarStatusLead(l) === "aprovado");
+    return (analysis.topEmpresas || []).map((item, index) => ({
+      nome: item.nome,
+      cnpj: item.cnpj,
+      quantidade: item.quantidade,
+      nomeExibicao: item.nome.length > 25 
+        ? item.nome.substring(0, 22) + "..." 
+        : item.nome,
+      rank: index + 1,
+    }));
+  }, [analysis.topEmpresas]);
 
-    // Agrupa por empresa
-    const empresaCount: Record<string, { nome: string; cnpj: string; quantidade: number }> = {};
-
-    aprovados.forEach((lead) => {
-      const empresa = extrairEmpresa(lead);
-      
-      if (empresa && empresa.nome) {
-        const key = empresa.nome.toUpperCase().trim();
-        
-        if (!empresaCount[key]) {
-          empresaCount[key] = { nome: empresa.nome, cnpj: empresa.cnpj, quantidade: 0 };
-        }
-        empresaCount[key].quantidade++;
-      }
-    });
-
-    // Ordena por quantidade e pega top 10
-    return Object.values(empresaCount)
-      .sort((a, b) => b.quantidade - a.quantidade)
-      .slice(0, 10)
-      .map((item, index) => ({
-        ...item,
-        nomeExibicao: item.nome.length > 25 
-          ? item.nome.substring(0, 22) + "..." 
-          : item.nome,
-        rank: index + 1,
-      }));
-  }, [leadsFiltrados]);
-
-  const totalAprovados = useMemo(() => {
-    return leadsFiltrados.filter((l) => normalizarStatusLead(l) === "aprovado").length;
-  }, [leadsFiltrados]);
+  const totalAprovados = analysis.totalAprovados;
 
   const COLORS = [
     "#3b82f6", "#60a5fa", "#93c5fd", "#bfdbfe", "#dbeafe",
     "#2563eb", "#1d4ed8", "#1e40af", "#1e3a8a", "#172554"
   ];
 
-  if (stats.totalLeads === 0) {
+  if (isLoading) {
+    return (
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Top Empresas</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="py-12 text-center">
+            <div className="animate-pulse flex flex-col items-center">
+              <div className="h-8 w-48 bg-muted rounded mb-4"></div>
+              <div className="h-4 w-32 bg-muted rounded"></div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (totalAprovados === 0) {
     return (
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
