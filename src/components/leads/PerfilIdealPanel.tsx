@@ -41,6 +41,50 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
     return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
 
+  const handleMargemClick = async (data: { faixa: string; quantidade: number }) => {
+    if (!data?.faixa) return;
+    setLoadingLeads(true);
+    setDialogOpen(true);
+    setDialogData({ titulo: `Leads por Margem - ${data.faixa}`, subtitulo: `Carregando...`, leads: [] });
+    try {
+      const { data: leads, error } = await (supabase.rpc as unknown as (name: string, params: Record<string, unknown>) => Promise<{ data: LeadPorPorte[] | null; error: Error | null }>)('get_leads_by_faixa_margem', {
+        p_faixa: data.faixa,
+        p_import_batch_id: importBatchId || null,
+        p_limit: 100,
+      });
+      if (error) throw error;
+      const mappedLeads = (leads || []).map((l) => ({ cpf: String((l as { cpf?: string }).cpf || ''), nome: String((l as { nome?: string }).nome || ''), banco: String((l as { banco?: string }).banco || ''), empresa: '-', porte: `R$ ${(l as { margem?: number }).margem || 0}` }));
+      setDialogData({ titulo: `Leads por Margem - ${data.faixa}`, subtitulo: `${mappedLeads.length} leads encontrados`, leads: mappedLeads });
+    } catch (err) {
+      console.error('Erro ao buscar leads por margem:', err);
+      setDialogData({ titulo: `Leads por Margem - ${data.faixa}`, subtitulo: `Erro ao carregar leads`, leads: [] });
+    } finally {
+      setLoadingLeads(false);
+    }
+  };
+
+  const handleVinculoClick = async (data: { faixa: string; quantidade: number }) => {
+    if (!data?.faixa) return;
+    setLoadingLeads(true);
+    setDialogOpen(true);
+    setDialogData({ titulo: `Leads por Vínculo - ${data.faixa}`, subtitulo: `Carregando...`, leads: [] });
+    try {
+      const { data: leads, error } = await (supabase.rpc as unknown as (name: string, params: Record<string, unknown>) => Promise<{ data: LeadPorPorte[] | null; error: Error | null }>)('get_leads_by_vinculo', {
+        p_faixa: data.faixa,
+        p_import_batch_id: importBatchId || null,
+        p_limit: 100,
+      });
+      if (error) throw error;
+      const mappedLeads = (leads || []).map((l) => ({ cpf: String((l as { cpf?: string }).cpf || ''), nome: String((l as { nome?: string }).nome || ''), banco: String((l as { banco?: string }).banco || ''), empresa: '-', porte: `${(l as { tempoMeses?: number }).tempoMeses || 0} meses` }));
+      setDialogData({ titulo: `Leads por Vínculo - ${data.faixa}`, subtitulo: `${mappedLeads.length} leads encontrados`, leads: mappedLeads });
+    } catch (err) {
+      console.error('Erro ao buscar leads por vínculo:', err);
+      setDialogData({ titulo: `Leads por Vínculo - ${data.faixa}`, subtitulo: `Erro ao carregar leads`, leads: [] });
+    } finally {
+      setLoadingLeads(false);
+    }
+  };
+
   const handlePorteClick = async (data: { porte: string; quantidade: number }) => {
     if (!data?.porte) return;
     
@@ -342,7 +386,7 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
                     }}
                     formatter={(value: number) => [`${value} leads`, 'Quantidade']}
                   />
-                  <Bar dataKey="quantidade" fill="#10b981" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="quantidade" fill="#10b981" radius={[0, 4, 4, 0]} onClick={(data) => handleMargemClick(data)} style={{ cursor: 'pointer' }} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -379,7 +423,7 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
                     }}
                     formatter={(value: number) => [`${value} leads`, 'Quantidade']}
                   />
-                  <Bar dataKey="quantidade" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="quantidade" fill="#3b82f6" radius={[0, 4, 4, 0]} onClick={(data) => handleVinculoClick(data)} style={{ cursor: 'pointer' }} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

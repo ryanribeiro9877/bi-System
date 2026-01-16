@@ -1,9 +1,12 @@
-import { Briefcase, Upload, TrendingUp } from "lucide-react";
+import { Briefcase, Upload, TrendingUp, Eye } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { supabase } from "@/integrations/supabase/client";
 import { useApprovedLeadsAnalysis } from "@/hooks/useApprovedLeadsAnalysis";
 
 interface CBOsQueAprovamPanelProps {
@@ -11,9 +14,47 @@ interface CBOsQueAprovamPanelProps {
   importBatchId?: string;
 }
 
+interface LeadPorCBO {
+  cpf: string;
+  nome: string;
+  banco: string;
+  cboCodigo: string;
+  cboDescricao: string;
+}
+
 const CBOsQueAprovamPanel = ({ bancoFilter = "todos", importBatchId }: CBOsQueAprovamPanelProps) => {
   const navigate = useNavigate();
   const { analysis, isLoading } = useApprovedLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter, importBatchId);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogData, setDialogData] = useState<{ titulo: string; subtitulo: string; leads: LeadPorCBO[] } | null>(null);
+  const [loadingLeads, setLoadingLeads] = useState(false);
+
+  const formatCpf = (cpf: string) => {
+    const cleaned = cpf.replace(/\D/g, "");
+    if (cleaned.length !== 11) return cpf;
+    return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  };
+
+  const handleCBOClick = async (data: { codigo: string; descricao: string; quantidade: number }) => {
+    if (!data?.codigo) return;
+    setLoadingLeads(true);
+    setDialogOpen(true);
+    setDialogData({ titulo: `Leads - ${data.descricao}`, subtitulo: `Carregando...`, leads: [] });
+    try {
+      const { data: leads, error } = await (supabase.rpc as unknown as (name: string, params: Record<string, unknown>) => Promise<{ data: LeadPorCBO[] | null; error: Error | null }>)('get_leads_by_cbo', {
+        p_cbo_codigo: data.codigo,
+        p_import_batch_id: importBatchId || null,
+        p_limit: 100,
+      });
+      if (error) throw error;
+      setDialogData({ titulo: `Leads - ${data.descricao}`, subtitulo: `${(leads || []).length} leads encontrados`, leads: leads || [] });
+    } catch (err) {
+      console.error('Erro ao buscar leads por CBO:', err);
+      setDialogData({ titulo: `Leads - ${data.descricao}`, subtitulo: `Erro ao carregar leads`, leads: [] });
+    } finally {
+      setLoadingLeads(false);
+    }
+  };
 
   const top10CBOs = useMemo(() => {
     return (analysis.topCBOs || []).map((item, index) => ({
@@ -162,7 +203,7 @@ const CBOsQueAprovamPanel = ({ bancoFilter = "todos", importBatchId }: CBOsQueAp
                     return null;
                   }}
                 />
-                <Bar dataKey="quantidade" radius={[0, 4, 4, 0]}>
+                <Bar dataKey="quantidade" radius={[0, 4, 4, 0]} onClick={(data) => handleCBOClick(data)} style={{ cursor: 'pointer' }}>
                   {top10CBOs.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
@@ -210,6 +251,53 @@ const CBOsQueAprovamPanel = ({ bancoFilter = "todos", importBatchId }: CBOsQueAp
           </div>
         </CardContent>
       </Card>
+      {/* Dialog para exibir leads por CBO */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-5 h-5 text-primary" />
+              {dialogData?.titulo}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">{dialogData?.subtitulo}</p>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto">
+            {loadingLeads ? (
+              <div className="py-8 text-center">
+                <div className="animate-pulse flex flex-col items-center">
+                  <div className="h-8 w-48 bg-muted rounded mb-4"></div>
+                  <div className="h-4 w-32 bg-muted rounded"></div>
+                </div>
+              </div>
+            ) : dialogData && dialogData.leads.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>CPF</TableHead>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Banco</TableHead>
+                    <TableHead>CBO</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dialogData.leads.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-mono text-sm">{formatCpf(item.cpf)}</TableCell>
+                      <TableCell className="max-w-[200px] truncate">{item.nome || "-"}</TableCell>
+                      <TableCell>{item.banco}</TableCell>
+                      <TableCell className="max-w-[200px] truncate">{item.cboDescricao || "-"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                Nenhum lead encontrado nesta categoria.
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
