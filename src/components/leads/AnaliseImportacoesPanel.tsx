@@ -993,8 +993,8 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Margem Disponível</p>
                   <p className="text-sm font-medium text-emerald-400">
-                    {selectedLead.valorMargem > 0 
-                      ? `R$ ${selectedLead.valorMargem.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                    {(selectedLead.valorMargem || selectedLead.valor || 0) > 0 
+                      ? `R$ ${(selectedLead.valorMargem || selectedLead.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
                       : "Não disponível"
                     }
                   </p>
@@ -1011,47 +1011,65 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Status</p>
-                  <p className={`text-sm font-medium ${selectedLead.simulacaoAprovada ? "text-emerald-400" : "text-red-400"}`}>
-                    {selectedLead.simulacaoAprovada ? "Aprovado" : "Reprovado"}
+                  <p className={`text-sm font-medium ${selectedLead.simulacaoAprovada || selectedLead.status === 'aprovado' ? "text-emerald-400" : "text-red-400"}`}>
+                    {selectedLead.simulacaoAprovada || selectedLead.status === 'aprovado' ? "Aprovado" : "Reprovado"}
                   </p>
                 </div>
               </div>
 
               {/* Motivo do Status */}
-              <div className="border-t border-border pt-4">
-                <p className="text-xs text-muted-foreground mb-2">Motivo do Status</p>
-                <div className={`p-3 rounded-lg ${selectedLead.simulacaoAprovada ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-red-500/10 border border-red-500/30"}`}>
-                  <p className={`text-sm ${selectedLead.simulacaoAprovada ? "text-emerald-400" : "text-red-400"}`}>
-                    {extrairMotivoStatus(selectedLead.lead)}
-                  </p>
+              {selectedLead.lead && (
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs text-muted-foreground mb-2">Motivo do Status</p>
+                  <div className={`p-3 rounded-lg ${selectedLead.simulacaoAprovada || selectedLead.status === 'aprovado' ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-red-500/10 border border-red-500/30"}`}>
+                    <p className={`text-sm ${selectedLead.simulacaoAprovada || selectedLead.status === 'aprovado' ? "text-emerald-400" : "text-red-400"}`}>
+                      {extrairMotivoStatus(selectedLead.lead)}
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Dados brutos da proposta */}
-              <div className="border-t border-border pt-4">
-                <p className="text-xs text-muted-foreground mb-2">Retorno da Proposta (JSON)</p>
-                <div className="bg-muted/50 rounded-lg p-3 max-h-[200px] overflow-auto">
-                  <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-all">
-                    {selectedLead.lead.retorno_proposta 
-                      ? JSON.stringify(selectedLead.lead.retorno_proposta, null, 2)
-                      : "Sem dados de proposta"
-                    }
-                  </pre>
+              {selectedLead.lead && (
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs text-muted-foreground mb-2">Retorno da Proposta (JSON)</p>
+                  <div className="bg-muted/50 rounded-lg p-3 max-h-[200px] overflow-auto">
+                    <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-all">
+                      {selectedLead.lead.retorno_proposta 
+                        ? JSON.stringify(selectedLead.lead.retorno_proposta, null, 2)
+                        : "Sem dados de proposta"
+                      }
+                    </pre>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Dados brutos da simulação */}
-              <div className="border-t border-border pt-4">
-                <p className="text-xs text-muted-foreground mb-2">Retorno da Simulação (JSON)</p>
-                <div className="bg-muted/50 rounded-lg p-3 max-h-[200px] overflow-auto">
-                  <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-all">
-                    {selectedLead.lead.retorno_simulacao 
-                      ? JSON.stringify(selectedLead.lead.retorno_simulacao, null, 2)
-                      : "Sem dados de simulação"
-                    }
-                  </pre>
+              {selectedLead.lead && (
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs text-muted-foreground mb-2">Retorno da Simulação (JSON)</p>
+                  <div className="bg-muted/50 rounded-lg p-3 max-h-[200px] overflow-auto">
+                    <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-all">
+                      {selectedLead.lead.retorno_simulacao 
+                        ? JSON.stringify(selectedLead.lead.retorno_simulacao, null, 2)
+                        : "Sem dados de simulação"
+                      }
+                    </pre>
+                  </div>
                 </div>
-              </div>
+              )}
+              
+              {/* Mensagem quando não há dados detalhados */}
+              {!selectedLead.lead && (
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs text-muted-foreground mb-2">Informações Adicionais</p>
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border">
+                    <p className="text-sm text-muted-foreground">
+                      Dados detalhados não disponíveis para este lead.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
