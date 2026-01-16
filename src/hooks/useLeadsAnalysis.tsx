@@ -27,9 +27,15 @@ export interface LeadsAnalysis {
   produtosMaisProcurados: ProdutoMaisProcurado[];
 }
 
-const fetchLeadsAnalysis = async (banco?: string): Promise<LeadsAnalysis> => {
-  const { data, error } = await (supabase.rpc as any)('get_leads_analysis', {
-    p_banco: banco || null,
+interface FetchParams {
+  banco?: string;
+  importBatchId?: string;
+}
+
+const fetchLeadsAnalysis = async (params?: FetchParams): Promise<LeadsAnalysis> => {
+  const { data, error } = await (supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<{ data: LeadsAnalysis | null; error: Error | null }>)('get_leads_analysis', {
+    p_banco: params?.banco || null,
+    p_import_batch_id: params?.importBatchId || null,
   });
 
   if (error) {
@@ -69,12 +75,12 @@ const fetchLeadsAnalysis = async (banco?: string): Promise<LeadsAnalysis> => {
   };
 };
 
-export const useLeadsAnalysis = (banco?: string) => {
+export const useLeadsAnalysis = (banco?: string, importBatchId?: string) => {
   const queryClient = useQueryClient();
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['leads-analysis', banco || 'todos'],
-    queryFn: () => fetchLeadsAnalysis(banco),
+    queryKey: ['leads-analysis', banco || 'todos', importBatchId || ''],
+    queryFn: () => fetchLeadsAnalysis({ banco, importBatchId }),
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });

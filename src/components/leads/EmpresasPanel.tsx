@@ -8,11 +8,12 @@ import { useApprovedLeadsAnalysis } from "@/hooks/useApprovedLeadsAnalysis";
 
 interface EmpresasPanelProps {
   bancoFilter?: string;
+  importBatchId?: string;
 }
 
-const EmpresasPanel = ({ bancoFilter = "todos" }: EmpresasPanelProps) => {
+const EmpresasPanel = ({ bancoFilter = "todos", importBatchId }: EmpresasPanelProps) => {
   const navigate = useNavigate();
-  const { analysis, isLoading } = useApprovedLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter);
+  const { analysis, isLoading } = useApprovedLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter, importBatchId);
 
   const top10Empresas = useMemo(() => {
     return (analysis.topEmpresas || []).map((item, index) => ({

@@ -17,6 +17,7 @@ import { Lead } from "@/hooks/useLeadsData";
 
 interface AnaliseImportacoesPanelProps {
   bancoFilter?: string;
+  importBatchId?: string;
 }
 
 interface LeadAnalise {
@@ -43,9 +44,9 @@ const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'
 
 const ITEMS_PER_PAGE = 50;
 
-const AnaliseImportacoesPanel = ({ bancoFilter = "todos" }: AnaliseImportacoesPanelProps) => {
+const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: AnaliseImportacoesPanelProps) => {
   const { allLeads, stats } = useDashboard();
-  const { analysis: leadsAnalysis, isLoading: isLoadingAnalysis } = useLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter);
+  const { analysis: leadsAnalysis, isLoading: isLoadingAnalysis } = useLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter, importBatchId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogData, setDialogData] = useState<DialogData | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);

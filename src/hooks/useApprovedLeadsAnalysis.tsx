@@ -56,10 +56,16 @@ export interface ApprovedLeadsAnalysis {
   distribuicaoVinculo: DistribuicaoVinculo[];
 }
 
-const fetchApprovedLeadsAnalysis = async (banco?: string): Promise<ApprovedLeadsAnalysis> => {
+interface FetchParams {
+  banco?: string;
+  importBatchId?: string;
+}
+
+const fetchApprovedLeadsAnalysis = async (params?: FetchParams): Promise<ApprovedLeadsAnalysis> => {
   // Usar any para evitar erro de tipagem com RPC não tipada
   const { data, error } = await (supabase.rpc as any)('get_approved_leads_analysis', {
-    p_banco: banco || null,
+    p_banco: params?.banco || null,
+    p_import_batch_id: params?.importBatchId || null,
   });
 
   if (error) {
@@ -101,12 +107,12 @@ const fetchApprovedLeadsAnalysis = async (banco?: string): Promise<ApprovedLeads
   };
 };
 
-export const useApprovedLeadsAnalysis = (banco?: string) => {
+export const useApprovedLeadsAnalysis = (banco?: string, importBatchId?: string) => {
   const queryClient = useQueryClient();
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['approved-leads-analysis', banco || 'todos'],
-    queryFn: () => fetchApprovedLeadsAnalysis(banco),
+    queryKey: ['approved-leads-analysis', banco || 'todos', importBatchId || ''],
+    queryFn: () => fetchApprovedLeadsAnalysis({ banco, importBatchId }),
     staleTime: 5 * 60 * 1000, // 5 minutos
     gcTime: 30 * 60 * 1000, // 30 minutos em cache
   });

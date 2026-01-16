@@ -56,7 +56,7 @@ interface LeadSummary {
 }
 
 const LeadsContent = () => {
-  const { leads, stats, isLoading, filterOptions, pagination, goToPage, filters, setFilters } = useDashboard();
+  const { leads, stats, isLoading, filterOptions, pagination, goToPage, filters, setFilters, selectedImportFile } = useDashboard();
   const [searchCpf, setSearchCpf] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [bancoFilter, setBancoFilter] = useState("todos");
@@ -235,23 +235,23 @@ const LeadsContent = () => {
           </TabsList>
 
           <TabsContent value="analise" className="mt-6">
-            <AnaliseImportacoesPanel bancoFilter={bancoFilter} />
+            <AnaliseImportacoesPanel bancoFilter={bancoFilter} importBatchId={selectedImportFile} />
           </TabsContent>
 
           <TabsContent value="perfil" className="mt-6">
-            <PerfilIdealPanel bancoFilter={bancoFilter} />
+            <PerfilIdealPanel bancoFilter={bancoFilter} importBatchId={selectedImportFile} />
           </TabsContent>
 
           <TabsContent value="cbos" className="mt-6">
-            <CBOsQueAprovamPanel bancoFilter={bancoFilter} />
+            <CBOsQueAprovamPanel bancoFilter={bancoFilter} importBatchId={selectedImportFile} />
           </TabsContent>
 
           <TabsContent value="empresas" className="mt-6">
-            <EmpresasPanel bancoFilter={bancoFilter} />
+            <EmpresasPanel bancoFilter={bancoFilter} importBatchId={selectedImportFile} />
           </TabsContent>
 
           <TabsContent value="banco" className="mt-6">
-            <PorBancoPanel bancoFilter={bancoFilter} />
+            <PorBancoPanel bancoFilter={bancoFilter} importBatchId={selectedImportFile} />
           </TabsContent>
 
           <TabsContent value="lista" className="mt-6">

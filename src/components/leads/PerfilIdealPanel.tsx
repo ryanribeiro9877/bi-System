@@ -11,6 +11,7 @@ import { useApprovedLeadsAnalysis } from "@/hooks/useApprovedLeadsAnalysis";
 
 interface PerfilIdealPanelProps {
   bancoFilter?: string;
+  importBatchId?: string;
 }
 
 interface LeadPorPorte {
@@ -27,9 +28,9 @@ interface DialogData {
   leads: LeadPorPorte[];
 }
 
-const PerfilIdealPanel = ({ bancoFilter = "todos" }: PerfilIdealPanelProps) => {
+const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealPanelProps) => {
   const navigate = useNavigate();
-  const { analysis, isLoading } = useApprovedLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter);
+  const { analysis, isLoading } = useApprovedLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter, importBatchId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogData, setDialogData] = useState<DialogData | null>(null);
   const [loadingLeads, setLoadingLeads] = useState(false);

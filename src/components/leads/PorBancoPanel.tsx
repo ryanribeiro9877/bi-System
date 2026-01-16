@@ -8,9 +8,10 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } fro
 
 interface PorBancoPanelProps {
   bancoFilter?: string;
+  importBatchId?: string;
 }
 
-const PorBancoPanel = ({ bancoFilter = "todos" }: PorBancoPanelProps) => {
+const PorBancoPanel = ({ bancoFilter = "todos", importBatchId }: PorBancoPanelProps) => {
   const navigate = useNavigate();
   const { stats } = useDashboard();
 

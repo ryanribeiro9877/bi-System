@@ -8,11 +8,12 @@ import { useApprovedLeadsAnalysis } from "@/hooks/useApprovedLeadsAnalysis";
 
 interface CBOsQueAprovamPanelProps {
   bancoFilter?: string;
+  importBatchId?: string;
 }
 
-const CBOsQueAprovamPanel = ({ bancoFilter = "todos" }: CBOsQueAprovamPanelProps) => {
+const CBOsQueAprovamPanel = ({ bancoFilter = "todos", importBatchId }: CBOsQueAprovamPanelProps) => {
   const navigate = useNavigate();
-  const { analysis, isLoading } = useApprovedLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter);
+  const { analysis, isLoading } = useApprovedLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter, importBatchId);
 
   const top10CBOs = useMemo(() => {
     return (analysis.topCBOs || []).map((item, index) => ({
