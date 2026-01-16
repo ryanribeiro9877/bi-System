@@ -1,8 +1,10 @@
-// DashboardContext - Usando useLeadsData original
-import { createContext, useContext, ReactNode, useState, useMemo, useEffect } from "react";
-import { useLeadsData, Lead, DashboardStats, FilterState } from "@/hooks/useLeadsData";
+// DashboardContext - Otimizado com estatísticas calculadas no banco
+import { createContext, useContext, ReactNode, useState, useMemo, useEffect, useCallback } from "react";
+import { Lead, DashboardStats, FilterState } from "@/hooks/useLeadsData";
+import { useDashboardStats } from "@/hooks/useDashboardStats";
 import { supabase } from "@/integrations/supabase/client";
 import { importEvents } from "@/events/importEvents";
+import { parseJsonSafe, RetornoAutorizacao, RetornoMargem, RetornoSimulacao, RetornoProposta, RetornoGetProposta } from "@/types/lead";
 
 export interface ImportedFile {
   id: string;
@@ -104,19 +106,100 @@ const DashboardProviderInner = ({ children }: { children: ReactNode }) => {
     setCurrentPage(1);
   };
 
-  // Hook original que carrega todos os dados
-  const { 
-    leads, 
-    stats, 
-    filterOptions: rawFilterOptions,
-    isLoading, 
-    error, 
-    refetch 
-  } = useLeadsData(filters);
+  // Hook otimizado para estatísticas (calculadas no banco)
+  const { stats: dashboardStats, isLoading: isLoadingStats, refetch: refetchStats } = useDashboardStats({
+    importBatchId: filters.importBatchId,
+    banco: filters.banco,
+    status: filters.status,
+    dataInicial: filters.dataInicial,
+    dataFinal: filters.dataFinal,
+  });
 
-  // Paginação client-side
+  // Estado para leads paginados
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [allLeads, setAllLeads] = useState<Lead[]>([]);
+  const [isLoadingLeads, setIsLoadingLeads] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Carregar leads paginados do servidor
+  const fetchLeads = useCallback(async () => {
+    setIsLoadingLeads(true);
+    setError(null);
+
+    try {
+      const from = (currentPage - 1) * pageSize;
+      const to = from + pageSize - 1;
+
+      let query = supabase
+        .from("leads")
+        .select("*", { count: "exact" })
+        .order("created_at", { ascending: false })
+        .range(from, to);
+
+      if (filters.importBatchId) {
+        query = query.eq("import_batch_id", filters.importBatchId);
+      }
+      if (filters.banco) {
+        query = query.eq("banco", filters.banco);
+      }
+      if (filters.status) {
+        query = query.eq("status", filters.status);
+      }
+      if (filters.cpf) {
+        query = query.ilike("cpf", `%${filters.cpf}%`);
+      }
+      if (filters.dataInicial) {
+        query = query.gte("created_at", filters.dataInicial.toISOString());
+      }
+      if (filters.dataFinal) {
+        query = query.lte("created_at", filters.dataFinal.toISOString());
+      }
+
+      const { data, error: fetchError, count } = await query;
+
+      if (fetchError) throw fetchError;
+
+      const parsedLeads: Lead[] = (data || []).map((row: Record<string, unknown>) => ({
+        ...row,
+        retorno_autorizacao: parseJsonSafe<RetornoAutorizacao>(row.retorno_autorizacao),
+        retorno_margem: parseJsonSafe<RetornoMargem>(row.retorno_margem),
+        retorno_simulacao: parseJsonSafe<RetornoSimulacao>(row.retorno_simulacao),
+        retorno_proposta: parseJsonSafe<RetornoProposta>(row.retorno_proposta),
+        retorno_get_proposta: parseJsonSafe<RetornoGetProposta>(row.retorno_get_proposta),
+      } as Lead));
+
+      setLeads(parsedLeads);
+      setAllLeads(parsedLeads); // Para compatibilidade
+      
+      // Atualizar total count para paginação
+      if (count !== null) {
+        setTotalCount(count);
+      }
+    } catch (err: unknown) {
+      console.error("Error fetching leads:", err);
+      setError(err instanceof Error ? err.message : "Erro ao buscar leads");
+    } finally {
+      setIsLoadingLeads(false);
+    }
+  }, [currentPage, pageSize, filters]);
+
+  const [totalCount, setTotalCount] = useState(0);
+
+  useEffect(() => {
+    fetchLeads();
+  }, [fetchLeads]);
+
+  // Sincronização global
+  useEffect(() => {
+    const unsubscribe = importEvents.subscribe(() => {
+      fetchLeads();
+      refetchStats();
+    });
+    return unsubscribe;
+  }, [fetchLeads, refetchStats]);
+
+  // Paginação
   const pagination = useMemo(() => {
-    const totalCount = leads.length;
     const totalPages = Math.ceil(totalCount / pageSize);
     return {
       page: currentPage,
@@ -124,7 +207,7 @@ const DashboardProviderInner = ({ children }: { children: ReactNode }) => {
       totalCount,
       totalPages,
     };
-  }, [leads.length, currentPage, pageSize]);
+  }, [totalCount, currentPage, pageSize]);
 
   const goToPage = (page: number) => {
     if (page >= 1 && page <= pagination.totalPages) {
@@ -132,25 +215,58 @@ const DashboardProviderInner = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Leads paginados
-  const paginatedLeads = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return leads.slice(start, start + pageSize);
-  }, [leads, currentPage, pageSize]);
+  // Converter stats do hook para o formato esperado
+  const stats: DashboardStats = useMemo(() => ({
+    totalLeads: dashboardStats.totalLeads,
+    leadsAprovados: dashboardStats.leadsAprovados,
+    leadsReprovados: dashboardStats.leadsReprovados,
+    leadsPendentes: dashboardStats.leadsPendentes,
+    taxaReprovacao: dashboardStats.taxaReprovacao,
+    taxaAprovacao: dashboardStats.taxaAprovacao,
+    valorTotal: 0,
+    principalMotivo: "-",
+    principalMotivoCompleto: "-",
+    principalMotivoPercentual: 0,
+    bancoMaiorReprovacao: "-",
+    bancoMaiorReprovacaoPercentual: 0,
+    cbosUnicos: 0,
+    tiposReprovacaoUnicos: dashboardStats.tiposReprovacao.length,
+    reprovacoesPorBanco: [],
+    reprovacoesPorCBO: [],
+    reprovacoesPorTipo: [],
+    leadsPorStatus: [
+      { status: "aprovado", quantidade: dashboardStats.leadsAprovados },
+      { status: "reprovado", quantidade: dashboardStats.leadsReprovados },
+      { status: "pendente", quantidade: dashboardStats.leadsPendentes },
+    ],
+    cbosBloqueados: [],
+    totalCBOsBloqueados: 0,
+    margemMedia: 0,
+    valorSimulacaoTotal: 0,
+  }), [dashboardStats]);
 
-  // Filter options com cbos
+  // Filter options
   const filterOptions = useMemo(() => ({
-    ...rawFilterOptions,
-    cbos: rawFilterOptions.cbos || [],
-  }), [rawFilterOptions]);
+    bancos: dashboardStats.bancos || [],
+    tiposReprovacao: dashboardStats.tiposReprovacao || [],
+    statuses: ["aprovado", "reprovado", "pendente"],
+    cbos: [],
+  }), [dashboardStats]);
+
+  const refetch = useCallback(() => {
+    fetchLeads();
+    refetchStats();
+  }, [fetchLeads, refetchStats]);
+
+  const isLoading = isLoadingLeads || isLoadingStats;
 
   const value = useMemo(() => ({
-    leads: paginatedLeads,
-    allLeads: leads,  // Todos os leads para análises
+    leads,
+    allLeads,
     stats,
     filterOptions,
     isLoading,
-    isLoadingStats: isLoading,
+    isLoadingStats,
     error,
     filters,
     setFilters,
@@ -161,7 +277,7 @@ const DashboardProviderInner = ({ children }: { children: ReactNode }) => {
     selectedImportFile,
     setSelectedImportFile,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [paginatedLeads, leads, stats, filterOptions, isLoading, error, filters, refetch, pagination, importedFiles, selectedImportFile]);
+  }), [leads, allLeads, stats, filterOptions, isLoading, isLoadingStats, error, filters, refetch, pagination, importedFiles, selectedImportFile]);
 
   return (
     <DashboardContext.Provider value={value}>
