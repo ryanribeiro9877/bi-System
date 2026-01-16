@@ -407,7 +407,7 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
         const { data: leads, error } = await (supabase.rpc as any)('get_leads_by_margem_status', {
           p_tem_margem: temMargem,
           p_import_batch_id: importBatchId || null,
-          p_limit: 100,
+          p_limit: 500,
         });
         if (error) throw error;
         const mappedLeads = (leads || []).map((l: any) => ({
@@ -421,7 +421,7 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
         }));
         setDialogData({
           titulo,
-          subtitulo: `${mappedLeads.length} leads encontrados`,
+          subtitulo: `${mappedLeads.length} leads encontrados${mappedLeads.length >= 500 ? ' (limite de exibição)' : ''}`,
           leads: mappedLeads,
         });
       } else {
@@ -429,7 +429,7 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
         const { data: leads, error } = await (supabase.rpc as any)('get_leads_by_simulacao_status', {
           p_aprovada: aprovada,
           p_import_batch_id: importBatchId || null,
-          p_limit: 100,
+          p_limit: 500,
         });
         if (error) throw error;
         const mappedLeads = (leads || []).map((l: any) => ({
@@ -443,7 +443,7 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
         }));
         setDialogData({
           titulo,
-          subtitulo: `${mappedLeads.length} leads encontrados`,
+          subtitulo: `${mappedLeads.length} leads encontrados${mappedLeads.length >= 500 ? ' (limite de exibição)' : ''}`,
           leads: mappedLeads,
         });
       }
@@ -476,7 +476,7 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
         const { data: leads, error } = await (supabase.rpc as any)('get_leads_by_parcelas', {
           p_parcelas: parcelas,
           p_import_batch_id: importBatchId || null,
-          p_limit: 100,
+          p_limit: 500,
         });
         if (error) throw error;
         const mappedLeads = (leads || []).map((l: any) => ({
@@ -490,14 +490,14 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
         }));
         setDialogData({
           titulo,
-          subtitulo: `${mappedLeads.length} leads encontrados`,
+          subtitulo: `${mappedLeads.length} leads encontrados${mappedLeads.length >= 500 ? ' (limite de exibição)' : ''}`,
           leads: mappedLeads,
         });
       } else {
         const { data: leads, error } = await (supabase.rpc as any)('get_leads_by_produto', {
           p_produto: data.produtoCompleto || data.produto,
           p_import_batch_id: importBatchId || null,
-          p_limit: 100,
+          p_limit: 500,
         });
         if (error) throw error;
         const mappedLeads = (leads || []).map((l: any) => ({
@@ -511,7 +511,7 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
         }));
         setDialogData({
           titulo,
-          subtitulo: `${mappedLeads.length} leads encontrados`,
+          subtitulo: `${mappedLeads.length} leads encontrados${mappedLeads.length >= 500 ? ' (limite de exibição)' : ''}`,
           leads: mappedLeads,
         });
       }
