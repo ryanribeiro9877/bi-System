@@ -22,17 +22,19 @@ interface AnaliseImportacoesPanelProps {
 }
 
 interface LeadAnalise {
-  lead: Lead;
+  lead?: Lead;
   cpf: string;
   nome: string;
   banco: string;
-  temMargem: boolean;
-  valorMargem: number;
-  temSimulacao: boolean;
-  simulacaoAprovada: boolean;
+  temMargem?: boolean;
+  valorMargem?: number;
+  valor?: number;
+  temSimulacao?: boolean;
+  simulacaoAprovada?: boolean;
   parcelas: number;
   produto: string;
-  valorSimulacao: number;
+  valorSimulacao?: number;
+  status?: string;
 }
 
 interface DialogData {
@@ -410,12 +412,12 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
         if (error) throw error;
         const mappedLeads = (leads || []).map((l: any) => ({
           cpf: l.cpf,
-          nome: l.nome,
+          nome: l.nome || '-',
           banco: l.banco,
           status: l.status,
-          valor: l.margem,
-          parcelas: 0,
-          produto: '',
+          valor: l.margem || 0,
+          parcelas: l.parcelas || 0,
+          produto: l.produto || '-',
         }));
         setDialogData({
           titulo,
@@ -432,12 +434,12 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
         if (error) throw error;
         const mappedLeads = (leads || []).map((l: any) => ({
           cpf: l.cpf,
-          nome: l.nome,
+          nome: l.nome || '-',
           banco: l.banco,
           status: l.status,
-          valor: 0,
-          parcelas: l.parcelas,
-          produto: l.produto,
+          valor: l.margem || 0,
+          parcelas: l.parcelas || 0,
+          produto: l.produto || '-',
         }));
         setDialogData({
           titulo,
@@ -479,12 +481,12 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
         if (error) throw error;
         const mappedLeads = (leads || []).map((l: any) => ({
           cpf: l.cpf,
-          nome: l.nome,
+          nome: l.nome || '-',
           banco: l.banco,
           status: l.status,
-          valor: l.valor,
-          parcelas: l.parcelas,
-          produto: l.produto,
+          valor: l.margem || 0,
+          parcelas: l.parcelas || 0,
+          produto: l.produto || '-',
         }));
         setDialogData({
           titulo,
@@ -500,12 +502,12 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
         if (error) throw error;
         const mappedLeads = (leads || []).map((l: any) => ({
           cpf: l.cpf,
-          nome: l.nome,
+          nome: l.nome || '-',
           banco: l.banco,
           status: l.status,
-          valor: l.valor,
-          parcelas: l.parcelas,
-          produto: l.produto,
+          valor: l.margem || 0,
+          parcelas: l.parcelas || 0,
+          produto: l.produto || '-',
         }));
         setDialogData({
           titulo,
@@ -900,8 +902,8 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
                         <TableCell className="max-w-[200px] truncate">{item.nome || "-"}</TableCell>
                         <TableCell>{item.banco}</TableCell>
                         <TableCell className="text-right text-emerald-400">
-                          {item.valorMargem > 0 
-                            ? `R$ ${item.valorMargem.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          {item.valor && item.valor > 0 
+                            ? `R$ ${item.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                             : "-"
                           }
                         </TableCell>
