@@ -14,6 +14,7 @@ import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Lead } from "@/hooks/useLeadsData";
+import { supabase } from "@/integrations/supabase/client";
 
 interface AnaliseImportacoesPanelProps {
   bancoFilter?: string;
@@ -383,8 +384,8 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
     return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
 
-  const handlePieClick = (data: any, tipo: "margem" | "simulacao") => {
-    if (!data?.leads) return;
+  const handlePieClick = async (data: any, tipo: "margem" | "simulacao") => {
+    if (!data?.name) return;
     
     const titulo = tipo === "margem" 
       ? `Leads ${data.name}`
@@ -392,27 +393,87 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
     
     setDialogData({
       titulo,
-      subtitulo: `${data.leads.length} leads`,
-      leads: data.leads,
+      subtitulo: `Carregando...`,
+      leads: [],
     });
     setCurrentPage(1);
     setDialogOpen(true);
+
+    // Para os gráficos de pizza, não temos RPC específica ainda
+    // Mostrar mensagem informativa
+    setDialogData({
+      titulo,
+      subtitulo: `${data.value} leads nesta categoria`,
+      leads: [],
+    });
   };
 
-  const handleBarClick = (data: any, tipo: "parcela" | "produto") => {
-    if (!data?.leads) return;
-    
+  const handleBarClick = async (data: any, tipo: "parcela" | "produto") => {
     const titulo = tipo === "parcela" 
       ? `Leads - Parcelamento ${data.parcela}`
       : `Leads - ${data.produtoCompleto || data.produto}`;
     
     setDialogData({
       titulo,
-      subtitulo: `${data.leads.length} leads`,
-      leads: data.leads,
+      subtitulo: `Carregando...`,
+      leads: [],
     });
     setCurrentPage(1);
     setDialogOpen(true);
+
+    try {
+      if (tipo === "parcela") {
+        const parcelas = parseInt(data.parcela.replace('x', ''));
+        const { data: leads, error } = await (supabase.rpc as any)('get_leads_by_parcelas', {
+          p_parcelas: parcelas,
+          p_import_batch_id: importBatchId || null,
+          p_limit: 100,
+        });
+        if (error) throw error;
+        const mappedLeads = (leads || []).map((l: any) => ({
+          cpf: l.cpf,
+          nome: l.nome,
+          banco: l.banco,
+          status: l.status,
+          valor: l.valor,
+          parcelas: l.parcelas,
+          produto: l.produto,
+        }));
+        setDialogData({
+          titulo,
+          subtitulo: `${mappedLeads.length} leads encontrados`,
+          leads: mappedLeads,
+        });
+      } else {
+        const { data: leads, error } = await (supabase.rpc as any)('get_leads_by_produto', {
+          p_produto: data.produtoCompleto || data.produto,
+          p_import_batch_id: importBatchId || null,
+          p_limit: 100,
+        });
+        if (error) throw error;
+        const mappedLeads = (leads || []).map((l: any) => ({
+          cpf: l.cpf,
+          nome: l.nome,
+          banco: l.banco,
+          status: l.status,
+          valor: l.valor,
+          parcelas: l.parcelas,
+          produto: l.produto,
+        }));
+        setDialogData({
+          titulo,
+          subtitulo: `${mappedLeads.length} leads encontrados`,
+          leads: mappedLeads,
+        });
+      }
+    } catch (err) {
+      console.error('Erro ao buscar leads:', err);
+      setDialogData({
+        titulo,
+        subtitulo: `Erro ao carregar leads`,
+        leads: [],
+      });
+    }
   };
 
   if (isLoadingAnalysis) {
