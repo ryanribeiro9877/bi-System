@@ -165,23 +165,19 @@ const extrairBanco = (lead: Lead): string => {
   return "Não Informado";
 };
 
-// Helper para normalizar status - usa utilitário centralizado
-// Mantém assinatura antiga para compatibilidade
-const normalizarStatus = (status: string | null, lead?: Lead): string => {
+// Helper para normalizar status - RESPEITA o status salvo no banco de dados
+// O status é definido corretamente durante a importação, não precisa recalcular
+const normalizarStatus = (status: string | null, _lead?: Lead): string => {
   const s = (status || "").toLowerCase().trim();
   
-  // Status explícitos sempre respeitados
+  // Status do banco de dados sempre respeitado
   if (s === "aprovado" || s === "approved") return "aprovado";
   if (s === "reprovado" || s === "rejected" || s === "recusado") return "reprovado";
   if (s === "pendente" || s === "pending") return "pendente";
   // CPF não encontrado agora é considerado REPROVADO
   if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "reprovado";
   
-  // Para outros status, usar lógica centralizada por banco
-  if (lead) {
-    return normalizarStatusLead(lead);
-  }
-  
+  // Status desconhecido = reprovado
   return "reprovado";
 };
 
