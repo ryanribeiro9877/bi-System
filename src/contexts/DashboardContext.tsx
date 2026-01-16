@@ -1,10 +1,11 @@
-// DashboardContext - Otimizado com estatísticas calculadas no banco
+// DashboardContext - Otimizado com TanStack Query e estatísticas calculadas no banco
 import { createContext, useContext, ReactNode, useState, useMemo, useEffect, useCallback } from "react";
 import { Lead, DashboardStats, FilterState } from "@/hooks/useLeadsData";
 import { useDashboardStats } from "@/hooks/useDashboardStats";
+import { useLeadsQuery } from "@/hooks/useLeadsQuery";
 import { supabase } from "@/integrations/supabase/client";
 import { importEvents } from "@/events/importEvents";
-import { parseJsonSafe, RetornoAutorizacao, RetornoMargem, RetornoSimulacao, RetornoProposta, RetornoGetProposta } from "@/types/lead";
+import React from "react";
 
 export interface ImportedFile {
   id: string;
@@ -115,88 +116,17 @@ const DashboardProviderInner = ({ children }: { children: ReactNode }) => {
     dataFinal: filters.dataFinal,
   });
 
-  // Estado para leads paginados
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [allLeads, setAllLeads] = useState<Lead[]>([]);
-  const [isLoadingLeads, setIsLoadingLeads] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Hook otimizado para leads com TanStack Query (cache + paginação)
+  const { 
+    leads, 
+    totalCount, 
+    isLoading: isLoadingLeads, 
+    error, 
+    refetch: refetchLeads 
+  } = useLeadsQuery(filters, currentPage, pageSize);
 
-  // Carregar leads paginados do servidor
-  const fetchLeads = useCallback(async () => {
-    setIsLoadingLeads(true);
-    setError(null);
-
-    try {
-      const from = (currentPage - 1) * pageSize;
-      const to = from + pageSize - 1;
-
-      let query = supabase
-        .from("leads")
-        .select("*", { count: "exact" })
-        .order("created_at", { ascending: false })
-        .range(from, to);
-
-      if (filters.importBatchId) {
-        query = query.eq("import_batch_id", filters.importBatchId);
-      }
-      if (filters.banco) {
-        query = query.eq("banco", filters.banco);
-      }
-      if (filters.status) {
-        query = query.eq("status", filters.status);
-      }
-      if (filters.cpf) {
-        query = query.ilike("cpf", `%${filters.cpf}%`);
-      }
-      if (filters.dataInicial) {
-        query = query.gte("created_at", filters.dataInicial.toISOString());
-      }
-      if (filters.dataFinal) {
-        query = query.lte("created_at", filters.dataFinal.toISOString());
-      }
-
-      const { data, error: fetchError, count } = await query;
-
-      if (fetchError) throw fetchError;
-
-      const parsedLeads: Lead[] = (data || []).map((row: Record<string, unknown>) => ({
-        ...row,
-        retorno_autorizacao: parseJsonSafe<RetornoAutorizacao>(row.retorno_autorizacao),
-        retorno_margem: parseJsonSafe<RetornoMargem>(row.retorno_margem),
-        retorno_simulacao: parseJsonSafe<RetornoSimulacao>(row.retorno_simulacao),
-        retorno_proposta: parseJsonSafe<RetornoProposta>(row.retorno_proposta),
-        retorno_get_proposta: parseJsonSafe<RetornoGetProposta>(row.retorno_get_proposta),
-      } as Lead));
-
-      setLeads(parsedLeads);
-      setAllLeads(parsedLeads); // Para compatibilidade
-      
-      // Atualizar total count para paginação
-      if (count !== null) {
-        setTotalCount(count);
-      }
-    } catch (err: unknown) {
-      console.error("Error fetching leads:", err);
-      setError(err instanceof Error ? err.message : "Erro ao buscar leads");
-    } finally {
-      setIsLoadingLeads(false);
-    }
-  }, [currentPage, pageSize, filters]);
-
-  const [totalCount, setTotalCount] = useState(0);
-
-  useEffect(() => {
-    fetchLeads();
-  }, [fetchLeads]);
-
-  // Sincronização global
-  useEffect(() => {
-    const unsubscribe = importEvents.subscribe(() => {
-      fetchLeads();
-      refetchStats();
-    });
-    return unsubscribe;
-  }, [fetchLeads, refetchStats]);
+  // allLeads para compatibilidade (mesmos dados paginados)
+  const allLeads = leads;
 
   // Paginação
   const pagination = useMemo(() => {
@@ -254,9 +184,9 @@ const DashboardProviderInner = ({ children }: { children: ReactNode }) => {
   }), [dashboardStats]);
 
   const refetch = useCallback(() => {
-    fetchLeads();
+    refetchLeads();
     refetchStats();
-  }, [fetchLeads, refetchStats]);
+  }, [refetchLeads, refetchStats]);
 
   const isLoading = isLoadingLeads || isLoadingStats;
 

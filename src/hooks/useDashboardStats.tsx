@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { importEvents } from "@/events/importEvents";
 
@@ -21,8 +22,43 @@ interface StatsFilters {
   dataFinal?: Date;
 }
 
-export const useDashboardStats = (filters?: StatsFilters) => {
-  const [stats, setStats] = useState<DashboardStatsResult>({
+const fetchDashboardStats = async (filters?: StatsFilters): Promise<DashboardStatsResult> => {
+  console.log('[useDashboardStats] Fetching stats with filters:', filters);
+  
+  const { data, error: rpcError } = await supabase.rpc('get_dashboard_stats', {
+    p_import_batch_id: filters?.importBatchId || '',
+    p_banco: filters?.banco || '',
+    p_status: filters?.status || '',
+    p_data_inicial: filters?.dataInicial?.toISOString() || '',
+    p_data_final: filters?.dataFinal?.toISOString() || '',
+  });
+
+  if (rpcError) throw rpcError;
+
+  if (data) {
+    const result = data as {
+      totalLeads: number;
+      leadsAprovados: number;
+      leadsReprovados: number;
+      leadsPendentes: number;
+      taxaAprovacao: number;
+      taxaReprovacao: number;
+      bancos: string[];
+      tiposReprovacao: string[];
+    };
+    return {
+      totalLeads: result.totalLeads || 0,
+      leadsAprovados: result.leadsAprovados || 0,
+      leadsReprovados: result.leadsReprovados || 0,
+      leadsPendentes: result.leadsPendentes || 0,
+      taxaAprovacao: result.taxaAprovacao || 0,
+      taxaReprovacao: result.taxaReprovacao || 0,
+      bancos: result.bancos || [],
+      tiposReprovacao: result.tiposReprovacao || [],
+    };
+  }
+
+  return {
     totalLeads: 0,
     leadsAprovados: 0,
     leadsReprovados: 0,
@@ -31,59 +67,52 @@ export const useDashboardStats = (filters?: StatsFilters) => {
     taxaReprovacao: 0,
     bancos: [],
     tiposReprovacao: [],
+  };
+};
+
+export const useDashboardStats = (filters?: StatsFilters) => {
+  const queryClient = useQueryClient();
+  
+  // Memoizar a query key para evitar re-renders desnecessários
+  const queryKey = useMemo(() => [
+    'dashboard-stats',
+    filters?.importBatchId || '',
+    filters?.banco || '',
+    filters?.status || '',
+    filters?.dataInicial?.toISOString() || '',
+    filters?.dataFinal?.toISOString() || '',
+  ], [filters]);
+
+  const { data: stats, isLoading, error, refetch } = useQuery({
+    queryKey,
+    queryFn: () => fetchDashboardStats(filters),
+    staleTime: 5 * 60 * 1000, // 5 minutos
+    gcTime: 30 * 60 * 1000, // 30 minutos em cache
   });
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const fetchStats = useCallback(async () => {
-    console.log('[useDashboardStats] Fetching stats with filters:', filters);
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const { data, error: rpcError } = await supabase.rpc('get_dashboard_stats', {
-        p_import_batch_id: filters?.importBatchId || null,
-        p_banco: filters?.banco || null,
-        p_status: filters?.status || null,
-        p_data_inicial: filters?.dataInicial?.toISOString() || null,
-        p_data_final: filters?.dataFinal?.toISOString() || null,
-      });
-
-      if (rpcError) throw rpcError;
-
-      if (data) {
-        setStats({
-          totalLeads: data.totalLeads || 0,
-          leadsAprovados: data.leadsAprovados || 0,
-          leadsReprovados: data.leadsReprovados || 0,
-          leadsPendentes: data.leadsPendentes || 0,
-          taxaAprovacao: data.taxaAprovacao || 0,
-          taxaReprovacao: data.taxaReprovacao || 0,
-          bancos: data.bancos || [],
-          tiposReprovacao: data.tiposReprovacao || [],
-        });
-      }
-    } catch (err: unknown) {
-      console.error("Error fetching dashboard stats:", err);
-      setError(err instanceof Error ? err.message : "Erro ao buscar estatísticas");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [filters]);
-
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
-
-  // Sincronização global: refetch quando houver nova importação ou exclusão
+  // Sincronização global: invalidar cache quando houver nova importação
   useEffect(() => {
     const unsubscribe = importEvents.subscribe(() => {
-      console.log('[useDashboardStats] Recebido evento de importação/exclusão, atualizando...');
-      fetchStats();
+      console.log('[useDashboardStats] Invalidando cache após importação...');
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
     });
     
     return unsubscribe;
-  }, [fetchStats]);
+  }, [queryClient]);
 
-  return { stats, isLoading, error, refetch: fetchStats };
+  return { 
+    stats: stats || {
+      totalLeads: 0,
+      leadsAprovados: 0,
+      leadsReprovados: 0,
+      leadsPendentes: 0,
+      taxaAprovacao: 0,
+      taxaReprovacao: 0,
+      bancos: [],
+      tiposReprovacao: [],
+    }, 
+    isLoading, 
+    error: error instanceof Error ? error.message : null, 
+    refetch 
+  };
 };
