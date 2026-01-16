@@ -399,13 +399,60 @@ const AnaliseImportacoesPanel = ({ bancoFilter = "todos", importBatchId }: Anali
     setCurrentPage(1);
     setDialogOpen(true);
 
-    // Para os gráficos de pizza, não temos RPC específica ainda
-    // Mostrar mensagem informativa
-    setDialogData({
-      titulo,
-      subtitulo: `${data.value} leads nesta categoria`,
-      leads: [],
-    });
+    try {
+      if (tipo === "margem") {
+        const temMargem = data.name === "Com Margem";
+        const { data: leads, error } = await (supabase.rpc as any)('get_leads_by_margem_status', {
+          p_tem_margem: temMargem,
+          p_import_batch_id: importBatchId || null,
+          p_limit: 100,
+        });
+        if (error) throw error;
+        const mappedLeads = (leads || []).map((l: any) => ({
+          cpf: l.cpf,
+          nome: l.nome,
+          banco: l.banco,
+          status: l.status,
+          valor: l.margem,
+          parcelas: 0,
+          produto: '',
+        }));
+        setDialogData({
+          titulo,
+          subtitulo: `${mappedLeads.length} leads encontrados`,
+          leads: mappedLeads,
+        });
+      } else {
+        const aprovada = data.name === "Aprovadas";
+        const { data: leads, error } = await (supabase.rpc as any)('get_leads_by_simulacao_status', {
+          p_aprovada: aprovada,
+          p_import_batch_id: importBatchId || null,
+          p_limit: 100,
+        });
+        if (error) throw error;
+        const mappedLeads = (leads || []).map((l: any) => ({
+          cpf: l.cpf,
+          nome: l.nome,
+          banco: l.banco,
+          status: l.status,
+          valor: 0,
+          parcelas: l.parcelas,
+          produto: l.produto,
+        }));
+        setDialogData({
+          titulo,
+          subtitulo: `${mappedLeads.length} leads encontrados`,
+          leads: mappedLeads,
+        });
+      }
+    } catch (err) {
+      console.error('Erro ao buscar leads:', err);
+      setDialogData({
+        titulo,
+        subtitulo: `Erro ao carregar leads`,
+        leads: [],
+      });
+    }
   };
 
   const handleBarClick = async (data: any, tipo: "parcela" | "produto") => {
