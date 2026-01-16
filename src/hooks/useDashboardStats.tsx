@@ -57,7 +57,7 @@ interface StatsFilters {
 const fetchDashboardStats = async (filters?: StatsFilters): Promise<DashboardStatsResult> => {
   console.log('[useDashboardStats] Fetching stats with filters:', filters);
   
-  // Usar a versão completa da RPC com 6 parâmetros (timestamptz)
+  // Usar a versão completa da RPC com 7 parâmetros (inclui import_batch_id)
   const { data, error: rpcError } = await supabase.rpc('get_dashboard_stats', {
     p_data_inicial: filters?.dataInicial || null,
     p_data_final: filters?.dataFinal || null,
@@ -65,6 +65,7 @@ const fetchDashboardStats = async (filters?: StatsFilters): Promise<DashboardSta
     p_status: filters?.status || '',
     p_tipo_reprovacao: '',
     p_tipos_reprovacao_multiplos: null,
+    p_import_batch_id: filters?.importBatchId || '',
   });
 
   if (rpcError) {
