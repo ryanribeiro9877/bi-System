@@ -15,10 +15,10 @@ const DashboardInner = () => {
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground mb-2">
-            Dashboard Executivo
+            Consultas
           </h1>
           <p className="text-muted-foreground">
-            BI de Reprovações - Análise de Leads CLT
+            BI de Consultas - Análise de CLT
           </p>
         </div>
 

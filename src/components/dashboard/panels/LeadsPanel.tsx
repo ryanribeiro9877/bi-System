@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import { useNavigate } from "react-router-dom";
 import { useDashboard } from "@/contexts/DashboardContext";
-import { LeadListItem } from "@/hooks/useLeadsPaginated";
+import { LeadListItem, useLeadDetails } from "@/hooks/useLeadsPaginated";
 import LeadDetailDialog from "@/components/leads/LeadDetailDialog";
 
 // Formata data como dd/mm/aaaa - hh:nn:ss
@@ -44,6 +44,7 @@ const LeadsPanel = () => {
   const [searchCpf, setSearchCpf] = useState("");
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const { lead } = useLeadDetails(selectedLeadId);
 
   const formatCpf = (cpf: string) => {
     const cleaned = cpf.replace(/\D/g, "");
@@ -80,14 +81,14 @@ const LeadsPanel = () => {
     return (
       <Card className="glass-card">
         <CardHeader>
-          <CardTitle className="text-lg font-semibold text-foreground">Leads (0)</CardTitle>
+          <CardTitle className="text-lg font-semibold text-foreground">Contratos Digitados (0)</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="py-12 text-center">
             <FileText className="w-16 h-16 text-muted-foreground/50 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-foreground mb-2">Nenhum lead importado</h3>
+            <h3 className="text-lg font-medium text-foreground mb-2">Nenhum contrato digitado importado</h3>
             <p className="text-muted-foreground mb-4 max-w-md mx-auto">
-              Importe seus dados de leads CLT para visualizar análises detalhadas, taxas e estatísticas.
+              Importe seus dados de contratos digitados para visualizar análises detalhadas, taxas e estatísticas.
             </p>
             <Button onClick={() => navigate("/dashboard/importacoes")} className="gap-2">
               <Upload className="w-4 h-4" />
@@ -106,14 +107,14 @@ const LeadsPanel = () => {
           <div>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Users className="w-5 h-5" />
-              Lista de Leads
+              Lista de Contratos Digitados
             </CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">Visualize e filtre todos os leads</p>
+            <p className="text-sm text-muted-foreground mt-1">Visualize e filtre todos os contratos digitados</p>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="secondary">Aprovados: {stats.leadsAprovados.toLocaleString("pt-BR")}</Badge>
             <Badge variant="secondary">Reprovados: {stats.leadsReprovados.toLocaleString("pt-BR")}</Badge>
-            <span className="text-sm text-muted-foreground ml-2">{pagination.totalCount.toLocaleString("pt-BR")} leads</span>
+            <span className="text-sm text-muted-foreground ml-2">{pagination.totalCount.toLocaleString("pt-BR")} contratos</span>
           </div>
         </div>
 
@@ -152,12 +153,12 @@ const LeadsPanel = () => {
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
             <Loader2 className="w-12 h-12 mb-4 animate-spin" />
-            <p className="text-lg font-medium text-foreground">Carregando leads...</p>
+            <p className="text-lg font-medium text-foreground">Carregando contratos digitados...</p>
           </div>
         ) : leads.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
             <Users className="w-12 h-12 mb-4 opacity-50" />
-            <p className="text-lg font-medium text-foreground">Nenhum lead encontrado</p>
+            <p className="text-lg font-medium text-foreground">Nenhum contrato digitado encontrado</p>
             <p className="text-sm mt-1">Ajuste os filtros ou importe mais dados</p>
           </div>
         ) : (
@@ -264,7 +265,7 @@ const LeadsPanel = () => {
       </CardContent>
 
       {/* Lead Detail Dialog - agora carrega detalhes sob demanda */}
-      <LeadDetailDialog leadId={selectedLeadId} open={detailOpen} onOpenChange={setDetailOpen} />
+      <LeadDetailDialog lead={lead} open={detailOpen} onOpenChange={setDetailOpen} />
     </Card>
   );
 };

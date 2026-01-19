@@ -24,6 +24,7 @@ export interface Lead {
   observacoes: string | null;
   created_at: string;
   updated_at: string;
+  import_batch_id?: string | null;
   retorno_autorizacao: RetornoAutorizacao | null;
   retorno_margem: RetornoMargem | null;
   retorno_simulacao: RetornoSimulacao | null;

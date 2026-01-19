@@ -134,7 +134,7 @@ const Login = () => {
           </form>
 
           <p className="text-center text-muted-foreground text-sm mt-6">
-            Dashboard Executivo de Análise de Leads
+            BI de Consultas - Análise de CLT
           </p>
         </CardContent>
       </Card>

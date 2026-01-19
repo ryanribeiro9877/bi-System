@@ -10,8 +10,8 @@ const DashboardSidebar = () => {
   const { signOut, isAdmin, user } = useAuth();
 
   const menuItems = [
-    { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
-    { icon: Users, label: "Leads", path: "/dashboard/leads" },
+    { icon: LayoutDashboard, label: "Consultas", path: "/dashboard" },
+    { icon: Users, label: "Contratos Digitados", path: "/dashboard/leads" },
     { icon: UserX, label: "CBOs Bloqueados", path: "/dashboard/cbos-bloqueados" },
     { icon: Upload, label: "Importações", path: "/dashboard/importacoes" },
     { icon: Bell, label: "Alertas", path: "/dashboard/alertas" },
@@ -36,7 +36,7 @@ const DashboardSidebar = () => {
             <BarChart3 className="w-5 h-5 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="font-bold text-sidebar-foreground">BI Leads CLT</h1>
+            <h1 className="font-bold text-sidebar-foreground">BI de Consultas CLT</h1>
             <p className="text-xs text-muted-foreground">
               {isAdmin ? "Admin" : "Usuário"}
             </p>

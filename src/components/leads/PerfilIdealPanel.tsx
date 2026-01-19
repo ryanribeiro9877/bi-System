@@ -1,4 +1,4 @@
-import { Star, Upload, DollarSign, Clock, Building2, Briefcase, CheckCircle, Award, Eye } from "lucide-react";
+import { Star, Upload, DollarSign, Clock, Building2, Briefcase, CheckCircle, Award, Eye, CreditCard, Package, Calendar, Timer, Banknote, CalendarCheck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { useApprovedLeadsAnalysis } from "@/hooks/useApprovedLeadsAnalysis";
+import { useContratosAprovadosAnalysis, LeadPago } from "@/hooks/useContratosAprovadosAnalysis";
 
 interface PerfilIdealPanelProps {
   bancoFilter?: string;
@@ -31,9 +32,16 @@ interface DialogData {
 const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealPanelProps) => {
   const navigate = useNavigate();
   const { analysis, isLoading } = useApprovedLeadsAnalysis(bancoFilter === "todos" ? undefined : bancoFilter, importBatchId);
+  const { analysis: contratosAnalysis, isLoading: isLoadingContratos } = useContratosAprovadosAnalysis(bancoFilter === "todos" ? undefined : bancoFilter, importBatchId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogData, setDialogData] = useState<DialogData | null>(null);
   const [loadingLeads, setLoadingLeads] = useState(false);
+  const [pagosDialogOpen, setPagosDialogOpen] = useState(false);
+  const [pagosDialogData, setPagosDialogData] = useState<{ titulo: string; leads: LeadPago[]; tipo: 'pagos' | 'naoPagos' } | null>(null);
+  const [selectedLeadProposta, setSelectedLeadProposta] = useState<string | null>(null);
+  const [propostaDialogOpen, setPropostaDialogOpen] = useState(false);
+  const [propostaData, setPropostaData] = useState<Record<string, unknown> | null>(null);
+  const [loadingProposta, setLoadingProposta] = useState(false);
 
   const formatCpf = (cpf: string) => {
     const cleaned = cpf.replace(/\D/g, "");
@@ -124,6 +132,53 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
     }
   };
 
+  const handlePagosClick = (banco: string, tipo: 'pagos' | 'naoPagos') => {
+    const leads = tipo === 'pagos' 
+      ? contratosAnalysis.leadsPagos.filter(l => l.banco === banco)
+      : contratosAnalysis.leadsNaoPagos.filter(l => l.banco === banco);
+    
+    setPagosDialogData({
+      titulo: tipo === 'pagos' ? `Leads Pagos - ${banco}` : `Leads Não Pagos - ${banco}`,
+      leads,
+      tipo,
+    });
+    setPagosDialogOpen(true);
+  };
+
+  const handleViewProposta = async (leadId: string) => {
+    setLoadingProposta(true);
+    setPropostaDialogOpen(true);
+    setSelectedLeadProposta(leadId);
+    
+    try {
+      const { data: lead, error } = await supabase
+        .from('leads')
+        .select('retorno_get_proposta, retorno_proposta, retorno_simulacao')
+        .eq('id', leadId)
+        .single();
+      
+      if (error) throw error;
+      
+      // Combinar dados de proposta de várias fontes
+      const propostaCompleta = {
+        ...(lead.retorno_get_proposta as Record<string, unknown> || {}),
+        ...(lead.retorno_proposta as Record<string, unknown> || {}),
+        simulacao: lead.retorno_simulacao,
+      };
+      
+      setPropostaData(propostaCompleta);
+    } catch (err) {
+      console.error('Erro ao buscar proposta:', err);
+      setPropostaData(null);
+    } finally {
+      setLoadingProposta(false);
+    }
+  };
+
+  const formatCurrency = (value: number) => {
+    return `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
   const perfil = useMemo(() => {
     if (analysis.totalAprovados === 0) return null;
 
@@ -150,13 +205,56 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
       quantidade: p.quantidade,
     }));
 
+    // Calcular score de tempo de vínculo baseado na distribuição
+    // Faixas maiores (ex: "5+ anos") recebem peso maior
+    const calcularVinculoScore = () => {
+      if (!vinculoData.length) return 0;
+      const pesosFaixa: Record<string, number> = {
+        '0-6 meses': 10,
+        '6-12 meses': 25,
+        '1-2 anos': 40,
+        '2-3 anos': 55,
+        '3-5 anos': 75,
+        '5+ anos': 100,
+      };
+      let somaScore = 0;
+      let totalLeads = 0;
+      vinculoData.forEach(v => {
+        const peso = pesosFaixa[v.faixa] || 50;
+        somaScore += peso * v.quantidade;
+        totalLeads += v.quantidade;
+      });
+      return totalLeads > 0 ? Math.min(100, somaScore / totalLeads) : 0;
+    };
+
+    // Calcular score de porte da empresa baseado na distribuição
+    // Pequena = 33 (pentágono menor), Média = 66 (pentágono médio), Grande = 100 (pentágono maior)
+    const calcularPorteScore = () => {
+      if (!portesData.length) return 0;
+      const pesosPorte: Record<string, number> = {
+        'Pequena': 33,
+        'Média': 66,
+        'Grande': 100,
+      };
+      let somaScore = 0;
+      let totalLeads = 0;
+      portesData.forEach(p => {
+        const peso = pesosPorte[p.porte] || 50;
+        somaScore += peso * p.quantidade;
+        totalLeads += p.quantidade;
+      });
+      return totalLeads > 0 ? Math.round(somaScore / totalLeads) : 0;
+    };
+
     // Radar Chart Data baseado nos dados reais
     const margemScore = Math.min(100, (analysis.margemMedia / 2000) * 100);
+    const vinculoScore = calcularVinculoScore();
+    const porteScore = calcularPorteScore();
     const radarData = [
       { caracteristica: 'Margem Média', valor: margemScore, fullMark: 100 },
       { caracteristica: 'Com Margem', valor: (analysis.comMargem / analysis.totalAprovados) * 100, fullMark: 100 },
-      { caracteristica: 'Top CBO', valor: topCBO ? Math.min(100, (topCBO.quantidade / analysis.totalAprovados) * 500) : 0, fullMark: 100 },
-      { caracteristica: 'Top Empresa', valor: topEmpresa ? Math.min(100, (topEmpresa.quantidade / analysis.totalAprovados) * 500) : 0, fullMark: 100 },
+      { caracteristica: 'Porte da Empresa', valor: porteScore, fullMark: 100 },
+      { caracteristica: 'Tempo de Vínculo', valor: vinculoScore, fullMark: 100 },
       { caracteristica: 'Diversidade', valor: Math.min(100, (analysis.topCBOs?.length || 0) * 10), fullMark: 100 },
     ];
 
@@ -276,7 +374,7 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
   return (
     <div className="space-y-6">
       {/* Header Row - Radar + Resumo */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
         {/* Radar Chart */}
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
@@ -289,13 +387,14 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
             </p>
           </CardHeader>
           <CardContent>
-            <div className="h-[350px]">
+            <div className="h-[280px] sm:h-[350px]">
               <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={perfil.radarData} cx="50%" cy="50%" outerRadius="70%">
+                <RadarChart data={perfil.radarData} cx="50%" cy="50%" outerRadius="65%">
                   <PolarGrid stroke="#374151" />
                   <PolarAngleAxis 
                     dataKey="caracteristica" 
-                    tick={{ fill: '#9ca3af', fontSize: 11 }} 
+                    tick={{ fill: '#9ca3af', fontSize: 9 }} 
+                    className="text-[8px] sm:text-[11px]"
                   />
                   <PolarRadiusAxis 
                     angle={90} 
@@ -329,22 +428,22 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
             </p>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {resumoItems.map((item) => (
                 <div 
                   key={item.title}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border"
+                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-2 sm:p-3 rounded-lg bg-muted/30 border border-border gap-2 sm:gap-3"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${item.bgColor}`}>
-                      <item.icon className={`w-4 h-4 ${item.color}`} />
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                    <div className={`p-1.5 sm:p-2 rounded-lg ${item.bgColor} flex-shrink-0`}>
+                      <item.icon className={`w-3 h-3 sm:w-4 sm:h-4 ${item.color}`} />
                     </div>
-                    <div>
-                      <p className="font-medium text-foreground">{item.title}</p>
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground text-sm sm:text-base truncate">{item.title}</p>
                       <p className="text-xs text-muted-foreground">{item.subtitle}</p>
                     </div>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium border ${item.bgColor} ${item.color} ${item.borderColor}`}>
+                  <span className={`px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm font-medium border ${item.bgColor} ${item.color} ${item.borderColor} self-start sm:self-center whitespace-nowrap flex-shrink-0`}>
                     {item.value}
                   </span>
                 </div>
@@ -355,7 +454,7 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
       </div>
 
       {/* Charts Row - Margem + Vínculo */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Distribuição por Faixa de Margem */}
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
@@ -478,6 +577,389 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
           </div>
         </CardContent>
       </Card>
+
+      {/* Charts Row - Parcelamento + Produtos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Tipos de Parcelamento */}
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <CreditCard className="w-5 h-5 text-blue-400" />
+              Tipos de Parcelamento
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Parcelamentos escolhidos pelos leads aprovados
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              {(analysis.distribuicaoParcelas || []).length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart 
+                    data={(analysis.distribuicaoParcelas || []).map(p => ({ parcela: `${p.parcelas}x`, quantidade: p.quantidade }))} 
+                    margin={{ left: 10, right: 20, bottom: 20 }}
+                  >
+                    <XAxis 
+                      dataKey="parcela" 
+                      tick={{ fill: '#9ca3af', fontSize: 12 }} 
+                      axisLine={{ stroke: '#374151' }}
+                    />
+                    <YAxis 
+                      tick={{ fill: '#9ca3af', fontSize: 11 }} 
+                      axisLine={{ stroke: '#374151' }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--popover))', 
+                        border: '1px solid hsl(var(--border))', 
+                        borderRadius: '8px',
+                        color: 'hsl(var(--foreground))'
+                      }}
+                      formatter={(value: number) => [`${value} leads`, 'Quantidade']}
+                    />
+                    <Bar 
+                      dataKey="quantidade" 
+                      fill="#3b82f6" 
+                      radius={[4, 4, 0, 0]} 
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  Nenhum dado de parcelamento disponível
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Distribuição por Banco */}
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <Package className="w-5 h-5 text-purple-400" />
+              Distribuição por Banco
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Leads aprovados por banco
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              {(analysis.distribuicaoBanco || []).length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart 
+                    data={(analysis.distribuicaoBanco || []).slice(0, 10).map(b => ({ 
+                      banco: b.banco.length > 25 ? b.banco.substring(0, 22) + '...' : b.banco, 
+                      bancoCompleto: b.banco,
+                      quantidade: b.quantidade 
+                    }))} 
+                    layout="vertical" 
+                    margin={{ left: 10, right: 20 }}
+                  >
+                    <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                    <YAxis 
+                      dataKey="banco" 
+                      type="category" 
+                      tick={{ fill: '#9ca3af', fontSize: 10 }} 
+                      width={120}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--popover))', 
+                        border: '1px solid hsl(var(--border))', 
+                        borderRadius: '8px',
+                        color: 'hsl(var(--foreground))'
+                      }}
+                      formatter={(value: number) => [`${value} leads`, 'Quantidade']}
+                    />
+                    <Bar 
+                      dataKey="quantidade" 
+                      fill="#8b5cf6" 
+                      radius={[0, 4, 4, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  Nenhum dado de banco disponível
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Seção Contratos Aprovados */}
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <CheckCircle className="w-5 h-5 text-emerald-400" />
+            Contratos Aprovados
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Análise detalhada dos contratos aprovados
+          </p>
+        </CardHeader>
+        <CardContent>
+          {isLoadingContratos ? (
+            <div className="py-8 text-center">
+              <div className="animate-pulse flex flex-col items-center">
+                <div className="h-8 w-48 bg-muted rounded mb-4"></div>
+                <div className="h-4 w-32 bg-muted rounded"></div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Row 1: Data de Digitação + Tempo de Digitação */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Top 3 Datas de Digitação */}
+                <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Calendar className="w-5 h-5 text-blue-400" />
+                    <h4 className="font-semibold text-foreground">Top 3 Datas de Digitação</h4>
+                  </div>
+                  {contratosAnalysis.topDatasDigitacao.length > 0 ? (
+                    <div className="space-y-3">
+                      {contratosAnalysis.topDatasDigitacao.map((item, index) => (
+                        <div key={index} className="flex items-center justify-between p-3 bg-background rounded-lg border border-border">
+                          <div className="flex items-center gap-3">
+                            <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm font-bold">
+                              {index + 1}
+                            </span>
+                            <span className="text-foreground font-medium">{item.data}</span>
+                          </div>
+                          <span className="text-muted-foreground">{item.quantidade} leads</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center text-muted-foreground py-4">
+                      Nenhum dado disponível
+                    </div>
+                  )}
+                </div>
+
+                {/* Top 3 Tempos de Digitação */}
+                <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Timer className="w-5 h-5 text-purple-400" />
+                    <h4 className="font-semibold text-foreground">Top 3 Tempos de Digitação</h4>
+                  </div>
+                  {contratosAnalysis.topTemposDigitacao.length > 0 ? (
+                    <div className="space-y-3">
+                      {contratosAnalysis.topTemposDigitacao.map((item, index) => (
+                        <div key={index} className="flex items-center justify-between p-3 bg-background rounded-lg border border-border">
+                          <div className="flex items-center gap-3">
+                            <span className="w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center text-sm font-bold">
+                              {index + 1}
+                            </span>
+                            <span className="text-foreground font-medium">{item.faixa}</span>
+                          </div>
+                          <span className="text-muted-foreground">{item.quantidade} leads</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center text-muted-foreground py-4">
+                      Nenhum dado disponível
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 2: Pago/Não Pago por Banco */}
+              <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                <div className="flex items-center gap-2 mb-4">
+                  <Banknote className="w-5 h-5 text-emerald-400" />
+                  <h4 className="font-semibold text-foreground">Pagos vs Não Pagos por Banco</h4>
+                </div>
+                {contratosAnalysis.pagoPorBanco.length > 0 ? (
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart 
+                        data={contratosAnalysis.pagoPorBanco.slice(0, 5)} 
+                        margin={{ left: 10, right: 20, bottom: 20 }}
+                      >
+                        <XAxis 
+                          dataKey="banco" 
+                          tick={{ fill: '#9ca3af', fontSize: 12 }} 
+                          axisLine={{ stroke: '#374151' }}
+                        />
+                        <YAxis 
+                          tick={{ fill: '#9ca3af', fontSize: 11 }} 
+                          axisLine={{ stroke: '#374151' }}
+                        />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: 'hsl(var(--popover))', 
+                            border: '1px solid hsl(var(--border))', 
+                            borderRadius: '8px',
+                            color: 'hsl(var(--foreground))'
+                          }}
+                          formatter={(value: number, name: string) => [
+                            `${value} leads`, 
+                            name === 'pagos' ? 'Pagos' : 'Não Pagos'
+                          ]}
+                        />
+                        <Bar 
+                          dataKey="pagos" 
+                          fill="#10b981" 
+                          radius={[4, 4, 0, 0]}
+                          name="pagos"
+                          onClick={(data) => handlePagosClick(data.banco, 'pagos')}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <Bar 
+                          dataKey="naoPagos" 
+                          fill="#ef4444" 
+                          radius={[4, 4, 0, 0]}
+                          name="naoPagos"
+                          onClick={(data) => handlePagosClick(data.banco, 'naoPagos')}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="text-center text-muted-foreground py-8">
+                    Nenhum dado de pagamento disponível
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground mt-2 text-center">
+                  Clique nas barras para visualizar os leads
+                </p>
+              </div>
+
+              {/* Row 3: Top 3 Datas de Pagamento */}
+              <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                <div className="flex items-center gap-2 mb-4">
+                  <CalendarCheck className="w-5 h-5 text-cyan-400" />
+                  <h4 className="font-semibold text-foreground">Top 3 Datas de Pagamento</h4>
+                </div>
+                {contratosAnalysis.topDatasPagamento.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {contratosAnalysis.topDatasPagamento.map((item, index) => (
+                      <div key={index} className="p-4 bg-background rounded-lg border border-border">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-sm font-bold">
+                            {index + 1}
+                          </span>
+                          <span className="text-foreground font-medium">{item.data}</span>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {item.quantidade} pagamentos
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center text-muted-foreground py-4">
+                    Nenhum dado de pagamento disponível
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Dialog para exibir leads pagos/não pagos */}
+      <Dialog open={pagosDialogOpen} onOpenChange={setPagosDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Banknote className="w-5 h-5 text-primary" />
+              {pagosDialogData?.titulo}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {pagosDialogData?.leads.length || 0} leads encontrados
+            </p>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto">
+            {pagosDialogData && pagosDialogData.leads.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>CPF</TableHead>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Banco</TableHead>
+                    <TableHead>Valor</TableHead>
+                    <TableHead>Data Digitação</TableHead>
+                    {pagosDialogData.tipo === 'pagos' && <TableHead>Data Pagamento</TableHead>}
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pagosDialogData.leads.map((lead, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-mono text-sm">{formatCpf(lead.cpf)}</TableCell>
+                      <TableCell className="max-w-[150px] truncate">{lead.nome || "-"}</TableCell>
+                      <TableCell>{lead.banco}</TableCell>
+                      <TableCell className="text-emerald-400 font-medium">
+                        {formatCurrency(lead.valorPago)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(lead.dataDigitacao).toLocaleDateString('pt-BR')}
+                      </TableCell>
+                      {pagosDialogData.tipo === 'pagos' && (
+                        <TableCell className="text-muted-foreground">
+                          {lead.dataPagamento ? new Date(lead.dataPagamento).toLocaleDateString('pt-BR') : '-'}
+                        </TableCell>
+                      )}
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleViewProposta(lead.id)}
+                          title="Ver proposta"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                Nenhum lead encontrado.
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para visualizar proposta */}
+      <Dialog open={propostaDialogOpen} onOpenChange={setPropostaDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-5 h-5 text-primary" />
+              Detalhes da Proposta
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto">
+            {loadingProposta ? (
+              <div className="py-8 text-center">
+                <div className="animate-pulse flex flex-col items-center">
+                  <div className="h-8 w-48 bg-muted rounded mb-4"></div>
+                  <div className="h-4 w-32 bg-muted rounded"></div>
+                </div>
+              </div>
+            ) : propostaData ? (
+              <pre className="bg-muted/50 rounded-lg p-4 text-xs overflow-x-auto whitespace-pre-wrap break-words font-mono text-foreground">
+                {JSON.stringify(propostaData, null, 2)}
+              </pre>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                Nenhum dado de proposta disponível.
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog para exibir leads por porte */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

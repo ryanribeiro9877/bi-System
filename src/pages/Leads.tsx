@@ -20,7 +20,6 @@ import PerfilIdealPanel from "@/components/leads/PerfilIdealPanel";
 import CBOsQueAprovamPanel from "@/components/leads/CBOsQueAprovamPanel";
 import EmpresasPanel from "@/components/leads/EmpresasPanel";
 import PorBancoPanel from "@/components/leads/PorBancoPanel";
-import AnaliseImportacoesPanel from "@/components/leads/AnaliseImportacoesPanel";
 import { useDashboard } from "@/contexts/DashboardContext";
 
 // Formata data como dd/mm/aaaa - hh:nn:ss
@@ -98,11 +97,28 @@ const LeadsContent = () => {
     return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">⏳ Pendente</Badge>;
   };
 
+  const formatCurrencyCompact = (value: number) => {
+    const v = value || 0;
+    if (v >= 1_000_000_000_000) {
+      return `R$ ${(v / 1_000_000_000_000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} T`;
+    }
+    if (v >= 1_000_000_000) {
+      return `R$ ${(v / 1_000_000_000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} B`;
+    }
+    if (v >= 1_000_000) {
+      return `R$ ${(v / 1_000_000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} M`;
+    }
+    if (v >= 1_000) {
+      return `R$ ${(v / 1_000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} K`;
+    }
+    return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
   const kpiCards = [
     {
       title: "Total Aprovados",
       value: statsFiltradas.leadsAprovados.toLocaleString("pt-BR"),
-      subtitle: "Leads com proposta aprovada",
+      subtitle: "Contratos digitados com proposta aprovada",
       icon: CheckCircle,
       borderColor: "border-l-emerald-500",
       textColor: "text-emerald-400",
@@ -111,7 +127,7 @@ const LeadsContent = () => {
     {
       title: "Taxa de Aprovação",
       value: `${statsFiltradas.taxaAprovacao}%`,
-      subtitle: "Do total de leads analisados",
+      subtitle: "Do total de contratos digitados",
       icon: TrendingUp,
       borderColor: "border-l-purple-500",
       textColor: "text-purple-400",
@@ -119,21 +135,17 @@ const LeadsContent = () => {
     },
     {
       title: "Margem Média",
-      value: `R$ ${statsFiltradas.margemMedia.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      subtitle: "Média dos leads aprovados",
+      value: formatCurrencyCompact(statsFiltradas.margemMedia),
+      subtitle: "Média dos contratos aprovados",
       icon: DollarSign,
       borderColor: "border-l-amber-500",
       textColor: "text-amber-400",
       iconBg: "bg-amber-500/20",
     },
     {
-      title: "Margem Total",
-      value: statsFiltradas.margemTotal >= 1000000 
-        ? `R$ ${(statsFiltradas.margemTotal / 1000000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`
-        : statsFiltradas.margemTotal >= 1000
-        ? `R$ ${(statsFiltradas.margemTotal / 1000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}K`
-        : `R$ ${statsFiltradas.margemTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      subtitle: "Soma das margens aprovadas",
+      title: "Valor Total\nde Digitação",
+      value: formatCurrencyCompact(statsFiltradas.margemTotal),
+      subtitle: "Soma das margens\naprovadas",
       icon: Wallet,
       borderColor: "border-l-cyan-500",
       textColor: "text-cyan-400",
@@ -165,8 +177,8 @@ const LeadsContent = () => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Leads</h1>
-            <p className="text-muted-foreground mt-1">Visualize e analise os leads importados</p>
+            <h1 className="text-3xl font-bold text-foreground">Contratos Digitados</h1>
+            <p className="text-muted-foreground mt-1">Visualize e analise os contratos importados</p>
           </div>
           <div className="flex items-center gap-3">
             <Filter className="w-4 h-4 text-muted-foreground" />
@@ -186,57 +198,58 @@ const LeadsContent = () => {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          {kpiCards.map((kpi) => (
-            <Card key={kpi.title} className={`bg-card border-l-4 ${kpi.borderColor} border-t-0 border-r-0 border-b-0`}>
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium text-muted-foreground">{kpi.title}</p>
-                    <p className={`text-3xl font-bold ${kpi.textColor}`}>{kpi.value}</p>
-                    <p className="text-xs text-muted-foreground">{kpi.subtitle}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          {kpiCards.map((kpi) => {
+            const titleClass = "text-sm font-medium text-muted-foreground";
+            const valueClass = `text-3xl font-bold ${kpi.textColor}`;
+
+            return (
+              <Card key={kpi.title} className={`bg-card border-l-4 ${kpi.borderColor} border-t-0 border-r-0 border-b-0`}>
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-3 min-w-0 flex-1">
+                      <p className={`${titleClass} whitespace-pre-line`}>{kpi.title}</p>
+                      <p className={`${valueClass} break-words`}>{kpi.value}</p>
+                      <p className="text-xs text-muted-foreground whitespace-pre-line">{kpi.subtitle}</p>
+                    </div>
+                    <div className={`p-2 rounded-full ${kpi.iconBg}`}>
+                      <kpi.icon className={`w-5 h-5 ${kpi.textColor}`} />
+                    </div>
                   </div>
-                  <div className={`p-2 rounded-full ${kpi.iconBg}`}>
-                    <kpi.icon className={`w-5 h-5 ${kpi.textColor}`} />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
 
         {/* Topic Tabs */}
         <Tabs defaultValue="lista" className="w-full">
-          <TabsList className="w-full grid grid-cols-6 bg-muted/50 border border-border rounded-lg p-1 h-auto">
-            <TabsTrigger value="analise" className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md">
-              <TrendingUp className="w-4 h-4" />
-              Análise
+          <TabsList className="w-full flex flex-wrap sm:grid sm:grid-cols-3 lg:grid-cols-5 bg-muted/50 border border-border rounded-lg p-1 h-auto gap-1">
+            <TabsTrigger value="perfil" className="flex-1 min-w-[120px] flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
+              <Settings className="w-3 h-3 sm:w-4 sm:h-4" />
+              <span className="hidden xs:inline">Perfil</span>
+              <span className="xs:hidden">Perfil</span>
             </TabsTrigger>
-            <TabsTrigger value="perfil" className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md">
-              <Settings className="w-4 h-4" />
-              Perfil Ideal
+            <TabsTrigger value="cbos" className="flex-1 min-w-[120px] flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
+              <BarChart3 className="w-3 h-3 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">CBOs que Aprovam</span>
+              <span className="sm:hidden">CBOs</span>
             </TabsTrigger>
-            <TabsTrigger value="cbos" className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md">
-              <BarChart3 className="w-4 h-4" />
-              CBOs que Aprovam
-            </TabsTrigger>
-            <TabsTrigger value="empresas" className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md">
-              <Building2 className="w-4 h-4" />
+            <TabsTrigger value="empresas" className="flex-1 min-w-[120px] flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
+              <Building2 className="w-3 h-3 sm:w-4 sm:h-4" />
               Empresas
             </TabsTrigger>
-            <TabsTrigger value="banco" className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md">
-              <Zap className="w-4 h-4" />
-              Por Banco
+            <TabsTrigger value="banco" className="flex-1 min-w-[120px] flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
+              <Zap className="w-3 h-3 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">Por Banco</span>
+              <span className="sm:hidden">Banco</span>
             </TabsTrigger>
-            <TabsTrigger value="lista" className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md">
-              <Users className="w-4 h-4" />
-              Lista de Leads
+            <TabsTrigger value="lista" className="flex-1 min-w-[120px] flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
+              <Users className="w-3 h-3 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">Lista de Leads</span>
+              <span className="sm:hidden">Lista</span>
             </TabsTrigger>
           </TabsList>
-
-          <TabsContent value="analise" className="mt-6">
-            <AnaliseImportacoesPanel bancoFilter={bancoFilter} importBatchId={selectedImportFile} />
-          </TabsContent>
 
           <TabsContent value="perfil" className="mt-6">
             <PerfilIdealPanel bancoFilter={bancoFilter} importBatchId={selectedImportFile} />

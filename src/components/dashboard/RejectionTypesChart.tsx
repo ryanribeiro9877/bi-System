@@ -38,7 +38,7 @@ const extractCleanMessage = (fullText: string): string => {
   }
   
   // Remove padrões técnicos comuns
-  let cleaned = fullText
+  const cleaned = fullText
     .replace(/\s*\(Code:\s*[A-Z_]+\)/gi, "")
     .replace(/\s*\|\s*Response completo:.*/gi, "")
     .replace(/\s*\{[^}]*\}/g, "")
@@ -118,7 +118,7 @@ const RejectionTypesChart = () => {
       <Card className="glass-card">
         <CardHeader>
           <CardTitle className="text-lg font-semibold text-foreground">
-            Tipos de Reprovação - Análise de Leads CLT
+            Tipos de Reprovação - Análise de Contratos Digitados
           </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center h-[350px]">
@@ -132,7 +132,7 @@ const RejectionTypesChart = () => {
     <Card className="glass-card">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-lg font-semibold text-foreground">
-          Tipos de Reprovação - Análise de Leads CLT
+          Tipos de Reprovação - Análise de Contratos Digitados
         </CardTitle>
         {hasMore && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -209,8 +209,8 @@ const RejectionTypesChart = () => {
                 lineHeight: "1.4",
               }}
               itemStyle={{ color: "hsl(var(--muted-foreground))" }}
-              labelFormatter={(label: string, payload: any[]) => {
-                const item = payload?.[0]?.payload;
+              labelFormatter={(label: string, payload: { payload?: { fullName?: string } }[] | undefined) => {
+                const item = payload?.[0]?.payload as { fullName?: string } | undefined;
                 return item?.fullName || label;
               }}
               formatter={(value: number) => [value, "Quantidade"]}
