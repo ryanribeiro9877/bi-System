@@ -106,16 +106,36 @@ const ConsultaMargemReprovadaPanel = () => {
           if (error) throw error;
           
           if (data && data.length > 0) {
-            // Filtrar apenas leads que possuem valorMargemDisponivel no retorno_margem
-            // Isso indica que a consulta de margem retornou um valor (positivo, zero ou negativo)
+            // Filtrar leads que possuem valor de margem em qualquer campo
+            // Diferentes bancos usam campos diferentes para armazenar o valor de margem
             const leadsComMargem = (data as LeadMargemReprovada[]).filter(lead => {
-              const margem = lead.retorno_margem;
-              if (!margem) return false;
+              const margem = lead.retorno_margem as Record<string, unknown> | null;
+              const simulacao = lead.retorno_simulacao as Record<string, unknown> | null;
+              if (!margem && !simulacao) return false;
               
-              // Verificar se possui valorMargemDisponivel (qualquer valor numérico)
-              const temValorMargem = typeof margem.valorMargemDisponivel !== 'undefined' ||
-                                     typeof margem.valorMargemBase !== 'undefined' ||
-                                     typeof margem.margemDisponivel !== 'undefined';
+              // Verificar campos de margem em retorno_margem (todos os bancos)
+              const camposMargem = [
+                margem?.valorMargemDisponivel,
+                margem?.valorMargemBase,
+                margem?.margemDisponivel,
+                margem?.valor,
+                margem?.availableMarginValue,
+                // Campos aninhados
+                (margem?.details as Record<string, unknown>)?.availableMarginValue,
+              ];
+              
+              // Verificar campos de margem em retorno_simulacao (alguns bancos armazenam aqui)
+              const camposSimulacao = [
+                simulacao?.availableMarginValue,
+                simulacao?.valorMargem,
+                simulacao?.availableBalance,
+                (simulacao?.details as Record<string, unknown>)?.availableMarginValue,
+              ];
+              
+              // Verificar se algum campo possui valor numérico definido
+              const temValorMargem = [...camposMargem, ...camposSimulacao].some(
+                v => typeof v === 'number' || (typeof v === 'string' && !isNaN(parseFloat(v)))
+              );
               
               return temValorMargem;
             });
@@ -156,6 +176,35 @@ const ConsultaMargemReprovadaPanel = () => {
     return leads.filter(lead => lead.banco === bancoSelecionado);
   }, [leads, bancoSelecionado]);
 
+  // Função auxiliar para extrair valor de margem de qualquer banco
+  const extrairValorMargemLead = (lead: LeadMargemReprovada): number => {
+    const margem = lead.retorno_margem as Record<string, unknown> | null;
+    const simulacao = lead.retorno_simulacao as Record<string, unknown> | null;
+    
+    // Lista de campos possíveis em ordem de prioridade
+    const fontes = [
+      // retorno_margem
+      margem?.valorMargemDisponivel,
+      margem?.valorMargemBase,
+      margem?.margemDisponivel,
+      margem?.valor,
+      margem?.availableMarginValue,
+      (margem?.details as Record<string, unknown>)?.availableMarginValue,
+      // retorno_simulacao
+      simulacao?.valorMargem,
+      simulacao?.availableBalance,
+      simulacao?.availableMarginValue,
+      (simulacao?.details as Record<string, unknown>)?.availableMarginValue,
+    ];
+    
+    for (const v of fontes) {
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string' && !isNaN(parseFloat(v))) return parseFloat(v);
+    }
+    
+    return 0;
+  };
+
   // KPIs
   const kpis = useMemo(() => {
     const quantidade = leadsFiltrados.length;
@@ -166,13 +215,7 @@ const ConsultaMargemReprovadaPanel = () => {
     let somaNegativas = 0;
     
     leadsFiltrados.forEach(lead => {
-      const margem = lead.retorno_margem;
-      const simulacao = lead.retorno_simulacao;
-      const valor = margem?.valorMargemDisponivel ?? 
-                    margem?.valorMargemBase ?? 
-                    margem?.margemDisponivel ??
-                    simulacao?.valorMargem ??
-                    simulacao?.availableBalance ?? 0;
+      const valor = extrairValorMargemLead(lead);
       
       somaMargens += valor;
       
