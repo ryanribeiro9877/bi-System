@@ -91,18 +91,21 @@ const isBloqueioNegocio = (texto: string): boolean => {
 };
 
 /**
- * Verifica se é erro de conexão/timeout (PENDENTE, não REPROVADO)
+ * Verifica se é erro de conexão que deve ser tratado como PENDENTE
+ * 
+ * NOTA: error 28 (Operation timed out) é tratado como REPROVADO, não PENDENTE
+ * Apenas erros de limite excedido são considerados pendentes
  */
 const isErroConexao = (erro: string): boolean => {
   const lower = erro.toLowerCase();
-  return (
-    lower.includes("timeout") ||
-    lower.includes("curl error") ||
-    lower.includes("rate limit") ||
-    lower.includes("connection") ||
-    lower.includes("network") ||
-    (lower.includes("limite") && lower.includes("excedido"))
-  );
+  
+  // Error 28: Operation timed out - NÃO é pendente, é REPROVADO
+  if (lower.includes("error 28") || lower.includes("operation timed out")) {
+    return false;
+  }
+  
+  // Apenas limite excedido é considerado pendente
+  return (lower.includes("limite") && lower.includes("excedido"));
 };
 
 // =====================================================
@@ -247,37 +250,23 @@ const hasBloqueioNegocio = (lead: LeadData): boolean => {
 };
 
 /**
- * Verifica se a API retornou status "success" ou equivalente
- * REGRA PRINCIPAL: retorno_proposta.status = "success" indica proposta aceita
+ * Verifica se a proposta foi aprovada
  * 
  * CRITÉRIO ÚNICO DE APROVAÇÃO:
- * - retorno_proposta.status = "success" = proposta aceita pelo banco
+ * - retorno_proposta.status === "success" (APENAS este valor)
+ * 
+ * Qualquer outra mensagem ou status = REPROVADO
  */
 const hasStatusSuccess = (lead: LeadData): boolean => {
   const proposta = lead.retorno_proposta as any;
-  const getProposta = lead.retorno_get_proposta as any;
   
   // =====================================================
-  // REGRA PRINCIPAL: retorno_proposta.status = "success"
-  // Este é o ÚNICO indicador confiável de aprovação
+  // CRITÉRIO ÚNICO: retorno_proposta.status === "success"
+  // Qualquer outro valor ou ausência = NÃO APROVADO
   // =====================================================
   if (proposta?.status) {
-    const status = String(proposta.status).toLowerCase();
-    if (status === "success" || status === "aprovada" || status === "approved") {
-      return true;
-    }
-  }
-  
-  // V8/UY3: formalizationLink presente indica sucesso
-  if (proposta?.formalizationLink) {
-    return true;
-  }
-  
-  // V8/UY3: retorno_get_proposta.status indica proposta em andamento
-  // Apenas se retorno_proposta.status também for success
-  if (getProposta?.status && proposta?.status === "success") {
-    const status = String(getProposta.status).toLowerCase();
-    if (status === "success" || status === "formalization" || status === "pending" || status === "approved") {
+    const status = String(proposta.status).toLowerCase().trim();
+    if (status === "success") {
       return true;
     }
   }
@@ -393,33 +382,30 @@ export const extrairMotivoErro = (lead: LeadData): string | null => {
 /**
  * REGRA MESTRE: Normaliza o status do lead
  * 
- * APROVADO = status success + valores financeiros > 0 + sem bloqueio de negócio
- * REPROVADO = sem valores financeiros OU bloqueio de negócio (CBO, Compliance, etc.)
+ * APROVADO = APENAS quando retorno_proposta.status === "success"
  * PENDENTE = erros de sistema (timeout, limite, conexão)
+ * REPROVADO = qualquer outro caso
  * 
- * Aplicável apenas a: V8, UY3 (PRESENÇA desconsiderado por falta de dados válidos)
+ * Aplicável a todos os bancos: V8, UY3, PRESENÇA
  */
 export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
-  const proposta = lead.retorno_proposta as Record<string, unknown> | null;
-  
   // =====================================================
-  // CRITÉRIO ÚNICO DE APROVAÇÃO (TODOS OS BANCOS):
+  // 1. CRITÉRIO ÚNICO DE APROVAÇÃO:
   // retorno_proposta.status === "success"
-  // Verifica de múltiplas formas para garantir precisão
   // =====================================================
-  if (proposta) {
-    const status = proposta.status;
-    if (status === "success" || status === "Success" || status === "SUCCESS") {
-      return "aprovado";
-    }
-    // Também verifica como string
-    if (typeof status === "string" && status.toLowerCase() === "success") {
-      return "aprovado";
-    }
+  if (hasStatusSuccess(lead)) {
+    return "aprovado";
   }
   
   // =====================================================
-  // REPROVADO: Tudo mais (sem verificação de pendente)
+  // 2. VERIFICAR SE É PENDENTE (erros de sistema)
+  // =====================================================
+  if (isPendente(lead)) {
+    return "pendente";
+  }
+  
+  // =====================================================
+  // 3. REPROVADO: Tudo mais (qualquer outra mensagem)
   // =====================================================
   return "reprovado";
 };

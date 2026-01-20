@@ -243,7 +243,17 @@ const extrairTipoReprovacao = (simulacao: any, margem: any, getProposta?: any, p
     autorizacao?.error,
   ];
   
-  return fontes.find(v => v && String(v).trim().length > 0)?.toString();
+  const erro = fontes.find(v => v && String(v).trim().length > 0)?.toString();
+  
+  // Classificar erro 28 (Operation timed out) como "Erro de consulta código 28"
+  if (erro) {
+    const erroLower = erro.toLowerCase();
+    if (erroLower.includes("error 28") || erroLower.includes("operation timed out")) {
+      return "Erro de consulta código 28";
+    }
+  }
+  
+  return erro;
 };
 
 // Função para extrair valor de margem disponível - busca em TODAS as colunas
@@ -282,14 +292,19 @@ const determinarStatus = (
   margem: any,
   banco?: string
 ): string => {
-  // Usar a função centralizada que implementa o "filtro de sucesso"
-  return normalizarStatusLead({
-    banco: banco || null,
-    retorno_margem: margem,
-    retorno_simulacao: simulacao,
-    retorno_proposta: proposta,
-    retorno_get_proposta: getProposta,
-  });
+  try {
+    // Usar a função centralizada que implementa o "filtro de sucesso"
+    return normalizarStatusLead({
+      banco: banco || null,
+      retorno_margem: margem,
+      retorno_simulacao: simulacao,
+      retorno_proposta: proposta,
+      retorno_get_proposta: getProposta,
+    });
+  } catch (error) {
+    console.error("[determinarStatus] Erro ao normalizar status:", error);
+    return "pendente"; // Fallback seguro
+  }
 };
 
 const Importacoes = () => {
@@ -483,99 +498,155 @@ const Importacoes = () => {
     return String(value);
   };
 
+  // Função auxiliar para processar uma linha do Excel
+  const processExcelRow = (row: Record<string, unknown>, fileName: string): ParsedLead => {
+    const lead: ParsedLead = { cpf: "" };
+    
+    // Processar cada coluna - apenas campos essenciais primeiro
+    const keys = Object.keys(row);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const normalizedKey = normalizeColumnName(key);
+      const value = row[key];
+      
+      switch (normalizedKey) {
+        case "cpf":
+          lead.cpf = String(value).replace(/\D/g, "");
+          break;
+        case "nome":
+          lead.nome = value as string;
+          break;
+        case "banco":
+          lead.banco = value as string;
+          break;
+        case "cbo":
+          lead.cbo = value as string;
+          break;
+        case "status":
+          lead.status = value as string;
+          break;
+        case "tipo_reprovacao":
+          lead.tipo_reprovacao = value as string;
+          break;
+        case "valor":
+          lead.valor = parseFloat(String(value)) || undefined;
+          break;
+        case "data_envio":
+          lead.data_envio = value as string;
+          break;
+        case "data_retorno":
+          lead.data_retorno = value as string;
+          break;
+        case "observacoes":
+          lead.observacoes = value as string;
+          break;
+        case "retorno_autorizacao":
+          lead.retorno_autorizacao = parseJsonSafe(value);
+          break;
+        case "retorno_margem":
+          lead.retorno_margem = parseJsonSafe(value);
+          break;
+        case "retorno_simulacao":
+          lead.retorno_simulacao = parseJsonSafe(value);
+          break;
+        case "retorno_proposta":
+          lead.retorno_proposta = parseJsonSafe(value);
+          break;
+        case "retorno_get_proposta":
+          lead.retorno_get_proposta = parseJsonSafe(value);
+          break;
+        case "ultimo_log":
+          lead.ultimo_log = parseExcelDate(value);
+          break;
+      }
+    }
+    
+    // Extrair dados adicionais - com try-catch para evitar erros
+    try {
+      if (!lead.nome) {
+        lead.nome = extrairNomeDoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
+      }
+      if (!lead.cbo) {
+        lead.cbo = extrairCBODoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
+      }
+      lead.banco = extrairBancoDoNomeArquivo(fileName);
+      if (!lead.status) {
+        lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem, lead.banco);
+      }
+      if (!lead.tipo_reprovacao && lead.status === "reprovado") {
+        lead.tipo_reprovacao = extrairTipoReprovacao(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
+      }
+      if (!lead.valor) {
+        lead.valor = extrairValorMargem(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta);
+      }
+      if (lead.status === "reprovado") {
+        const cboBlock = extrairCBOBloqueado(lead.tipo_reprovacao, lead.retorno_margem, lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_autorizacao);
+        lead.cbo_block_code = cboBlock.code;
+        lead.cbo_block_name = cboBlock.name;
+      }
+    } catch (e) {
+      // Ignorar erros de extração
+    }
+    
+    return lead;
+  };
+
   const parseExcel = (file: File): Promise<ParsedLead[]> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         try {
+          console.log("[parseExcel] Iniciando leitura do arquivo:", file.name);
           const data = new Uint8Array(e.target?.result as ArrayBuffer);
-          // Usar raw: true para obter números seriais de datas, depois converter manualmente
-          const workbook = XLSX.read(data, { type: "array", cellDates: false });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: true });
           
-          const leads: ParsedLead[] = jsonData.map((row: any) => {
-            const lead: ParsedLead = { cpf: "" };
-            
-            // Processar cada coluna
-            Object.keys(row).forEach(key => {
-              const normalizedKey = normalizeColumnName(key);
-              const value = row[key];
-              
-              if (normalizedKey === "cpf") {
-                lead.cpf = String(value).replace(/\D/g, "");
-              } else if (normalizedKey === "nome") {
-                lead.nome = value;
-              } else if (normalizedKey === "banco") {
-                lead.banco = value;
-              } else if (normalizedKey === "cbo") {
-                lead.cbo = value;
-              } else if (normalizedKey === "status") {
-                lead.status = value;
-              } else if (normalizedKey === "tipo_reprovacao") {
-                lead.tipo_reprovacao = value;
-              } else if (normalizedKey === "valor") {
-                lead.valor = parseFloat(value) || undefined;
-              } else if (normalizedKey === "data_envio") {
-                lead.data_envio = value;
-              } else if (normalizedKey === "data_retorno") {
-                lead.data_retorno = value;
-              } else if (normalizedKey === "observacoes") {
-                lead.observacoes = value;
-              } else if (normalizedKey === "retorno_autorizacao") {
-                lead.retorno_autorizacao = parseJsonSafe(value);
-              } else if (normalizedKey === "retorno_margem") {
-                lead.retorno_margem = parseJsonSafe(value);
-              } else if (normalizedKey === "retorno_simulacao") {
-                lead.retorno_simulacao = parseJsonSafe(value);
-              } else if (normalizedKey === "retorno_proposta") {
-                lead.retorno_proposta = parseJsonSafe(value);
-              } else if (normalizedKey === "retorno_get_proposta") {
-                lead.retorno_get_proposta = parseJsonSafe(value);
-              } else if (normalizedKey === "ultimo_log") {
-                lead.ultimo_log = parseExcelDate(value);
-              }
-            });
-            
-            // Extrair dados adicionais dos JSONs se não foram preenchidos diretamente
-            if (!lead.nome) {
-              lead.nome = extrairNomeDoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
-            }
-            if (!lead.cbo) {
-              lead.cbo = extrairCBODoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
-            }
-            // O banco é SEMPRE definido pelo nome do arquivo
-            lead.banco = extrairBancoDoNomeArquivo(file.name);
-            if (!lead.status) {
-              lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem, lead.banco);
-            }
-            // Extrair tipo de reprovação se status for reprovado
-            if (!lead.tipo_reprovacao && lead.status === "reprovado") {
-              lead.tipo_reprovacao = extrairTipoReprovacao(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
-            }
-            // Extrair valor da margem disponível
-            if (!lead.valor) {
-              lead.valor = extrairValorMargem(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta);
-            }
-            // Extrair CBO bloqueado se houver mensagem de erro - busca em TODAS as fontes
-            if (lead.status === "reprovado") {
-              const cboBlock = extrairCBOBloqueado(
-                lead.tipo_reprovacao, 
-                lead.retorno_margem, 
-                lead.retorno_simulacao, 
-                lead.retorno_proposta, 
-                lead.retorno_autorizacao
-              );
-              lead.cbo_block_code = cboBlock.code;
-              lead.cbo_block_name = cboBlock.name;
-            }
-            
-            return lead;
+          // Ler workbook com opções otimizadas para memória
+          const workbook = XLSX.read(data, { 
+            type: "array", 
+            cellDates: false,
+            cellNF: false,    // Não parsear formatos de número
+            cellStyles: false // Não parsear estilos
           });
           
-          resolve(leads.filter(l => l.cpf));
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          
+          // Obter range da planilha para processar em chunks
+          const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+          const totalRows = range.e.r - range.s.r;
+          console.log("[parseExcel] Total de linhas:", totalRows);
+          
+          // Converter para JSON em uma única operação (mais eficiente que row-by-row)
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: true, defval: null });
+          
+          // Liberar memória do worksheet original
+          delete workbook.Sheets[sheetName];
+          
+          console.log("[parseExcel] Registros JSON:", jsonData.length);
+          
+          // Processar em chunks para evitar bloqueio da UI
+          const leads: ParsedLead[] = [];
+          const chunkSize = 500;
+          
+          for (let i = 0; i < jsonData.length; i += chunkSize) {
+            const chunk = jsonData.slice(i, i + chunkSize);
+            
+            for (const row of chunk) {
+              const lead = processExcelRow(row as Record<string, unknown>, file.name);
+              if (lead.cpf) {
+                leads.push(lead);
+              }
+            }
+            
+            // Permitir que a UI respire a cada chunk
+            if (i + chunkSize < jsonData.length) {
+              await new Promise(r => setTimeout(r, 0));
+            }
+          }
+          
+          console.log("[parseExcel] Leads válidos:", leads.length);
+          resolve(leads);
         } catch (error) {
+          console.error("[parseExcel] Erro:", error);
           reject(error);
         }
       };
@@ -589,86 +660,31 @@ const Importacoes = () => {
       Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
-        complete: (results) => {
-          const leads: ParsedLead[] = results.data.map((row: any) => {
-            const lead: ParsedLead = { cpf: "" };
-            
-            Object.keys(row).forEach(key => {
-              const normalizedKey = normalizeColumnName(key);
-              const value = row[key];
-              
-              if (normalizedKey === "cpf") {
-                lead.cpf = String(value).replace(/\D/g, "");
-              } else if (normalizedKey === "nome") {
-                lead.nome = value;
-              } else if (normalizedKey === "banco") {
-                lead.banco = value;
-              } else if (normalizedKey === "cbo") {
-                lead.cbo = value;
-              } else if (normalizedKey === "status") {
-                lead.status = value;
-              } else if (normalizedKey === "tipo_reprovacao") {
-                lead.tipo_reprovacao = value;
-              } else if (normalizedKey === "valor") {
-                lead.valor = parseFloat(value) || undefined;
-              } else if (normalizedKey === "data_envio") {
-                lead.data_envio = value;
-              } else if (normalizedKey === "data_retorno") {
-                lead.data_retorno = value;
-              } else if (normalizedKey === "observacoes") {
-                lead.observacoes = value;
-              } else if (normalizedKey === "retorno_autorizacao") {
-                lead.retorno_autorizacao = parseJsonSafe(value);
-              } else if (normalizedKey === "retorno_margem") {
-                lead.retorno_margem = parseJsonSafe(value);
-              } else if (normalizedKey === "retorno_simulacao") {
-                lead.retorno_simulacao = parseJsonSafe(value);
-              } else if (normalizedKey === "retorno_proposta") {
-                lead.retorno_proposta = parseJsonSafe(value);
-              } else if (normalizedKey === "retorno_get_proposta") {
-                lead.retorno_get_proposta = parseJsonSafe(value);
-              } else if (normalizedKey === "ultimo_log") {
-                lead.ultimo_log = value;
-              }
-            });
-            
-            // Extrair dados adicionais dos JSONs
-            if (!lead.nome) {
-              lead.nome = extrairNomeDoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
-            }
-            if (!lead.cbo) {
-              lead.cbo = extrairCBODoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
-            }
-            // O banco é SEMPRE definido pelo nome do arquivo
-            lead.banco = extrairBancoDoNomeArquivo(file.name);
-            if (!lead.status) {
-              lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem, lead.banco);
-            }
-            // Extrair tipo de reprovação se status for reprovado
-            if (!lead.tipo_reprovacao && lead.status === "reprovado") {
-              lead.tipo_reprovacao = extrairTipoReprovacao(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
-            }
-            // Extrair valor da margem disponível
-            if (!lead.valor) {
-              lead.valor = extrairValorMargem(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta);
-            }
-            // Extrair CBO bloqueado se houver mensagem de erro - busca em TODAS as fontes
-            if (lead.status === "reprovado") {
-              const cboBlock = extrairCBOBloqueado(
-                lead.tipo_reprovacao, 
-                lead.retorno_margem, 
-                lead.retorno_simulacao, 
-                lead.retorno_proposta, 
-                lead.retorno_autorizacao
-              );
-              lead.cbo_block_code = cboBlock.code;
-              lead.cbo_block_name = cboBlock.name;
-            }
-            
-            return lead;
-          });
+        complete: async (results) => {
+          console.log("[parseCSV] Registros encontrados:", results.data.length);
           
-          resolve(leads.filter(l => l.cpf));
+          const leads: ParsedLead[] = [];
+          const chunkSize = 500;
+          
+          // Processar em chunks para evitar Out of Memory
+          for (let i = 0; i < results.data.length; i += chunkSize) {
+            const chunk = results.data.slice(i, i + chunkSize);
+            
+            for (const row of chunk) {
+              const lead = processExcelRow(row as Record<string, unknown>, file.name);
+              if (lead.cpf) {
+                leads.push(lead);
+              }
+            }
+            
+            // Permitir que a UI respire
+            if (i + chunkSize < results.data.length) {
+              await new Promise(r => setTimeout(r, 0));
+            }
+          }
+          
+          console.log("[parseCSV] Leads válidos:", leads.length);
+          resolve(leads);
         },
         error: reject,
       });
@@ -824,21 +840,30 @@ const Importacoes = () => {
         }
       }
 
-      // Update import record
-      await supabase
+      // Update import record - garantir que o status seja atualizado corretamente
+      const finalStatus = successCount > 0 && failCount === 0 ? "completed" : 
+                          successCount > 0 && failCount > 0 ? "completed_with_errors" : 
+                          "failed";
+      
+      const { error: updateError } = await supabase
         .from("imports")
         .update({
           successful_records: successCount,
           failed_records: failCount,
-          status: failCount === 0 ? "completed" : "completed_with_errors",
+          status: finalStatus,
           completed_at: new Date().toISOString(),
         })
         .eq("id", importRecord.id);
 
+      if (updateError) {
+        console.error("Erro ao atualizar registro de importação:", updateError);
+      }
+
       const validationMessage = invalidCount > 0 ? ` (${invalidCount} inválidos por CPF ou dados incorretos)` : "";
       toast({
-        title: "Importação concluída",
+        title: finalStatus === "completed" ? "Importação concluída com sucesso" : "Importação concluída",
         description: `${successCount} registros importados com sucesso${failCount > 0 ? `, ${failCount} falharam${validationMessage}` : ""}.`,
+        variant: finalStatus === "completed" ? "default" : "destructive",
       });
 
       // Emitir evento para sincronização global
@@ -881,11 +906,13 @@ const Importacoes = () => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "completed":
-        return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Concluído</Badge>;
+        return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Sucesso</Badge>;
       case "completed_with_errors":
         return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">Com Erros</Badge>;
       case "processing":
         return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">Processando</Badge>;
+      case "failed":
+        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">Falhou</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }

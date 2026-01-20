@@ -123,15 +123,21 @@ const ResultadosConsultasPanel = () => {
 
   const handlePieClick = async (data: { name: string; value: number }) => {
     if (!data?.name) return;
+    
+    // Ignorar clique em categorias vazias ou "Não Categorizado" sem dados
+    if (data.value === 0 || (data.name === 'Não Categorizado' && data.value === 0)) {
+      return;
+    }
+    
     setLoadingLeads(true);
     setDialogOpen(true);
     setDialogData({ titulo: `Leads - Categoria: ${data.name}`, subtitulo: `Carregando...`, leads: [] });
     try {
       // Buscar os tipos de erro que pertencem a esta categoria
+      // Usar categoria_erro do banco de dados para consistência
       const errosDaCategoria = errosAnalise
         .filter(e => {
-          const categoria = categorizarErro(e.tipo_erro);
-          return categoria === data.name && (bancoSelecionado === "todos" || e.banco === bancoSelecionado);
+          return e.categoria_erro === data.name && (bancoSelecionado === "todos" || e.banco === bancoSelecionado);
         })
         .map(e => e.tipo_erro);
 
@@ -141,17 +147,19 @@ const ResultadosConsultasPanel = () => {
         return;
       }
 
-      const { data: leads, error } = await supabase
+      const { data: leads, error, count } = await supabase
         .from('leads')
-        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao')
+        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao', { count: 'exact' })
         .in('tipo_reprovacao', errosDaCategoria)
         .eq('status', 'reprovado')
         .limit(100);
       
       if (error) throw error;
+      const totalLeads = count || (leads || []).length;
+      const exibindo = (leads || []).length;
       setDialogData({ 
         titulo: `Leads - Categoria: ${data.name}`, 
-        subtitulo: `${(leads || []).length} leads encontrados`, 
+        subtitulo: totalLeads > exibindo ? `${totalLeads.toLocaleString('pt-BR')} leads encontrados (exibindo ${exibindo})` : `${totalLeads.toLocaleString('pt-BR')} leads encontrados`, 
         leads: (leads || []) as LeadPorErro[]
       });
     } catch (err) {
@@ -439,17 +447,19 @@ const ResultadosConsultasPanel = () => {
     fetchData();
   }, [selectedImportFile]);
 
-  // Agrupar erros por categoria (apenas categorias com dados > 0)
+  // Agrupar erros por categoria (apenas categorias com dados > 0 e excluindo "Não Categorizado" vazio)
   const errosPorCategoria = useMemo(() => {
     const grouped = new Map<string, number>();
     errosAnalise
       .filter(e => bancoSelecionado === "todos" || e.banco === bancoSelecionado)
+      .filter(e => e.tipo_erro && e.tipo_erro !== 'Não informado') // Excluir erros sem tipo
       .forEach(e => {
-        grouped.set(e.categoria_erro, (grouped.get(e.categoria_erro) || 0) + Number(e.quantidade));
+        const categoria = e.categoria_erro || 'Outros';
+        grouped.set(categoria, (grouped.get(categoria) || 0) + Number(e.quantidade));
       });
     return Array.from(grouped.entries())
       .map(([name, value]) => ({ name, value }))
-      .filter(item => item.value > 0)
+      .filter(item => item.value > 0 && item.name !== 'Não Categorizado') // Excluir "Não Categorizado"
       .sort((a, b) => b.value - a.value);
   }, [errosAnalise, bancoSelecionado]);
 

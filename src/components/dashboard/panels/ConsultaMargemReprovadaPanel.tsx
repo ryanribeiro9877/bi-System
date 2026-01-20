@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Users, TrendingDown, DollarSign, BarChart3, Building2, AlertTriangle, Percent, Eye } from "lucide-react";
+import { Users, TrendingDown, TrendingUp, DollarSign, BarChart3, Building2, AlertTriangle, Percent, Eye } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -50,9 +50,12 @@ const ConsultaMargemReprovadaPanel = () => {
   };
 
   const handleBarClick = (motivo: string, banco: string) => {
-    const leadsDoMotivoBanco = leads.filter(
-      lead => lead.tipo_reprovacao === motivo && lead.banco === banco
-    );
+    const leadsDoMotivoBanco = leads.filter(lead => {
+      // Tratar "Não informado" como null/undefined/vazio
+      const motivoLead = lead.tipo_reprovacao || 'Não informado';
+      const bancoLead = lead.banco || 'Não informado';
+      return motivoLead === motivo && bancoLead === banco;
+    });
     setDialogData({
       titulo: `Leads - ${banco}`,
       subtitulo: `${leadsDoMotivoBanco.length} leads com erro: ${motivo.substring(0, 50)}${motivo.length > 50 ? '...' : ''}`,
@@ -77,24 +80,57 @@ const ConsultaMargemReprovadaPanel = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // Filtrar diretamente no banco usando ilike para buscar leads com "margem" no tipo_reprovacao
+        // REGRA: Clientes com Margem Reprovada = leads que apresentaram valor de margem mas a proposta não foi aprovada
+        // Ou seja: leads com retorno_margem (contendo valorMargemDisponivel) E status != 'aprovado'
+        
+        // Buscar leads que NÃO foram aprovados e possuem retorno_margem
         let query = supabase
           .from('leads')
           .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, valor')
-          .eq('status', 'reprovado')
-          .ilike('tipo_reprovacao', '%margem%');
+          .neq('status', 'aprovado')
+          .not('retorno_margem', 'is', null);
 
         if (selectedImportFile) {
           query = query.eq('import_batch_id', selectedImportFile);
         }
 
-        const { data, error } = await query;
+        // Buscar em lotes se houver mais de 1000 registros
+        const allLeads: LeadMargemReprovada[] = [];
+        const pageSize = 1000;
+        let offset = 0;
+        let hasMore = true;
 
-        if (error) throw error;
+        while (hasMore) {
+          const { data, error } = await query.range(offset, offset + pageSize - 1);
+          
+          if (error) throw error;
+          
+          if (data && data.length > 0) {
+            // Filtrar apenas leads que possuem valorMargemDisponivel no retorno_margem
+            // Isso indica que a consulta de margem retornou um valor (positivo, zero ou negativo)
+            const leadsComMargem = (data as LeadMargemReprovada[]).filter(lead => {
+              const margem = lead.retorno_margem;
+              if (!margem) return false;
+              
+              // Verificar se possui valorMargemDisponivel (qualquer valor numérico)
+              const temValorMargem = typeof margem.valorMargemDisponivel !== 'undefined' ||
+                                     typeof margem.valorMargemBase !== 'undefined' ||
+                                     typeof margem.margemDisponivel !== 'undefined';
+              
+              return temValorMargem;
+            });
+            
+            allLeads.push(...leadsComMargem);
+            offset += pageSize;
+            hasMore = data.length === pageSize;
+          } else {
+            hasMore = false;
+          }
+        }
 
-        console.log('[ConsultaMargemReprovada] Leads com margem reprovada:', data?.length);
+        console.log('[ConsultaMargemReprovada] Leads com margem mas não aprovados:', allLeads.length);
 
-        setLeads((data || []) as (LeadMargemReprovada & { valor?: number })[]);
+        setLeads(allLeads);
       } catch (err) {
         console.error('Erro ao buscar leads com margem reprovada:', err);
       } finally {
@@ -124,8 +160,12 @@ const ConsultaMargemReprovadaPanel = () => {
   const kpis = useMemo(() => {
     const quantidade = leadsFiltrados.length;
     
-    // Soma das margens - buscar em múltiplas fontes
-    const somaMargens = leadsFiltrados.reduce((sum, lead) => {
+    // Separar margens positivas e negativas
+    let somaMargens = 0;
+    let somaPositivas = 0;
+    let somaNegativas = 0;
+    
+    leadsFiltrados.forEach(lead => {
       const margem = lead.retorno_margem;
       const simulacao = lead.retorno_simulacao;
       const valor = margem?.valorMargemDisponivel ?? 
@@ -133,23 +173,31 @@ const ConsultaMargemReprovadaPanel = () => {
                     margem?.margemDisponivel ??
                     simulacao?.valorMargem ??
                     simulacao?.availableBalance ?? 0;
-      return sum + Math.abs(valor);
-    }, 0);
+      
+      somaMargens += valor;
+      
+      if (valor >= 0) {
+        somaPositivas += valor;
+      } else {
+        somaNegativas += valor; // Mantém o valor negativo
+      }
+    });
 
     const mediaMargens = quantidade > 0 ? somaMargens / quantidade : 0;
 
-    // Valor em produção - usar campo valor ou simulação
+    // Valor em produção - REGRA: usar liquidValue do retorno_simulacao
     const valorProducao = leadsFiltrados.reduce((sum, lead) => {
       const simulacao = lead.retorno_simulacao;
-      const valor = lead.valor ?? 
-                    simulacao?.requestedAmount ?? 
-                    simulacao?.liquidValue ?? 0;
+      // Prioridade: liquidValue é o valor principal para cálculo de produção gasto
+      const valor = simulacao?.liquidValue ?? 0;
       return sum + Math.abs(valor);
     }, 0);
 
     return {
       quantidade,
       somaMargens,
+      somaPositivas,
+      somaNegativas,
       mediaMargens,
       valorProducao
     };
@@ -236,59 +284,90 @@ const ConsultaMargemReprovadaPanel = () => {
         </Tabs>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="bg-card border-border">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-red-500/10">
-                <Users className="w-6 h-6 text-red-500" />
+      {/* KPIs - Grid uniforme de 2 colunas */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Linha 1 */}
+        <Card className="bg-card border-border overflow-hidden">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="p-2 sm:p-3 rounded-lg bg-red-500/10 flex-shrink-0">
+                <Users className="w-5 h-5 sm:w-6 sm:h-6 text-red-500" />
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Clientes com Margem Reprovada</p>
-                <p className="text-2xl font-bold text-foreground">{kpis.quantidade.toLocaleString('pt-BR')}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-orange-500/10">
-                <TrendingDown className="w-6 h-6 text-orange-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Soma Total das Margens</p>
-                <p className="text-2xl font-bold text-foreground">{formatCurrency(kpis.somaMargens)}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-muted-foreground truncate">Clientes com Margem Reprovada</p>
+                <p className="text-lg sm:text-2xl font-bold text-foreground truncate">{kpis.quantidade.toLocaleString('pt-BR')}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-card border-border">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-yellow-500/10">
-                <Percent className="w-6 h-6 text-yellow-500" />
+        <Card className="bg-card border-border overflow-hidden">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="p-2 sm:p-3 rounded-lg bg-emerald-500/10 flex-shrink-0">
+                <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500" />
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Média das Margens</p>
-                <p className="text-2xl font-bold text-foreground">{formatCurrency(kpis.mediaMargens)}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-muted-foreground truncate">Margens Positivas</p>
+                <p className="text-lg sm:text-2xl font-bold text-emerald-500 truncate">{formatCurrency(kpis.somaPositivas)}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-card border-border">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-purple-500/10">
-                <DollarSign className="w-6 h-6 text-purple-500" />
+        {/* Linha 2 */}
+        <Card className="bg-card border-border overflow-hidden">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="p-2 sm:p-3 rounded-lg bg-red-500/10 flex-shrink-0">
+                <TrendingDown className="w-5 h-5 sm:w-6 sm:h-6 text-red-500" />
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Valor em Produção Gasto</p>
-                <p className="text-2xl font-bold text-foreground">{formatCurrency(kpis.valorProducao)}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-muted-foreground truncate">Margens Negativas</p>
+                <p className="text-lg sm:text-2xl font-bold text-red-500 truncate">{formatCurrency(kpis.somaNegativas)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card border-border overflow-hidden">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="p-2 sm:p-3 rounded-lg bg-orange-500/10 flex-shrink-0">
+                <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-muted-foreground truncate">Soma Total das Margens</p>
+                <p className={`text-lg sm:text-2xl font-bold truncate ${kpis.somaMargens >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{formatCurrency(kpis.somaMargens)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Linha 3 */}
+        <Card className="bg-card border-border overflow-hidden">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="p-2 sm:p-3 rounded-lg bg-yellow-500/10 flex-shrink-0">
+                <Percent className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-500" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-muted-foreground truncate">Média das Margens</p>
+                <p className={`text-lg sm:text-2xl font-bold truncate ${kpis.mediaMargens >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{formatCurrency(kpis.mediaMargens)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card border-border overflow-hidden">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="p-2 sm:p-3 rounded-lg bg-purple-500/10 flex-shrink-0">
+                <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-purple-500" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-muted-foreground truncate">Valor em Produção Gasto</p>
+                <p className="text-lg sm:text-2xl font-bold text-foreground truncate">{formatCurrency(kpis.valorProducao)}</p>
               </div>
             </div>
           </CardContent>
@@ -423,35 +502,138 @@ const ConsultaMargemReprovadaPanel = () => {
           <div className="flex-1 overflow-auto">
             {selectedLead && (
               <div className="space-y-4">
+                {/* Informações Básicas */}
                 <div className="p-4 rounded-lg bg-muted/30 border border-border">
                   <h4 className="font-medium text-foreground mb-2">Informações Básicas</h4>
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div>
                       <span className="text-muted-foreground">Banco:</span>
-                      <span className="ml-2 text-foreground">{selectedLead.banco}</span>
+                      <span className="ml-2 text-foreground">{selectedLead.banco || 'Não informado'}</span>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Tipo de Erro:</span>
-                      <span className="ml-2 text-red-400">{selectedLead.tipo_reprovacao}</span>
+                      <span className="ml-2 text-red-400">{selectedLead.tipo_reprovacao || 'Não informado'}</span>
                     </div>
                   </div>
                 </div>
 
+                {/* Motivo do Erro - Extraído dos dados reais */}
+                {(() => {
+                  const margem = selectedLead.retorno_margem as Record<string, unknown> | null;
+                  const simulacao = selectedLead.retorno_simulacao as Record<string, unknown> | null;
+                  
+                  // Extrair motivos de erro dos dados reais
+                  const motivos: { campo: string; valor: string }[] = [];
+                  
+                  // Verificar retorno_margem
+                  if (margem) {
+                    if (margem.error) motivos.push({ campo: 'Erro de Margem', valor: String(margem.error) });
+                    if (margem.motivo) motivos.push({ campo: 'Motivo', valor: String(margem.motivo) });
+                    if (margem.message) motivos.push({ campo: 'Mensagem', valor: String(margem.message) });
+                    if (margem.statusDescription) motivos.push({ campo: 'Descrição do Status', valor: String(margem.statusDescription) });
+                    if (margem.descricao) motivos.push({ campo: 'Descrição', valor: String(margem.descricao) });
+                    if (typeof margem.valorMargemDisponivel !== 'undefined') {
+                      motivos.push({ campo: 'Margem Disponível', valor: formatCurrency(Number(margem.valorMargemDisponivel)) });
+                    }
+                    if (typeof margem.valorMargemBase !== 'undefined') {
+                      motivos.push({ campo: 'Margem Base', valor: formatCurrency(Number(margem.valorMargemBase)) });
+                    }
+                  }
+                  
+                  // Verificar retorno_simulacao
+                  if (simulacao) {
+                    if (simulacao.error) motivos.push({ campo: 'Erro de Simulação', valor: String(simulacao.error) });
+                    if (simulacao.motivo) motivos.push({ campo: 'Motivo Simulação', valor: String(simulacao.motivo) });
+                    if (simulacao.message) motivos.push({ campo: 'Mensagem Simulação', valor: String(simulacao.message) });
+                    const details = simulacao.details as Record<string, unknown> | undefined;
+                    if (details?.error) motivos.push({ campo: 'Detalhe do Erro', valor: String(details.error) });
+                    if (details?.description) motivos.push({ campo: 'Descrição do Erro', valor: String(details.description) });
+                  }
+                  
+                  if (motivos.length > 0) {
+                    return (
+                      <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30">
+                        <h4 className="font-medium text-red-400 mb-3 flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4" />
+                          Motivo da Reprovação
+                        </h4>
+                        <div className="space-y-2">
+                          {motivos.map((m, idx) => (
+                            <div key={idx} className="text-sm">
+                              <span className="text-muted-foreground">{m.campo}:</span>
+                              <span className="ml-2 text-foreground">{m.valor}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* Dados de Margem */}
                 {selectedLead.retorno_margem && (
                   <div className="p-4 rounded-lg bg-muted/30 border border-border">
-                    <h4 className="font-medium text-foreground mb-2">Retorno de Margem</h4>
-                    <pre className="text-xs text-muted-foreground overflow-auto max-h-[200px] bg-background p-2 rounded">
-                      {JSON.stringify(selectedLead.retorno_margem, null, 2)}
-                    </pre>
+                    <h4 className="font-medium text-foreground mb-2">Dados de Margem</h4>
+                    <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                      {(() => {
+                        const m = selectedLead.retorno_margem as Record<string, unknown>;
+                        const campos: { label: string; valor: string }[] = [];
+                        
+                        if (typeof m.valorMargemDisponivel !== 'undefined') campos.push({ label: 'Margem Disponível', valor: formatCurrency(Number(m.valorMargemDisponivel)) });
+                        if (typeof m.valorMargemBase !== 'undefined') campos.push({ label: 'Margem Base', valor: formatCurrency(Number(m.valorMargemBase)) });
+                        if (typeof m.margemDisponivel !== 'undefined') campos.push({ label: 'Margem', valor: formatCurrency(Number(m.margemDisponivel)) });
+                        if (m.status) campos.push({ label: 'Status', valor: String(m.status) });
+                        if (m.matricula) campos.push({ label: 'Matrícula', valor: String(m.matricula) });
+                        if (m.convenio) campos.push({ label: 'Convênio', valor: String(m.convenio) });
+                        
+                        return campos.map((c, idx) => (
+                          <div key={idx}>
+                            <span className="text-muted-foreground">{c.label}:</span>
+                            <span className="ml-2 text-foreground">{c.valor}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                    <details className="text-xs">
+                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Ver dados completos</summary>
+                      <pre className="text-xs text-muted-foreground overflow-auto max-h-[150px] bg-background p-2 rounded mt-2">
+                        {JSON.stringify(selectedLead.retorno_margem, null, 2)}
+                      </pre>
+                    </details>
                   </div>
                 )}
 
+                {/* Dados de Simulação */}
                 {selectedLead.retorno_simulacao && (
                   <div className="p-4 rounded-lg bg-muted/30 border border-border">
-                    <h4 className="font-medium text-foreground mb-2">Retorno de Simulação</h4>
-                    <pre className="text-xs text-muted-foreground overflow-auto max-h-[200px] bg-background p-2 rounded">
-                      {JSON.stringify(selectedLead.retorno_simulacao, null, 2)}
-                    </pre>
+                    <h4 className="font-medium text-foreground mb-2">Dados de Simulação</h4>
+                    <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                      {(() => {
+                        const s = selectedLead.retorno_simulacao as Record<string, unknown>;
+                        const campos: { label: string; valor: string }[] = [];
+                        
+                        if (s.status) campos.push({ label: 'Status', valor: String(s.status) });
+                        if (typeof s.requestedAmount !== 'undefined') campos.push({ label: 'Valor Solicitado', valor: formatCurrency(Number(s.requestedAmount)) });
+                        if (typeof s.liquidValue !== 'undefined') campos.push({ label: 'Valor Líquido', valor: formatCurrency(Number(s.liquidValue)) });
+                        if (typeof s.availableBalance !== 'undefined') campos.push({ label: 'Saldo Disponível', valor: formatCurrency(Number(s.availableBalance)) });
+                        if (s.numberOfPayments) campos.push({ label: 'Parcelas', valor: String(s.numberOfPayments) });
+                        if (s.productName) campos.push({ label: 'Produto', valor: String(s.productName) });
+                        
+                        return campos.map((c, idx) => (
+                          <div key={idx}>
+                            <span className="text-muted-foreground">{c.label}:</span>
+                            <span className="ml-2 text-foreground">{c.valor}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                    <details className="text-xs">
+                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Ver dados completos</summary>
+                      <pre className="text-xs text-muted-foreground overflow-auto max-h-[150px] bg-background p-2 rounded mt-2">
+                        {JSON.stringify(selectedLead.retorno_simulacao, null, 2)}
+                      </pre>
+                    </details>
                   </div>
                 )}
               </div>
