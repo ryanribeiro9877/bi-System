@@ -24,7 +24,7 @@ const OverviewPanel = () => {
       {/* KPIs Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
         <KPICard
-          title="Total de Contratos Digitados"
+          title="Total de Consultas Realizadas"
           value={stats.totalLeads.toLocaleString("pt-BR")}
           icon={Users}
           variant="default"
