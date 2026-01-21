@@ -89,7 +89,7 @@ const CBOsContent = () => {
 
   if (isLoading) {
     return (
-      <main className="flex-1 p-8">
+      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8">
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
@@ -98,35 +98,35 @@ const CBOsContent = () => {
   }
 
   return (
-    <main className="flex-1 p-8">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0">
+      <div className="max-w-7xl mx-auto space-y-4 lg:space-y-8">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-foreground">CBOs Bloqueados</h1>
-          <p className="text-muted-foreground mt-1">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground">CBOs Bloqueados</h1>
+          <p className="text-sm lg:text-base text-muted-foreground mt-1">
             Análise de ocupações e reprovações
           </p>
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-4">
           {kpiCards.map((kpi) => (
             <Card
               key={kpi.title}
               className={`bg-gradient-to-br ${kpi.bgGradient} border-l-4 ${kpi.borderColor} border-t-0 border-r-0 border-b-0`}
             >
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium text-muted-foreground">
+              <CardContent className="p-3 lg:p-6">
+                <div className="flex items-start justify-between gap-1">
+                  <div className="space-y-1 lg:space-y-3 min-w-0 flex-1">
+                    <p className="text-xs lg:text-sm font-medium text-muted-foreground">
                       {kpi.title}
                     </p>
-                    <p className={`text-3xl font-bold ${kpi.textColor}`}>
+                    <p className={`text-lg sm:text-xl lg:text-3xl font-bold ${kpi.textColor} truncate`}>
                       {kpi.value}
                     </p>
-                    <p className="text-xs text-muted-foreground">{kpi.subtitle}</p>
+                    <p className="text-[10px] lg:text-xs text-muted-foreground line-clamp-2">{kpi.subtitle}</p>
                   </div>
-                  <kpi.icon className={`w-5 h-5 ${kpi.iconColor}`} />
+                  <kpi.icon className={`w-4 h-4 lg:w-5 lg:h-5 ${kpi.iconColor} flex-shrink-0`} />
                 </div>
               </CardContent>
             </Card>
@@ -135,50 +135,53 @@ const CBOsContent = () => {
 
         {/* Tabs */}
         <Tabs defaultValue="visao-geral" className="w-full">
-          <TabsList className="w-full grid grid-cols-4 bg-muted/50 border border-border rounded-lg p-1 h-auto">
+          <div className="overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0">
+          <TabsList className="inline-flex min-w-max lg:w-full lg:grid lg:grid-cols-4 bg-muted/50 border border-border rounded-lg p-1 h-auto gap-1">
             <TabsTrigger
               value="visao-geral"
-              className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
+              className="flex-1 min-w-[80px] flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
             >
-              <LayoutGrid className="w-4 h-4" />
-              Visão Geral
+              <LayoutGrid className="w-3 h-3 lg:w-4 lg:h-4" />
+              <span className="hidden sm:inline">Visão Geral</span>
+              <span className="sm:hidden">Geral</span>
             </TabsTrigger>
             <TabsTrigger
               value="por-banco"
-              className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
+              className="flex-1 min-w-[80px] flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
             >
-              <Zap className="w-4 h-4" />
-              Por Banco
+              <Zap className="w-3 h-3 lg:w-4 lg:h-4" />
+              Banco
             </TabsTrigger>
             <TabsTrigger
               value="por-setor"
-              className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
+              className="flex-1 min-w-[80px] flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
             >
-              <Factory className="w-4 h-4" />
-              Por Setor
+              <Factory className="w-3 h-3 lg:w-4 lg:h-4" />
+              Setor
             </TabsTrigger>
             <TabsTrigger
               value="lista-completa"
-              className="flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2.5 rounded-md"
+              className="flex-1 min-w-[80px] flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
             >
-              <List className="w-4 h-4" />
-              Lista Completa
+              <List className="w-3 h-3 lg:w-4 lg:h-4" />
+              Lista
             </TabsTrigger>
           </TabsList>
+          </div>
 
-          <TabsContent value="visao-geral" className="mt-6">
+          <TabsContent value="visao-geral" className="mt-4 lg:mt-6">
             <VisaoGeralCBOsPanel />
           </TabsContent>
 
-          <TabsContent value="por-banco" className="mt-6">
+          <TabsContent value="por-banco" className="mt-4 lg:mt-6">
             <PorBancoCBOsPanel />
           </TabsContent>
 
-          <TabsContent value="por-setor" className="mt-6">
+          <TabsContent value="por-setor" className="mt-4 lg:mt-6">
             <PorSetorCBOsPanel />
           </TabsContent>
 
-          <TabsContent value="lista-completa" className="mt-6">
+          <TabsContent value="lista-completa" className="mt-4 lg:mt-6">
             <ListaCompletaCBOsPanel />
           </TabsContent>
         </Tabs>

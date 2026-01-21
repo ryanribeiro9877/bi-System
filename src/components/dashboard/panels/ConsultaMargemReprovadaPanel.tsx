@@ -15,17 +15,8 @@ interface LeadMargemReprovada {
   banco: string | null;
   tipo_reprovacao: string | null;
   valor?: number | null;
-  retorno_margem: {
-    valorMargemDisponivel?: number;
-    valorMargemBase?: number;
-    margemDisponivel?: number;
-  } | null;
-  retorno_simulacao: {
-    requestedAmount?: number;
-    liquidValue?: number;
-    availableBalance?: number;
-    valorMargem?: number;
-  } | null;
+  retorno_margem: Record<string, unknown> | null;
+  retorno_simulacao: Record<string, unknown> | null;
 }
 
 const COLORS = [
@@ -80,76 +71,67 @@ const ConsultaMargemReprovadaPanel = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // REGRA: Clientes com Margem Reprovada = leads que apresentaram valor de margem mas a proposta não foi aprovada
-        // Ou seja: leads com retorno_margem (contendo valorMargemDisponivel) E status != 'aprovado'
-        
-        // Buscar leads que NÃO foram aprovados e possuem retorno_margem
-        let query = supabase
-          .from('leads')
-          .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, valor')
-          .neq('status', 'aprovado')
-          .not('retorno_margem', 'is', null);
-
-        if (selectedImportFile) {
-          query = query.eq('import_batch_id', selectedImportFile);
-        }
-
-        // Buscar em lotes se houver mais de 1000 registros
-        const allLeads: LeadMargemReprovada[] = [];
+        // Carregar TODOS os leads reprovados em lotes paralelos para máxima velocidade
         const pageSize = 1000;
-        let offset = 0;
-        let hasMore = true;
-
-        while (hasMore) {
-          const { data, error } = await query.range(offset, offset + pageSize - 1);
+        
+        // Primeiro, obter contagem total para saber quantas requisições fazer
+        let countQuery = supabase
+          .from('leads')
+          .select('cpf', { count: 'exact', head: true })
+          .eq('status', 'reprovado');
+        
+        if (selectedImportFile) {
+          countQuery = countQuery.eq('import_batch_id', selectedImportFile);
+        }
+        
+        const { count } = await countQuery;
+        const totalCount = count || 0;
+        console.log('[ConsultaMargemReprovada] Total de leads:', totalCount);
+        
+        if (totalCount === 0) {
+          setLeads([]);
+          setLoading(false);
+          return;
+        }
+        
+        // Calcular número de páginas necessárias
+        const numPages = Math.ceil(totalCount / pageSize);
+        
+        // Criar todas as requisições em paralelo (máximo 10 paralelas por vez)
+        const allLeads: LeadMargemReprovada[] = [];
+        const batchSize = 10; // Requisições paralelas por vez
+        
+        for (let batch = 0; batch < numPages; batch += batchSize) {
+          const promises = [];
           
-          if (error) throw error;
-          
-          if (data && data.length > 0) {
-            // Filtrar leads que possuem valor de margem em qualquer campo
-            // Diferentes bancos usam campos diferentes para armazenar o valor de margem
-            const leadsComMargem = (data as LeadMargemReprovada[]).filter(lead => {
-              const margem = lead.retorno_margem as Record<string, unknown> | null;
-              const simulacao = lead.retorno_simulacao as Record<string, unknown> | null;
-              if (!margem && !simulacao) return false;
-              
-              // Verificar campos de margem em retorno_margem (todos os bancos)
-              const camposMargem = [
-                margem?.valorMargemDisponivel,
-                margem?.valorMargemBase,
-                margem?.margemDisponivel,
-                margem?.valor,
-                margem?.availableMarginValue,
-                // Campos aninhados
-                (margem?.details as Record<string, unknown>)?.availableMarginValue,
-              ];
-              
-              // Verificar campos de margem em retorno_simulacao (alguns bancos armazenam aqui)
-              const camposSimulacao = [
-                simulacao?.availableMarginValue,
-                simulacao?.valorMargem,
-                simulacao?.availableBalance,
-                (simulacao?.details as Record<string, unknown>)?.availableMarginValue,
-              ];
-              
-              // Verificar se algum campo possui valor numérico definido
-              const temValorMargem = [...camposMargem, ...camposSimulacao].some(
-                v => typeof v === 'number' || (typeof v === 'string' && !isNaN(parseFloat(v)))
-              );
-              
-              return temValorMargem;
-            });
+          for (let i = batch; i < Math.min(batch + batchSize, numPages); i++) {
+            let query = supabase
+              .from('leads')
+              .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, valor')
+              .eq('status', 'reprovado')
+              .range(i * pageSize, (i + 1) * pageSize - 1);
             
-            allLeads.push(...leadsComMargem);
-            offset += pageSize;
-            hasMore = data.length === pageSize;
-          } else {
-            hasMore = false;
+            if (selectedImportFile) {
+              query = query.eq('import_batch_id', selectedImportFile);
+            }
+            
+            promises.push(query);
+          }
+          
+          const results = await Promise.all(promises);
+          
+          for (const { data, error } of results) {
+            if (error) {
+              console.error('[ConsultaMargemReprovada] Erro na query:', error);
+              continue;
+            }
+            if (data) {
+              allLeads.push(...(data as LeadMargemReprovada[]));
+            }
           }
         }
-
-        console.log('[ConsultaMargemReprovada] Leads com margem mas não aprovados:', allLeads.length);
-
+        
+        console.log('[ConsultaMargemReprovada] Leads carregados:', allLeads.length);
         setLeads(allLeads);
       } catch (err) {
         console.error('Erro ao buscar leads com margem reprovada:', err);
@@ -176,31 +158,61 @@ const ConsultaMargemReprovadaPanel = () => {
     return leads.filter(lead => lead.banco === bancoSelecionado);
   }, [leads, bancoSelecionado]);
 
-  // Função auxiliar para extrair valor de margem de qualquer banco
+  // Função auxiliar para extrair valor de margem
+  // UY3: usa valorMargemDisponivel do retorno_simulacao
+  // Presença e outros: usa valorMargemDisponivel do retorno_margem
   const extrairValorMargemLead = (lead: LeadMargemReprovada): number => {
-    const margem = lead.retorno_margem as Record<string, unknown> | null;
-    const simulacao = lead.retorno_simulacao as Record<string, unknown> | null;
+    const banco = lead.banco?.toUpperCase() || '';
     
-    // Lista de campos possíveis em ordem de prioridade
-    const fontes = [
-      // retorno_margem
-      margem?.valorMargemDisponivel,
-      margem?.valorMargemBase,
-      margem?.margemDisponivel,
-      margem?.valor,
-      margem?.availableMarginValue,
-      (margem?.details as Record<string, unknown>)?.availableMarginValue,
-      // retorno_simulacao
-      simulacao?.valorMargem,
-      simulacao?.availableBalance,
-      simulacao?.availableMarginValue,
-      (simulacao?.details as Record<string, unknown>)?.availableMarginValue,
-    ];
-    
-    for (const v of fontes) {
-      if (typeof v === 'number') return v;
-      if (typeof v === 'string' && !isNaN(parseFloat(v))) return parseFloat(v);
+    // Para banco UY3: buscar em retorno_simulacao
+    if (banco === 'UY3') {
+      const simulacaoRaw = lead.retorno_simulacao;
+      if (!simulacaoRaw) return 0;
+      
+      // retorno_simulacao pode ser um Array ou um objeto
+      let simulacao: Record<string, unknown> | null = null;
+      
+      if (Array.isArray(simulacaoRaw)) {
+        simulacao = simulacaoRaw[0] as Record<string, unknown> | null;
+      } else {
+        simulacao = simulacaoRaw as Record<string, unknown>;
+      }
+      
+      if (!simulacao) return 0;
+      
+      // Para UY3: valorMargemDisponivel está em result[0].valorMargemDisponivel
+      // Estrutura: retorno_simulacao[0].result[0].valorMargemDisponivel
+      const resultArray = simulacao?.result as Array<Record<string, unknown>> | undefined;
+      if (resultArray && Array.isArray(resultArray) && resultArray.length > 0) {
+        const valorMargem = resultArray[0]?.valorMargemDisponivel;
+        
+        if (typeof valorMargem === 'number') return valorMargem;
+        if (typeof valorMargem === 'string' && !isNaN(parseFloat(valorMargem))) return parseFloat(valorMargem);
+      }
+      
+      return 0;
     }
+    
+    // Para Presença e outros bancos: buscar em retorno_margem
+    const margemRaw = lead.retorno_margem;
+    if (!margemRaw) return 0;
+    
+    // retorno_margem pode ser um Array ou um objeto
+    let margem: Record<string, unknown> | null = null;
+    
+    if (Array.isArray(margemRaw)) {
+      margem = margemRaw[0] as Record<string, unknown> | null;
+    } else {
+      margem = margemRaw as Record<string, unknown>;
+    }
+    
+    if (!margem) return 0;
+    
+    // Buscar valorMargemDisponivel
+    const valorMargem = margem?.valorMargemDisponivel;
+    
+    if (typeof valorMargem === 'number') return valorMargem;
+    if (typeof valorMargem === 'string' && !isNaN(parseFloat(valorMargem))) return parseFloat(valorMargem);
     
     return 0;
   };
@@ -209,30 +221,31 @@ const ConsultaMargemReprovadaPanel = () => {
   const kpis = useMemo(() => {
     const quantidade = leadsFiltrados.length;
     
-    // Separar margens positivas e negativas
-    let somaMargens = 0;
+    // Separar margens positivas e negativas baseado em valorMargemDisponivel
     let somaPositivas = 0;
     let somaNegativas = 0;
     
     leadsFiltrados.forEach(lead => {
       const valor = extrairValorMargemLead(lead);
       
-      somaMargens += valor;
-      
-      if (valor >= 0) {
+      if (valor > 0) {
         somaPositivas += valor;
-      } else {
+      } else if (valor < 0) {
         somaNegativas += valor; // Mantém o valor negativo
       }
     });
 
+    // Soma Total = Margem Positiva - Margem Negativa (valor absoluto)
+    const somaMargens = somaPositivas - Math.abs(somaNegativas);
     const mediaMargens = quantidade > 0 ? somaMargens / quantidade : 0;
 
     // Valor em produção - REGRA: usar liquidValue do retorno_simulacao
     const valorProducao = leadsFiltrados.reduce((sum, lead) => {
       const simulacao = lead.retorno_simulacao;
       // Prioridade: liquidValue é o valor principal para cálculo de produção gasto
-      const valor = simulacao?.liquidValue ?? 0;
+      const liquidValue = simulacao?.liquidValue;
+      const valor = typeof liquidValue === 'number' ? liquidValue : 
+                    typeof liquidValue === 'string' ? parseFloat(liquidValue) || 0 : 0;
       return sum + Math.abs(valor);
     }, 0);
 
@@ -338,7 +351,7 @@ const ConsultaMargemReprovadaPanel = () => {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-xs sm:text-sm text-muted-foreground truncate">Clientes com Margem Reprovada</p>
-                <p className="text-lg sm:text-2xl font-bold text-foreground truncate">{kpis.quantidade.toLocaleString('pt-BR')}</p>
+                <p className="text-lg sm:text-2xl font-bold text-red-500 truncate">{kpis.quantidade.toLocaleString('pt-BR')}</p>
               </div>
             </div>
           </CardContent>
@@ -441,7 +454,7 @@ const ConsultaMargemReprovadaPanel = () => {
                   <div className="h-[200px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={item.dados} layout="vertical" margin={{ left: 10, right: 30 }}>
-                        <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                        <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false} />
                         <YAxis 
                           dataKey="banco" 
                           type="category" 
@@ -449,13 +462,23 @@ const ConsultaMargemReprovadaPanel = () => {
                           tick={{ fill: '#9ca3af', fontSize: 11 }}
                         />
                         <Tooltip 
+                          cursor={{ fill: 'rgba(255, 255, 255, 0.1)' }}
+                          wrapperStyle={{ outline: 'none', zIndex: 1000 }}
+                          labelFormatter={() => ''}
+                          formatter={(value: number) => {
+                            return [
+                              <span key="val" style={{ color: '#ef4444', fontWeight: 'bold' }}>{value?.toLocaleString('pt-BR')}</span>,
+                              <span key="label" style={{ color: '#ffffff' }}>Quantidade</span>
+                            ];
+                          }}
                           contentStyle={{ 
                             backgroundColor: 'hsl(var(--popover))', 
                             border: '1px solid hsl(var(--border))',
                             borderRadius: '8px',
-                            color: 'hsl(var(--foreground))',
+                            padding: '8px 12px'
                           }}
-                          formatter={(value: number) => [<span style={{ color: '#ffffff' }}>{value.toLocaleString()}</span>, <span style={{ color: '#ffffff' }}>Quantidade</span>]}
+                          itemStyle={{ color: '#ffffff' }}
+                          labelStyle={{ display: 'none' }}
                         />
                         <Bar 
                           dataKey="quantidade" 

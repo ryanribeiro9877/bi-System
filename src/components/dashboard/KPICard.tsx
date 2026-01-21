@@ -33,24 +33,24 @@ const iconStyles = {
 const KPICard = ({ title, value, subtitle, icon: Icon, trend, variant = "default", expandable, onExpand }: KPICardProps) => {
   return (
     <Card className={`glass-card bg-gradient-to-br ${variantStyles[variant]} overflow-hidden group hover:scale-[1.02] transition-transform duration-300`}>
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between">
-          <div className="space-y-2 flex-1 min-w-0">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-3xl font-bold text-foreground truncate">{value}</p>
+      <CardContent className="p-4 lg:p-6">
+        <div className="flex items-start justify-between gap-2">
+          <div className="space-y-1 lg:space-y-2 flex-1 min-w-0">
+            <p className="text-xs lg:text-sm font-medium text-muted-foreground line-clamp-2">{title}</p>
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground truncate">{value}</p>
             {subtitle && (
-              <p className="text-sm text-muted-foreground">{subtitle}</p>
+              <p className="text-xs lg:text-sm text-muted-foreground">{subtitle}</p>
             )}
             {trend && (
-              <div className={`flex items-center gap-1 text-sm ${trend.isPositive ? "text-success" : "text-destructive"}`}>
+              <div className={`flex items-center gap-1 text-xs lg:text-sm ${trend.isPositive ? "text-success" : "text-destructive"}`}>
                 <span>{trend.isPositive ? "↑" : "↓"}</span>
                 <span>{trend.value}%</span>
               </div>
             )}
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <div className={`p-3 rounded-xl ${iconStyles[variant]} transition-transform group-hover:scale-110`}>
-              <Icon className="w-6 h-6" />
+          <div className="flex flex-col items-end gap-2 flex-shrink-0">
+            <div className={`p-2 lg:p-3 rounded-xl ${iconStyles[variant]} transition-transform group-hover:scale-110`}>
+              <Icon className="w-5 h-5 lg:w-6 lg:h-6" />
             </div>
             {expandable && onExpand && (
               <Button 

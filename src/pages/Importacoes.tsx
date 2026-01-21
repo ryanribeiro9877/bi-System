@@ -926,34 +926,34 @@ const Importacoes = () => {
     <div className="min-h-screen flex w-full bg-background">
       <DashboardSidebar />
       
-      <main className="flex-1 p-8">
-        <div className="max-w-6xl mx-auto space-y-8">
+      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0">
+        <div className="max-w-6xl mx-auto space-y-4 lg:space-y-8">
           {/* Header */}
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Importações</h1>
-            <p className="text-muted-foreground mt-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground">Importações</h1>
+            <p className="text-sm lg:text-base text-muted-foreground mt-1">
               Importe dados de leads através de arquivos Excel ou CSV
             </p>
           </div>
 
           {/* Upload Area */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="w-5 h-5" />
+            <CardHeader className="p-4 lg:p-6">
+              <CardTitle className="flex items-center gap-2 text-base lg:text-lg">
+                <Upload className="w-4 h-4 lg:w-5 lg:h-5" />
                 Importar Arquivo
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-xs lg:text-sm">
                 Arraste e solte um arquivo ou clique para selecionar. Formatos aceitos: .xlsx, .xls, .csv
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 lg:p-6 pt-0">
               <div
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 className={`
-                  border-2 border-dashed rounded-lg p-12 text-center transition-colors cursor-pointer
+                  border-2 border-dashed rounded-lg p-6 lg:p-12 text-center transition-colors cursor-pointer
                   ${isDragging 
                     ? "border-primary bg-primary/5" 
                     : "border-border hover:border-primary/50 hover:bg-muted/50"
@@ -973,45 +973,45 @@ const Importacoes = () => {
                 />
                 
                 {isProcessing ? (
-                  <div className="flex flex-col items-center gap-4">
-                    <Loader2 className="w-12 h-12 text-primary animate-spin" />
-                    <p className="text-muted-foreground">Processando arquivo...</p>
+                  <div className="flex flex-col items-center gap-3 lg:gap-4">
+                    <Loader2 className="w-8 h-8 lg:w-12 lg:h-12 text-primary animate-spin" />
+                    <p className="text-sm lg:text-base text-muted-foreground">Processando arquivo...</p>
                   </div>
                 ) : selectedFile ? (
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-3 lg:gap-4">
+                    <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-full bg-primary/10 flex items-center justify-center">
                       {selectedFile.name.endsWith(".csv") ? (
-                        <FileText className="w-8 h-8 text-primary" />
+                        <FileText className="w-6 h-6 lg:w-8 lg:h-8 text-primary" />
                       ) : (
-                        <FileSpreadsheet className="w-8 h-8 text-primary" />
+                        <FileSpreadsheet className="w-6 h-6 lg:w-8 lg:h-8 text-primary" />
                       )}
                     </div>
-                    <div>
-                      <p className="font-medium text-foreground">{selectedFile.name}</p>
-                      <p className="text-sm text-muted-foreground">
+                    <div className="text-center">
+                      <p className="font-medium text-foreground text-sm lg:text-base break-all">{selectedFile.name}</p>
+                      <p className="text-xs lg:text-sm text-muted-foreground">
                         {(selectedFile.size / 1024).toFixed(2)} KB
                       </p>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
-                      <Upload className="w-8 h-8 text-muted-foreground" />
+                  <div className="flex flex-col items-center gap-3 lg:gap-4">
+                    <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-full bg-muted flex items-center justify-center">
+                      <Upload className="w-6 h-6 lg:w-8 lg:h-8 text-muted-foreground" />
                     </div>
-                    <div>
-                      <p className="font-medium text-foreground">
-                        Arraste um arquivo aqui ou clique para selecionar
+                    <div className="text-center">
+                      <p className="font-medium text-foreground text-sm lg:text-base">
+                        Arraste um arquivo ou clique para selecionar
                       </p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Suporta arquivos Excel (.xlsx, .xls) e CSV (.csv)
+                      <p className="text-xs lg:text-sm text-muted-foreground mt-1">
+                        Suporta Excel (.xlsx, .xls) e CSV (.csv)
                       </p>
                     </div>
                     <div className="flex gap-4 mt-2">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2 text-xs lg:text-sm text-muted-foreground">
                         <FileSpreadsheet className="w-4 h-4" />
                         Excel
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2 text-xs lg:text-sm text-muted-foreground">
                         <FileText className="w-4 h-4" />
                         CSV
                       </div>

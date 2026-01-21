@@ -57,14 +57,14 @@ const CBOsPieChart = () => {
   if (chartData.length === 0) {
     return (
       <Card className="glass-card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg font-semibold text-foreground">
-            <Layers className="w-5 h-5 text-purple-400" />
-            Distribuição de CBOs Bloqueados por Setor
+        <CardHeader className="p-4 lg:p-6">
+          <CardTitle className="flex items-center gap-2 text-base lg:text-lg font-semibold text-foreground">
+            <Layers className="w-4 h-4 lg:w-5 lg:h-5 text-purple-400 flex-shrink-0" />
+            <span className="line-clamp-2">Distribuição de CBOs Bloqueados por Setor</span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex items-center justify-center h-[300px]">
-          <p className="text-muted-foreground">Nenhum CBO bloqueado encontrado</p>
+        <CardContent className="flex items-center justify-center h-[200px] lg:h-[300px] p-4 lg:p-6">
+          <p className="text-muted-foreground text-sm">Nenhum CBO bloqueado encontrado</p>
         </CardContent>
       </Card>
     );
@@ -72,29 +72,29 @@ const CBOsPieChart = () => {
 
   return (
     <Card className="glass-card">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg font-semibold text-foreground">
-          <Layers className="w-5 h-5 text-purple-400" />
-          Distribuição de CBOs Bloqueados por Setor
+      <CardHeader className="p-4 lg:p-6">
+        <CardTitle className="flex items-center gap-2 text-base lg:text-lg font-semibold text-foreground">
+          <Layers className="w-4 h-4 lg:w-5 lg:h-5 text-purple-400 flex-shrink-0" />
+          <span className="line-clamp-2">CBOs Bloqueados por Setor</span>
         </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Agrupamento de profissões bloqueadas por área de atuação
+        <p className="text-xs lg:text-sm text-muted-foreground mt-1">
+          Profissões bloqueadas por área
         </p>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
+      <CardContent className="p-4 lg:p-6 pt-0 lg:pt-0">
+        <ResponsiveContainer width="100%" height={250} className="lg:!h-[300px]">
           <PieChart>
             <Pie
               data={chartData}
               cx="50%"
               cy="50%"
-              outerRadius={100}
-              innerRadius={40}
+              outerRadius={70}
+              innerRadius={30}
               paddingAngle={2}
               dataKey="value"
               labelLine={false}
-              label={({ name, percent }) => 
-                percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ''
+              label={({ percent }) => 
+                percent > 0.08 ? `${(percent * 100).toFixed(0)}%` : ''
               }
             >
               {chartData.map((entry, index) => (
@@ -103,8 +103,10 @@ const CBOsPieChart = () => {
             </Pie>
             <Tooltip content={<CustomTooltip />} />
             <Legend
-              formatter={(value) => <span className="text-foreground text-xs">{value}</span>}
-              wrapperStyle={{ fontSize: "12px" }}
+              formatter={(value) => <span className="text-foreground text-[10px] lg:text-xs">{value}</span>}
+              wrapperStyle={{ fontSize: "10px" }}
+              layout="horizontal"
+              verticalAlign="bottom"
             />
           </PieChart>
         </ResponsiveContainer>

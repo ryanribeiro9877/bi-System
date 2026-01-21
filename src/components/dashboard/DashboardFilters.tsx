@@ -59,8 +59,8 @@ const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) =
   const hasFilters = filters.dataInicial || filters.dataFinal || filters.banco || filters.status || filters.cpf;
 
   return (
-    <div className="glass-card p-4 mb-6">
-      <div className="flex flex-wrap gap-4 items-end">
+    <div className="glass-card p-3 lg:p-4 mb-4 lg:mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:flex-wrap gap-3 lg:gap-4 items-end">
         {/* Data Inicial */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground">Data Inicial</label>
@@ -69,12 +69,12 @@ const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) =
               <Button
                 variant="outline"
                 className={cn(
-                  "w-[140px] justify-start text-left font-normal h-9",
+                  "w-full lg:w-[140px] justify-start text-left font-normal h-9 text-xs sm:text-sm",
                   !filters.dataInicial && "text-muted-foreground"
                 )}
               >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {filters.dataInicial ? format(filters.dataInicial, "dd/MM/yyyy") : "Selecione"}
+                <CalendarIcon className="mr-1.5 sm:mr-2 h-4 w-4 flex-shrink-0" />
+                <span className="truncate">{filters.dataInicial ? format(filters.dataInicial, "dd/MM/yyyy") : "Selecione"}</span>
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
@@ -97,12 +97,12 @@ const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) =
               <Button
                 variant="outline"
                 className={cn(
-                  "w-[140px] justify-start text-left font-normal h-9",
+                  "w-full lg:w-[140px] justify-start text-left font-normal h-9 text-xs sm:text-sm",
                   !filters.dataFinal && "text-muted-foreground"
                 )}
               >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {filters.dataFinal ? format(filters.dataFinal, "dd/MM/yyyy") : "Selecione"}
+                <CalendarIcon className="mr-1.5 sm:mr-2 h-4 w-4 flex-shrink-0" />
+                <span className="truncate">{filters.dataFinal ? format(filters.dataFinal, "dd/MM/yyyy") : "Selecione"}</span>
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
@@ -121,7 +121,7 @@ const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) =
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground">Banco</label>
           <Select value={filters.banco} onValueChange={(value) => updateFilter("banco", value)}>
-            <SelectTrigger className="w-[140px] h-9">
+            <SelectTrigger className="w-full lg:w-[140px] h-9 text-xs sm:text-sm">
               <SelectValue placeholder="Todos" />
             </SelectTrigger>
             <SelectContent>
@@ -138,7 +138,7 @@ const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) =
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground">Status</label>
           <Select value={filters.status} onValueChange={(value) => updateFilter("status", value)}>
-            <SelectTrigger className="w-[180px] h-9">
+            <SelectTrigger className="w-full lg:w-[140px] h-9 text-xs sm:text-sm">
               <SelectValue placeholder="Todos" />
             </SelectTrigger>
             <SelectContent>
@@ -152,7 +152,7 @@ const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) =
         </div>
 
         {/* Busca por CPF */}
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5 col-span-2 sm:col-span-1">
           <label className="text-xs font-medium text-muted-foreground">Busca por CPF</label>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -160,7 +160,7 @@ const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) =
               placeholder="000.000.000-00"
               value={filters.cpf}
               onChange={(e) => updateFilter("cpf", e.target.value)}
-              className="pl-8 w-[160px] h-9"
+              className="pl-8 w-full lg:w-[160px] h-9 text-xs sm:text-sm"
             />
           </div>
         </div>
@@ -171,7 +171,7 @@ const DashboardFilters = ({ filters, onFiltersChange }: DashboardFiltersProps) =
             variant="ghost"
             size="sm"
             onClick={clearFilters}
-            className="h-9 text-muted-foreground hover:text-foreground"
+            className="h-9 text-muted-foreground hover:text-foreground col-span-2 sm:col-span-1"
           >
             <X className="h-4 w-4 mr-1" />
             Limpar

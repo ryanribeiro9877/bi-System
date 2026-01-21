@@ -167,36 +167,37 @@ const UserManagement = () => {
     <div className="flex min-h-screen bg-background">
       <DashboardSidebar />
 
-      <main className="flex-1 p-8 overflow-auto">
+      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 lg:mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground mb-1 lg:mb-2">
               Gerenciamento de Usuários
             </h1>
-            <p className="text-muted-foreground">
+            <p className="text-sm lg:text-base text-muted-foreground">
               Crie e gerencie os usuários do sistema
             </p>
           </div>
           <Button
             variant="gradient"
             onClick={() => setIsCreateDialogOpen(true)}
-            className="gap-2"
+            className="gap-2 h-9 lg:h-10 text-xs lg:text-sm self-start sm:self-auto"
           >
             <UserPlus className="w-4 h-4" />
-            Novo Usuário
+            <span className="hidden sm:inline">Novo Usuário</span>
+            <span className="sm:hidden">Novo</span>
           </Button>
         </div>
 
         {/* Users Table */}
         <Card className="glass-card">
-          <CardHeader>
-            <CardTitle>Usuários Cadastrados</CardTitle>
-            <CardDescription>
+          <CardHeader className="p-4 lg:p-6">
+            <CardTitle className="text-base lg:text-lg">Usuários Cadastrados</CardTitle>
+            <CardDescription className="text-xs lg:text-sm">
               Lista de todos os usuários com acesso ao sistema
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 lg:p-6 pt-0">
             {loadingUsers ? (
               <div className="flex items-center justify-center py-8">
                 <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />

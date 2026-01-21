@@ -164,7 +164,7 @@ const LeadsContent = () => {
 
   if (isLoading) {
     return (
-      <main className="flex-1 p-8">
+      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8">
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
@@ -172,18 +172,18 @@ const LeadsContent = () => {
     );
   }
   return (
-    <main className="flex-1 p-8">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0">
+      <div className="max-w-7xl mx-auto space-y-4 lg:space-y-8">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col gap-3 lg:gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Contratos Digitados</h1>
-            <p className="text-muted-foreground mt-1">Visualize e analise os contratos importados</p>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground">Contratos Digitados</h1>
+            <p className="text-sm lg:text-base text-muted-foreground mt-1">Visualize e analise os contratos importados</p>
           </div>
-          <div className="flex items-center gap-3">
-            <Filter className="w-4 h-4 text-muted-foreground" />
+          <div className="flex items-center gap-2 lg:gap-3">
+            <Filter className="w-4 h-4 text-muted-foreground flex-shrink-0" />
             <select
-              className="h-10 px-4 rounded-md border border-input bg-background text-sm min-w-[180px]"
+              className="h-9 lg:h-10 px-3 lg:px-4 rounded-md border border-input bg-background text-xs lg:text-sm flex-1 lg:flex-none lg:min-w-[180px]"
               value={bancoFilter}
               onChange={(e) => setBancoFilter(e.target.value)}
             >
@@ -198,22 +198,22 @@ const LeadsContent = () => {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 lg:gap-4">
           {kpiCards.map((kpi) => {
-            const titleClass = "text-sm font-medium text-muted-foreground";
-            const valueClass = `text-3xl font-bold ${kpi.textColor}`;
+            const titleClass = "text-xs lg:text-sm font-medium text-muted-foreground";
+            const valueClass = `text-lg sm:text-xl lg:text-3xl font-bold ${kpi.textColor}`;
 
             return (
               <Card key={kpi.title} className={`bg-card border-l-4 ${kpi.borderColor} border-t-0 border-r-0 border-b-0`}>
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-3 min-w-0 flex-1">
-                      <p className={`${titleClass} whitespace-pre-line`}>{kpi.title}</p>
-                      <p className={`${valueClass} break-words`}>{kpi.value}</p>
-                      <p className="text-xs text-muted-foreground whitespace-pre-line">{kpi.subtitle}</p>
+                <CardContent className="p-3 lg:p-6">
+                  <div className="flex items-start justify-between gap-1">
+                    <div className="space-y-1 lg:space-y-3 min-w-0 flex-1">
+                      <p className={`${titleClass} whitespace-pre-line line-clamp-2`}>{kpi.title}</p>
+                      <p className={`${valueClass} break-words truncate`}>{kpi.value}</p>
+                      <p className="text-[10px] lg:text-xs text-muted-foreground whitespace-pre-line line-clamp-2">{kpi.subtitle}</p>
                     </div>
-                    <div className={`p-2 rounded-full ${kpi.iconBg}`}>
-                      <kpi.icon className={`w-5 h-5 ${kpi.textColor}`} />
+                    <div className={`p-1.5 lg:p-2 rounded-full ${kpi.iconBg} flex-shrink-0`}>
+                      <kpi.icon className={`w-4 h-4 lg:w-5 lg:h-5 ${kpi.textColor}`} />
                     </div>
                   </div>
                 </CardContent>
@@ -224,32 +224,34 @@ const LeadsContent = () => {
 
         {/* Topic Tabs */}
         <Tabs defaultValue="lista" className="w-full">
-          <TabsList className="w-full flex flex-wrap sm:grid sm:grid-cols-3 lg:grid-cols-5 bg-muted/50 border border-border rounded-lg p-1 h-auto gap-1">
-            <TabsTrigger value="perfil" className="flex-1 min-w-[120px] flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
+          <div className="overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0">
+          <TabsList className="inline-flex min-w-max lg:w-full lg:grid lg:grid-cols-5 bg-muted/50 border border-border rounded-lg p-1 h-auto gap-1">
+            <TabsTrigger value="perfil" className="flex-1 min-w-[80px] lg:min-w-0 flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
               <Settings className="w-3 h-3 sm:w-4 sm:h-4" />
               <span className="hidden xs:inline">Perfil</span>
               <span className="xs:hidden">Perfil</span>
             </TabsTrigger>
-            <TabsTrigger value="cbos" className="flex-1 min-w-[120px] flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
+            <TabsTrigger value="cbos" className="flex-1 min-w-[80px] lg:min-w-0 flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
               <BarChart3 className="w-3 h-3 sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">CBOs que Aprovam</span>
               <span className="sm:hidden">CBOs</span>
             </TabsTrigger>
-            <TabsTrigger value="empresas" className="flex-1 min-w-[120px] flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
+            <TabsTrigger value="empresas" className="flex-1 min-w-[80px] lg:min-w-0 flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
               <Building2 className="w-3 h-3 sm:w-4 sm:h-4" />
               Empresas
             </TabsTrigger>
-            <TabsTrigger value="banco" className="flex-1 min-w-[120px] flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
+            <TabsTrigger value="banco" className="flex-1 min-w-[80px] lg:min-w-0 flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
               <Zap className="w-3 h-3 sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">Por Banco</span>
               <span className="sm:hidden">Banco</span>
             </TabsTrigger>
-            <TabsTrigger value="lista" className="flex-1 min-w-[120px] flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
+            <TabsTrigger value="lista" className="flex-1 min-w-[80px] lg:min-w-0 flex items-center justify-center gap-1 sm:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 sm:py-2.5 rounded-md text-xs sm:text-sm">
               <Users className="w-3 h-3 sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">Lista de Leads</span>
               <span className="sm:hidden">Lista</span>
             </TabsTrigger>
           </TabsList>
+          </div>
 
           <TabsContent value="perfil" className="mt-6">
             <PerfilIdealPanel bancoFilter={bancoFilter} importBatchId={selectedImportFile} />
@@ -267,36 +269,36 @@ const LeadsContent = () => {
             <PorBancoPanel bancoFilter={bancoFilter} importBatchId={selectedImportFile} />
           </TabsContent>
 
-          <TabsContent value="lista" className="mt-6">
+          <TabsContent value="lista" className="mt-4 lg:mt-6">
             <Card className="bg-card border-border">
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between">
+              <CardHeader className="p-3 lg:p-6 pb-3 lg:pb-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <Users className="w-5 h-5" />
+                    <CardTitle className="flex items-center gap-2 text-base lg:text-lg">
+                      <Users className="w-4 h-4 lg:w-5 lg:h-5" />
                       Lista de Leads
                     </CardTitle>
-                    <p className="text-sm text-muted-foreground mt-1">Visualize e filtre todos os leads</p>
+                    <p className="text-xs lg:text-sm text-muted-foreground mt-1">Visualize e filtre todos os leads</p>
                   </div>
-                  <span className="text-sm text-muted-foreground">{pagination.totalCount.toLocaleString("pt-BR")} leads</span>
+                  <span className="text-xs lg:text-sm text-muted-foreground">{pagination.totalCount.toLocaleString("pt-BR")} leads</span>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-3 mt-4">
-                  <div className="relative flex-1">
+                <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2 lg:gap-3 mt-3 lg:mt-4">
+                  <div className="relative col-span-2 sm:flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input 
                       placeholder="Buscar por CPF..." 
                       value={searchCpf} 
                       onChange={(e) => setSearchCpf(e.target.value)} 
                       onKeyDown={handleKeyDown}
-                      className="pl-9 bg-background" 
+                      className="pl-9 bg-background h-9 lg:h-10 text-sm" 
                     />
                   </div>
-                  <Button variant="outline" onClick={handleSearch} className="gap-2">
+                  <Button variant="outline" onClick={handleSearch} className="gap-2 h-9 lg:h-10 text-xs lg:text-sm">
                     <Search className="w-4 h-4" />
-                    Buscar
+                    <span className="hidden sm:inline">Buscar</span>
                   </Button>
-                  <select className="h-10 px-3 rounded-md border border-input bg-background text-sm" value={statusFilter} onChange={(e) => { 
+                  <select className="h-9 lg:h-10 px-2 lg:px-3 rounded-md border border-input bg-background text-xs lg:text-sm" value={statusFilter} onChange={(e) => { 
                     const newStatus = e.target.value;
                     setStatusFilter(newStatus);
                     setFilters({ ...filters, status: newStatus === "todos" ? "" : newStatus });
@@ -306,13 +308,13 @@ const LeadsContent = () => {
                     <option value="reprovado">Reprovados</option>
                     <option value="pendente">Pendentes</option>
                   </select>
-                  <Button variant="outline" className="gap-2" disabled>
+                  <Button variant="outline" className="gap-2 h-9 lg:h-10 text-xs lg:text-sm hidden sm:flex" disabled>
                     <Download className="w-4 h-4" />
                     Exportar
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-3 lg:p-6 pt-0">
                 {leads.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
                     <Users className="w-12 h-12 mb-4 opacity-50" />
@@ -367,15 +369,15 @@ const LeadsContent = () => {
                     </div>
 
                     {/* Pagination - usando paginação do servidor */}
-                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
-                      <span className="text-sm text-muted-foreground">
-                        Página {pagination.page} de {pagination.totalPages} ({pagination.totalCount.toLocaleString("pt-BR")} leads)
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-3 lg:mt-4 pt-3 lg:pt-4 border-t border-border">
+                      <span className="text-xs lg:text-sm text-muted-foreground text-center sm:text-left">
+                        Pág. {pagination.page}/{pagination.totalPages} ({pagination.totalCount.toLocaleString("pt-BR")})
                       </span>
                       <div className="flex gap-2">
                         <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(pagination.page - 1)} disabled={pagination.page === 1}>
                           <ChevronLeft className="h-4 w-4" />
                         </Button>
-                        <span className="flex items-center px-3 text-sm text-muted-foreground">{pagination.page}</span>
+                        <span className="flex items-center px-2 lg:px-3 text-xs lg:text-sm text-muted-foreground">{pagination.page}</span>
                         <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(pagination.page + 1)} disabled={pagination.page === pagination.totalPages || pagination.totalPages === 0}>
                           <ChevronRight className="h-4 w-4" />
                         </Button>

@@ -11,13 +11,13 @@ const DashboardInner = () => {
   return (
     <div className="flex min-h-screen bg-background">
       <DashboardSidebar />
-      <main className="flex-1 p-8 overflow-auto">
+      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-foreground mb-2">
+        <div className="mb-4 lg:mb-6">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground mb-1 lg:mb-2">
             Consultas
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-sm lg:text-base text-muted-foreground">
             BI de Consultas - Análise de CLT
           </p>
         </div>

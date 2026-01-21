@@ -146,18 +146,18 @@ const Alertas = () => {
     <div className="min-h-screen flex w-full bg-background">
       <DashboardSidebar />
       
-      <main className="flex-1 p-8">
-        <div className="max-w-7xl mx-auto space-y-8">
+      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0">
+        <div className="max-w-7xl mx-auto space-y-4 lg:space-y-8">
           {/* Header */}
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Alertas</h1>
-            <p className="text-muted-foreground mt-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground">Alertas</h1>
+            <p className="text-sm lg:text-base text-muted-foreground mt-1">
               Configure e gerencie seus alertas personalizados
             </p>
           </div>
 
           {/* KPIs */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-6">
             <KPICard
               title="Alertas Ativos"
               value={alertasAtivosCount}
@@ -176,14 +176,15 @@ const Alertas = () => {
 
           {/* Área de Gerenciamento de Alertas */}
           <Card className="glass-card">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-xl font-semibold">Meus Alertas</CardTitle>
-              <div className="flex gap-3">
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 lg:p-6">
+              <CardTitle className="text-base lg:text-xl font-semibold">Meus Alertas</CardTitle>
+              <div className="flex gap-2 lg:gap-3">
                 <Dialog open={openDialog} onOpenChange={setOpenDialog}>
                   <DialogTrigger asChild>
-                    <Button className="gap-2">
+                    <Button className="gap-2 h-9 lg:h-10 text-xs lg:text-sm">
                       <Plus className="w-4 h-4" />
-                      Criar Novo Alerta
+                      <span className="hidden sm:inline">Criar Novo Alerta</span>
+                      <span className="sm:hidden">Novo</span>
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="sm:max-w-[500px]">
