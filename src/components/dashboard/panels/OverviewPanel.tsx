@@ -22,7 +22,7 @@ const OverviewPanel = () => {
   return (
     <div className="space-y-4 lg:space-y-6">
       {/* KPIs Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
         <KPICard
           title="Total de Consultas Realizadas"
           value={stats.totalLeads.toLocaleString("pt-BR")}
@@ -39,7 +39,7 @@ const OverviewPanel = () => {
       </div>
 
       {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-6">
         <BankApprovalChart />
         <CBOsPieChart />
       </div>
