@@ -78,7 +78,8 @@ const ConsultaMargemReprovadaPanel = () => {
         let countQuery = supabase
           .from('leads')
           .select('cpf', { count: 'exact', head: true })
-          .eq('status', 'reprovado');
+          .eq('status', 'reprovado')
+          .ilike('tipo_reprovacao', '%margem%');
         
         if (selectedImportFile) {
           countQuery = countQuery.eq('import_batch_id', selectedImportFile);
@@ -109,6 +110,7 @@ const ConsultaMargemReprovadaPanel = () => {
               .from('leads')
               .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, valor')
               .eq('status', 'reprovado')
+              .ilike('tipo_reprovacao', '%margem%')
               .range(i * pageSize, (i + 1) * pageSize - 1);
             
             if (selectedImportFile) {
@@ -160,7 +162,8 @@ const ConsultaMargemReprovadaPanel = () => {
 
   // Função auxiliar para extrair valor de margem
   // UY3: usa valorMargemDisponivel do retorno_simulacao
-  // Presença e outros: usa valorMargemDisponivel do retorno_margem
+  // PRESENÇA: usa valorMargemDisponivel (positivo) ou valorMargem (negativo) do retorno_margem
+  // Outros: usa valorMargemDisponivel do retorno_margem
   const extrairValorMargemLead = (lead: LeadMargemReprovada): number => {
     const banco = lead.banco?.toUpperCase() || '';
     
@@ -193,7 +196,34 @@ const ConsultaMargemReprovadaPanel = () => {
       return 0;
     }
     
-    // Para Presença e outros bancos: buscar em retorno_margem
+    // Para PRESENÇA: tratar padrões específicos do retorno_margem
+    if (banco.includes('PRESEN')) {
+      const margemRaw = lead.retorno_margem;
+      if (!margemRaw) return 0;
+
+      let margem: Record<string, unknown> | null = null;
+      if (Array.isArray(margemRaw)) {
+        margem = margemRaw[0] as Record<string, unknown> | null;
+      } else {
+        margem = margemRaw as Record<string, unknown>;
+      }
+
+      if (!margem) return 0;
+
+      const valorMargemDisponivel = margem.valorMargemDisponivel;
+      if (typeof valorMargemDisponivel === 'number') return valorMargemDisponivel;
+      if (typeof valorMargemDisponivel === 'string' && !isNaN(parseFloat(valorMargemDisponivel))) {
+        return parseFloat(valorMargemDisponivel);
+      }
+
+      const valorMargem = margem.valorMargem;
+      if (typeof valorMargem === 'number') return valorMargem;
+      if (typeof valorMargem === 'string' && !isNaN(parseFloat(valorMargem))) return parseFloat(valorMargem);
+
+      return 0;
+    }
+
+    // Para outros bancos: buscar em retorno_margem
     const margemRaw = lead.retorno_margem;
     if (!margemRaw) return 0;
     
