@@ -49,6 +49,7 @@ type ResultsLeadRow = {
   nome: string | null;
   banco: string | null;
   status: string | null;
+  tipo_reprovacao: string | null;
   valor: number | null;
   created_at: string;
   retorno_autorizacao: unknown;
@@ -59,9 +60,213 @@ type ResultsLeadRow = {
 };
 
 type PropostaErroInfo = {
-  origem: "Proposta" | "Get Proposta" | "Simulação";
+  origem: "Autorização" | "Margem" | "Proposta" | "Get Proposta" | "Simulação";
   erro: string;
   motivo: string | null;
+};
+
+const hasHttpStatusFlexible = (text: string, status: number): boolean => {
+  if (!text) return false;
+  return new RegExp(`\\b(?:status|http|erro|error)\\D{0,15}${status}\\b`, "i").test(text);
+};
+
+const getPreferredHttpStatus = (text: string): 429 | 400 | null => {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+
+  const mentionsInvalidForm = lower.includes("invalid_form");
+  const mentionsInvalidBusinessRule = lower.includes("invalid_business_rule");
+  const mentionsDataprevBadRequest = lower.includes("dataprev_bad_request") || (lower.includes("dataprev") && lower.includes("bad request"));
+  const mentionsDataprevMaintenanceWindow =
+    lower.includes("dataprev_maintenance_window") ||
+    lower.includes("maintenance_window") ||
+    lower.includes("maintenance window") ||
+    lower.includes("janela de manutenção") ||
+    lower.includes("janela de manutencao");
+  const mentionsMinimumPrincipal = lower.includes("minimum_principal_for_product");
+  const mentionsMaximumPrincipal = lower.includes("maximum_principal_for_product");
+  if (
+    mentionsInvalidForm ||
+    mentionsInvalidBusinessRule ||
+    mentionsDataprevBadRequest ||
+    mentionsDataprevMaintenanceWindow ||
+    mentionsMinimumPrincipal ||
+    mentionsMaximumPrincipal
+  ) {
+    return 400;
+  }
+
+  if (hasHttpStatusFlexible(text, 400) || hasHttpStatus(text, 400)) return 400;
+
+  const mentionsTooManyRequests = lower.includes("too_many_requests") || lower.includes("too many requests");
+  const mentionsRateLimit = lower.includes("rate limit") || (lower.includes("limite") && lower.includes("excedido"));
+  if (mentionsTooManyRequests || mentionsRateLimit) return 429;
+
+  if (hasHttpStatusFlexible(text, 429) || hasHttpStatus(text, 429)) return 429;
+  return null;
+};
+
+const sanitizeErrorText = (value: string | null): string | null => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (UUID_ONLY_RE.test(trimmed)) return null;
+  return trimmed;
+};
+
+const buildPropostaMotivo = (params: {
+  status: StatusProposta;
+  rawText: string;
+  extractedMotivo: string | null;
+  overrideMotivo?: string | null;
+  origem?: PropostaErroInfo["origem"];
+}): string | null => {
+  const override = params.overrideMotivo?.trim();
+  const isConsultaDataprevMotivo = (value: string) => {
+    const lower = value.toLowerCase();
+    if (lower.includes("erro 429") || lower.includes("429")) return true;
+    if (lower.includes("dataprev")) return true;
+    if (lower.includes("rate limit") || lower.includes("too many requests")) return true;
+    if (lower.includes("consultar") && (lower.includes("margem") || lower.includes("autoriz") || lower.includes("simula"))) {
+      return true;
+    }
+    return false;
+  };
+  if (override) {
+    if (params.status === "ERRO_400" && isConsultaDataprevMotivo(override)) {
+      // ignora override que parece erro 429/consulta para priorizar o motivo real 400
+    } else {
+      return override;
+    }
+  }
+  if (params.status === "ERRO_429") {
+    if (params.origem === "Margem") return "Erro ao consultar margem Dataprev";
+    if (params.origem === "Simulação") return "Erro ao consultar simulação";
+    if (params.origem === "Proposta") return "Erro ao enviar proposta";
+    if (params.origem === "Get Proposta") return "Erro ao consultar proposta";
+    return "Erro ao consultar autorização Dataprev";
+  }
+  if (params.status === "ERRO_400") {
+    const baseText = `${params.extractedMotivo ?? ""} ${params.rawText ?? ""}`.toLowerCase();
+    const isInvalidForm = baseText.includes("invalid_form");
+    const isInvalidBusinessRule = baseText.includes("invalid_business_rule");
+
+    const mentionsPhoneNumber = baseText.includes("phonenumber") || baseText.includes("phone number") || baseText.includes("phone_number");
+    const mentionsCepInvalido =
+      baseText.includes("cep inválid") ||
+      baseText.includes("cep invalido") ||
+      baseText.includes("zipcode inválid") ||
+      baseText.includes("zipcode invalido") ||
+      baseText.includes("zip code inválid") ||
+      baseText.includes("zip code invalido") ||
+      baseText.includes("address.zipcode");
+    const mentionsEmailInvalido =
+      baseText.includes("email inválid") ||
+      baseText.includes("email invalido") ||
+      baseText.includes("emailaddress") ||
+      (baseText.includes("email") && baseText.includes("invalid"));
+    const mentionsNomeInvalido =
+      baseText.includes("nome inválid") ||
+      baseText.includes("nome invalido") ||
+      (baseText.includes("name") && baseText.includes("invalid"));
+    const mentionsDataNascimentoInvalida =
+      baseText.includes("data de nascimento") || baseText.includes("birthdate") || baseText.includes("birth date");
+    const mentionsEnderecoInvalido =
+      baseText.includes("endereço inválid") ||
+      baseText.includes("endereco invalido") ||
+      (baseText.includes("address") && baseText.includes("invalid"));
+    const mentionsCampoObrigatorio =
+      baseText.includes("required") ||
+      baseText.includes("obrigatório") ||
+      baseText.includes("obrigatorio") ||
+      baseText.includes("must not be empty") ||
+      baseText.includes("não pode ser vazio") ||
+      baseText.includes("nao pode ser vazio");
+    const mentionsVirada = baseText.includes("virada de competência") || baseText.includes("virada de competencia");
+    const mentionsCpfNaoEncontrado = baseText.includes("cpf") && (baseText.includes("não encontrado") || baseText.includes("nao encontrado"));
+
+    if (isInvalidForm && mentionsPhoneNumber) return "PhoneNumber inválido";
+    if (isInvalidForm && mentionsCepInvalido) return "CEP inválido";
+    if (isInvalidForm && mentionsEmailInvalido) return "Email inválido";
+    if (isInvalidForm && mentionsNomeInvalido) return "Nome inválido";
+    if (isInvalidForm && mentionsDataNascimentoInvalida) return "Data de nascimento inválida";
+    if (isInvalidForm && mentionsEnderecoInvalido) return "Endereço inválido";
+    if (isInvalidForm && mentionsCampoObrigatorio) return "Campos obrigatórios não preenchidos";
+    if (isInvalidBusinessRule && mentionsVirada) return "Virada de competência";
+    if (isInvalidBusinessRule && mentionsCpfNaoEncontrado) return "CPF não encontrado na base";
+
+    const mentionsCpfInvalido =
+      baseText.includes("cpf inválid") ||
+      baseText.includes("cpf invalido") ||
+      baseText.includes("invalid cpf") ||
+      baseText.includes("cpf is invalid") ||
+      baseText.includes("document invalid") ||
+      baseText.includes("documento inválid") ||
+      baseText.includes("documento invalido");
+    if (mentionsCpfInvalido) return "CPF inválido";
+
+    const mentionsCboBloqueado = baseText.includes("cbo") && baseText.includes("bloquead");
+    if (mentionsCboBloqueado) return "CBO bloqueado";
+
+    const mentionsCnaeBloqueado = baseText.includes("cnae") && baseText.includes("bloquead");
+    if (mentionsCnaeBloqueado) return "CNAE bloqueado";
+
+    const mentionsDataprevMaintenanceWindow =
+      baseText.includes("dataprev_maintenance_window") ||
+      baseText.includes("maintenance_window") ||
+      baseText.includes("maintenance window") ||
+      baseText.includes("janela de manutenção") ||
+      baseText.includes("janela de manutencao");
+    if (mentionsDataprevMaintenanceWindow) return "Janela de manutenção";
+
+    const mentionsConvenioNaoConfigurado =
+      (baseText.includes("convênio") || baseText.includes("convenio")) &&
+      (baseText.includes("não configurado") || baseText.includes("nao configurado"));
+    if (mentionsConvenioNaoConfigurado) return "Convênio não configurado";
+
+    const mentionsSemMargemRetornada =
+      baseText.includes("sem margem retornada") ||
+      baseText.includes("margem não retornada") ||
+      baseText.includes("margem nao retornada") ||
+      baseText.includes("no margin returned");
+    if (mentionsSemMargemRetornada) return "Sem margem retornada";
+
+    const mentionsTempoMinimoVinculo =
+      (baseText.includes("vínculo") || baseText.includes("vinculo")) &&
+      (baseText.includes("tempo mínimo") ||
+        baseText.includes("tempo minimo") ||
+        baseText.includes("mínimo de vínculo") ||
+        baseText.includes("minimo de vinculo"));
+    if (mentionsTempoMinimoVinculo) return "Tempo mínimo de vínculo";
+
+    const mentionsMinimumPrincipal = baseText.includes("minimum_principal_for_product");
+    if (mentionsMinimumPrincipal) return "Valor abaixo do mínimo do produto";
+
+    const mentionsMaximumPrincipal = baseText.includes("maximum_principal_for_product");
+    if (mentionsMaximumPrincipal) return "Valor acima do máximo do produto";
+
+    const mentionsDataprevBadRequest =
+      baseText.includes("dataprev_bad_request") || (baseText.includes("dataprev") && baseText.includes("bad request"));
+    if (mentionsDataprevBadRequest) return "Erro Dataprev: requisição inválida";
+
+    const extractedLower = params.extractedMotivo?.trim().toLowerCase() ?? "";
+    const isGenericExtracted =
+      extractedLower === "invalid_form" || extractedLower === "invalid_business_rule" || extractedLower === "erro 400";
+
+    if (params.extractedMotivo && !isGenericExtracted) return params.extractedMotivo;
+
+    if (params.origem === "Autorização") return "Falha nos dados da autorização";
+    if (params.origem === "Margem") return "Falha nos dados da margem";
+    if (params.origem === "Simulação") return "Falha nos dados da simulação";
+    if (params.origem === "Proposta") return "Falha nos dados da proposta";
+    if (params.origem === "Get Proposta") return "Falha nos dados ao consultar proposta";
+
+    if (params.extractedMotivo) return params.extractedMotivo;
+    return "Erro 400";
+  }
+
+  if (params.extractedMotivo) return params.extractedMotivo;
+  return null;
 };
 
 type AnnotatedResultsLead = ResultsLeadRow & {
@@ -83,6 +288,7 @@ type ResultsChartDatum = {
 };
 
 const UUID_RE = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/;
+const UUID_ONLY_RE = new RegExp(`^${UUID_RE.source}$`);
 
 const formatCpf = (cpf: string) => {
   const cleaned = (cpf || "").replace(/\D/g, "");
@@ -161,40 +367,47 @@ const parseJsonString = (value: string): unknown | null => {
 };
 
 const extractErrorInfoFromRecord = (record: Record<string, unknown>): { erro: string; motivo: string | null } | null => {
-  const errorCandidate = pickFirstString(record.error, record.message);
+  const errorCandidate = sanitizeErrorText(pickFirstString(record.error, record.message));
   const statusCandidate = typeof record.status === "string" ? record.status.trim() : null;
   const normalizedStatus = statusCandidate ? statusCandidate.toLowerCase() : null;
-  const statusAsError = normalizedStatus && !["success", "ok", "approved"].includes(normalizedStatus) ? statusCandidate : null;
+  const statusAsError =
+    normalizedStatus && !["success", "ok", "approved"].includes(normalizedStatus)
+      ? sanitizeErrorText(statusCandidate)
+      : null;
   const errorBase = pickFirstString(errorCandidate, statusAsError);
   const details = isRecord(record.details) ? record.details : null;
 
-  const reasonCandidate = details
-    ? pickFirstString(details.reason, details.message, details.detail, details.error)
-    : null;
+  const reasonCandidate = sanitizeErrorText(
+    details ? pickFirstString(details.reason, details.message, details.detail, details.error) : null
+  );
 
   const errorsArray = Array.isArray(details?.errors) ? details?.errors : Array.isArray(record.errors) ? record.errors : null;
-  const errorsList = errorsArray
-    ? errorsArray
-        .map((item) => {
-          if (typeof item === "string") return item;
-          if (isRecord(item)) return pickFirstString(item.message, item.error, item.reason, item.detail);
-          return null;
-        })
-        .filter(Boolean)
-        .join("; ")
-    : null;
+  const errorsList = sanitizeErrorText(
+    errorsArray
+      ? errorsArray
+          .map((item) => {
+            if (typeof item === "string") return item;
+            if (isRecord(item)) return pickFirstString(item.message, item.error, item.reason, item.detail);
+            return null;
+          })
+          .filter(Boolean)
+          .join("; ")
+      : null
+  );
 
   const formErrorsArray = Array.isArray(details?.formErrors) ? details.formErrors : null;
-  const formErrors = formErrorsArray
-    ? formErrorsArray
-        .map((item) => {
-          if (typeof item === "string") return item;
-          if (isRecord(item)) return pickFirstString(item.message, item.messageError, item.errorField, item.error);
-          return null;
-        })
-        .filter(Boolean)
-        .join("; ")
-    : null;
+  const formErrors = sanitizeErrorText(
+    formErrorsArray
+      ? formErrorsArray
+          .map((item) => {
+            if (typeof item === "string") return item;
+            if (isRecord(item)) return pickFirstString(item.message, item.messageError, item.errorField, item.error);
+            return null;
+          })
+          .filter(Boolean)
+          .join("; ")
+      : null
+  );
 
   const motivo = pickFirstString(reasonCandidate, formErrors, errorsList);
   const erro = errorBase ?? motivo;
@@ -210,7 +423,8 @@ const extractErrorInfo = (raw: unknown, depth = 0): { erro: string; motivo: stri
     const parsed = parseJsonString(raw);
     if (parsed) return extractErrorInfo(parsed, depth + 1);
     const trimmed = raw.trim();
-    return trimmed ? { erro: trimmed, motivo: null } : null;
+    if (!trimmed || UUID_ONLY_RE.test(trimmed)) return null;
+    return { erro: trimmed, motivo: null };
   }
 
   if (Array.isArray(raw)) {
@@ -234,6 +448,34 @@ const extractErrorInfo = (raw: unknown, depth = 0): { erro: string; motivo: stri
     }
   }
 
+  return null;
+};
+
+const pickFirstErrorInOrder = (
+  entries: Array<{ origem: PropostaErroInfo["origem"]; raw: unknown }>,
+  options?: {
+    autorizacaoStatus?: StatusAutorizacao;
+    margemStatus?: StatusConsultaMargem;
+  }
+) => {
+  for (const entry of entries) {
+    if (entry.origem === "Autorização") {
+      const status = options?.autorizacaoStatus;
+      if (status === "EXISTING_AUTH" || status === "TOKEN") {
+        continue;
+      }
+    }
+    if (entry.origem === "Margem") {
+      const status = options?.margemStatus;
+      if (status === "OK") {
+        continue;
+      }
+    }
+    const info = extractErrorInfo(entry.raw);
+    if (info) {
+      return { origem: entry.origem, info, rawText: stringifyUnknown(entry.raw) };
+    }
+  }
   return null;
 };
 
@@ -280,6 +522,10 @@ const classifyAutorizacaoStatus = (raw: unknown): { status: StatusAutorizacao; l
   }
 
   if (Array.isArray(raw)) {
+    const full = stringifyUnknown(raw);
+    const preferred = getPreferredHttpStatus(full);
+    if (preferred === 400) return { status: "ERRO_400", label: "Erro 400" };
+    if (preferred === 429) return { status: "ERRO_429", label: "Erro 429" };
     const hasUuid = raw.some((v) => typeof v === "string" && UUID_RE.test(v));
     if (hasUuid) return { status: "TOKEN", label: "Token/Link" };
     return { status: "OUTROS", label: "Outros" };
@@ -301,8 +547,9 @@ const classifyAutorizacaoStatus = (raw: unknown): { status: StatusAutorizacao; l
     }
 
     const full = stringifyUnknown(raw);
-    if (hasHttpStatus(error, 400) || hasHttpStatus(full, 400)) return { status: "ERRO_400", label: "Erro 400" };
-    if (hasHttpStatus(error, 429) || hasHttpStatus(full, 429)) return { status: "ERRO_429", label: "Erro 429" };
+    const preferred = getPreferredHttpStatus(`${error} ${message} ${code} ${full}`);
+    if (preferred === 400) return { status: "ERRO_400", label: "Erro 400" };
+    if (preferred === 429) return { status: "ERRO_429", label: "Erro 429" };
 
     const autorizacaoId = typeof obj.autorizacaoId === "string" ? obj.autorizacaoId : "";
     if (autorizacaoId && UUID_RE.test(autorizacaoId)) {
@@ -323,8 +570,9 @@ const classifyAutorizacaoStatus = (raw: unknown): { status: StatusAutorizacao; l
   }
 
   const s = stringifyUnknown(raw);
-  if (hasHttpStatus(s, 400)) return { status: "ERRO_400", label: "Erro 400" };
-  if (hasHttpStatus(s, 429)) return { status: "ERRO_429", label: "Erro 429" };
+  const preferred = getPreferredHttpStatus(s);
+  if (preferred === 400) return { status: "ERRO_400", label: "Erro 400" };
+  if (preferred === 429) return { status: "ERRO_429", label: "Erro 429" };
   const lower = s.toLowerCase();
   if (lower.includes("existing_authorization") || lower.includes("existing_auth") || lower.includes("autorização já existente")) {
     return { status: "EXISTING_AUTH", label: "Autorização já existente" };
@@ -339,8 +587,9 @@ const classifyConsultaMargem = (raw: unknown): { status: StatusConsultaMargem; l
   }
 
   const full = stringifyUnknown(raw);
-  if (hasHttpStatus(full, 400)) return { status: "ERRO_400", label: "Erro 400" };
-  if (hasHttpStatus(full, 429)) return { status: "ERRO_429", label: "Erro 429" };
+  const preferred = getPreferredHttpStatus(full);
+  if (preferred === 400) return { status: "ERRO_400", label: "Erro 400" };
+  if (preferred === 429) return { status: "ERRO_429", label: "Erro 429" };
 
   if (Array.isArray(raw)) {
     for (const item of raw) {
@@ -364,8 +613,9 @@ const classifyProposta = (raw: unknown): { status: StatusProposta; label: string
   }
 
   const full = stringifyUnknown(raw);
-  if (hasHttpStatus(full, 400)) return { status: "ERRO_400", label: "Erro 400" };
-  if (hasHttpStatus(full, 429)) return { status: "ERRO_429", label: "Erro 429" };
+  const preferred = getPreferredHttpStatus(full);
+  if (preferred === 400) return { status: "ERRO_400", label: "Erro 400" };
+  if (preferred === 429) return { status: "ERRO_429", label: "Erro 429" };
 
   const items = Array.isArray(raw) ? raw : [raw];
   for (const item of items) {
@@ -441,7 +691,7 @@ const ResultadosPanel = () => {
         let query = supabase
           .from("leads")
           .select(
-            "id, cpf, nome, banco, status, valor, created_at, retorno_autorizacao, retorno_margem, retorno_simulacao, retorno_proposta, retorno_get_proposta, import_batch_id"
+            "id, cpf, nome, banco, status, tipo_reprovacao, valor, created_at, retorno_autorizacao, retorno_margem, retorno_simulacao, retorno_proposta, retorno_get_proposta, import_batch_id"
           )
           .order("created_at", { ascending: false });
 
@@ -478,6 +728,7 @@ const ResultadosPanel = () => {
           nome: (row.nome as string) ?? null,
           banco: (row.banco as string) ?? null,
           status: (row.status as string) ?? null,
+          tipo_reprovacao: (row.tipo_reprovacao as string) ?? null,
           valor: typeof row.valor === "number" ? row.valor : row.valor === null || row.valor === undefined ? null : Number(row.valor),
           created_at: String(row.created_at ?? ""),
           retorno_autorizacao: row.retorno_autorizacao,
@@ -524,19 +775,54 @@ const ResultadosPanel = () => {
       const propostaErroBase = p.status === "SUCCESS"
         ? null
         : (() => {
-            const propostaInfo = extractErrorInfo(l.retorno_proposta);
-            if (propostaInfo) return { origem: "Proposta", ...propostaInfo } as PropostaErroInfo;
-            const getInfo = extractErrorInfo(l.retorno_get_proposta);
-            if (getInfo) return { origem: "Get Proposta", ...getInfo } as PropostaErroInfo;
-            const simInfo = extractErrorInfo(l.retorno_simulacao);
-            if (simInfo) return { origem: "Simulação", ...simInfo } as PropostaErroInfo;
-            return null;
+            const picked = pickFirstErrorInOrder(
+              [
+                { origem: "Autorização", raw: l.retorno_autorizacao },
+                { origem: "Margem", raw: l.retorno_margem },
+                { origem: "Simulação", raw: l.retorno_simulacao },
+                { origem: "Proposta", raw: l.retorno_proposta },
+                { origem: "Get Proposta", raw: l.retorno_get_proposta },
+              ],
+              {
+                autorizacaoStatus: a.status,
+                margemStatus: m.status,
+              }
+            );
+            if (!picked) return null;
+
+            const statusResolved = (() => {
+              const preferred = getPreferredHttpStatus(`${picked.info.erro} ${picked.info.motivo ?? ""} ${picked.rawText}`);
+              if (preferred === 429) return "ERRO_429";
+              if (preferred === 400) return "ERRO_400";
+              return "OUTRO";
+            })();
+
+            const motivo = buildPropostaMotivo({
+              status: statusResolved,
+              rawText: picked.rawText,
+              extractedMotivo: picked.info.motivo,
+              overrideMotivo: sanitizeErrorText(l.tipo_reprovacao),
+              origem: picked.origem,
+            });
+
+            const statusLabel =
+              statusResolved === "ERRO_429"
+                ? "Erro 429"
+                : statusResolved === "ERRO_400"
+                ? "Erro 400"
+                : picked.info.erro;
+            const trimmedMotivo = motivo?.trim() ?? null;
+            const hasStatusLabel = statusResolved === "ERRO_429" || statusResolved === "ERRO_400";
+            const erro = hasStatusLabel ? statusLabel : picked.info.erro;
+            const motivoExibido = trimmedMotivo;
+
+            return { origem: picked.origem, erro, motivo: motivoExibido } as PropostaErroInfo;
           })();
 
       const propostaLabel = (() => {
         if (p.status === "SUCCESS") return p.label;
         if (propostaErroBase) {
-          const base = `${propostaErroBase.origem}: ${propostaErroBase.erro}`;
+          const base = propostaErroBase.erro;
           return propostaErroBase.motivo ? `${base} | ${propostaErroBase.motivo}` : base;
         }
         return p.label;
@@ -545,9 +831,9 @@ const ResultadosPanel = () => {
       const propostaStatus = (() => {
         if (p.status === "SUCCESS") return "SUCCESS" as StatusProposta;
         if (propostaErroBase) {
-          const text = `${propostaErroBase.erro} ${propostaErroBase.motivo ?? ""}`;
-          if (hasHttpStatus(text, 400)) return "ERRO_400";
-          if (hasHttpStatus(text, 429)) return "ERRO_429";
+          const preferred = getPreferredHttpStatus(`${propostaErroBase.erro} ${propostaErroBase.motivo ?? ""}`);
+          if (preferred === 429) return "ERRO_429";
+          if (preferred === 400) return "ERRO_400";
           return "OUTRO";
         }
         return p.status;
@@ -1030,7 +1316,7 @@ const ResultadosPanel = () => {
                           {l.propostaErro ? (
                             <div className="space-y-1 max-w-[260px]" title={l.statusPropostaLabel}>
                               <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                                {l.propostaErro.origem}
+                                MOTIVO
                               </span>
                               <div className="text-sm font-medium text-foreground line-clamp-2">
                                 {l.propostaErro.erro}
