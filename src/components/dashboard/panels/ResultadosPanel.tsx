@@ -27,6 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import LeadDetailDialog from "@/components/leads/LeadDetailDialog";
 import { useLeadDetails } from "@/hooks/useLeadsPaginated";
 import type { Lead as LeadData } from "@/hooks/useLeadsData";
+import { extrairErroFunil } from "@/lib/leadStatusUtils";
 
 type StatusAutorizacao = "EXISTING_AUTH" | "TOKEN" | "ERRO_400" | "ERRO_429" | "OUTROS" | "VAZIO";
 
@@ -140,6 +141,14 @@ const buildPropostaMotivo = (params: {
     }
   }
   if (params.status === "ERRO_429") {
+    const baseText = `${params.extractedMotivo ?? ""} ${params.rawText ?? ""}`.toLowerCase();
+    const mentionsTooManyRequests = baseText.includes("too_many_requests") || baseText.includes("too many requests");
+    const mentionsRateLimit = baseText.includes("rate limit") || (baseText.includes("limite") && baseText.includes("excedido"));
+    const mentionsDataprev = baseText.includes("dataprev");
+    if ((mentionsTooManyRequests || mentionsRateLimit) && mentionsDataprev) return "Limite excedido no DataPrev";
+
+    if (params.extractedMotivo) return params.extractedMotivo;
+
     if (params.origem === "Margem") return "Erro ao consultar margem Dataprev";
     if (params.origem === "Simulação") return "Erro ao consultar simulação";
     if (params.origem === "Proposta") return "Erro ao enviar proposta";
@@ -185,7 +194,7 @@ const buildPropostaMotivo = (params: {
     const mentionsVirada = baseText.includes("virada de competência") || baseText.includes("virada de competencia");
     const mentionsCpfNaoEncontrado = baseText.includes("cpf") && (baseText.includes("não encontrado") || baseText.includes("nao encontrado"));
 
-    if (isInvalidForm && mentionsPhoneNumber) return "PhoneNumber inválido";
+    if (isInvalidForm && mentionsPhoneNumber) return "Número de telefone inválido";
     if (isInvalidForm && mentionsCepInvalido) return "CEP inválido";
     if (isInvalidForm && mentionsEmailInvalido) return "Email inválido";
     if (isInvalidForm && mentionsNomeInvalido) return "Nome inválido";
@@ -283,6 +292,11 @@ type AnnotatedResultsLead = ResultsLeadRow & {
 
 type ResultsChartDatum = {
   key: ResultadoNegocio;
+  name: string;
+  value: number;
+};
+
+type MotivosChartDatum = {
   name: string;
   value: number;
 };
@@ -479,6 +493,13 @@ const pickFirstErrorInOrder = (
   return null;
 };
 
+void sanitizeErrorText;
+void buildPropostaMotivo;
+void parseJsonString;
+void extractErrorInfoFromRecord;
+void extractErrorInfo;
+void pickFirstErrorInOrder;
+
 const extractMargemOkInfo = (raw: unknown): { elegivel: boolean | null; valorMargemDisponivel: number | null } => {
   const pickFromResult = (candidate: unknown): { elegivel: boolean | null; valorMargemDisponivel: number | null } | null => {
     if (!isRecord(candidate)) return null;
@@ -664,6 +685,7 @@ const ResultadosPanel = () => {
   const [selectedAutorizacao, setSelectedAutorizacao] = useState<StatusAutorizacao | "TODOS">("TODOS");
   const [selectedConsultaMargem, setSelectedConsultaMargem] = useState<StatusConsultaMargem | "TODOS">("TODOS");
   const [selectedProposta, setSelectedProposta] = useState<StatusProposta | "TODOS">("TODOS");
+  const [selectedMotivo, setSelectedMotivo] = useState<string | null>(null);
 
   const [page, setPage] = useState(1);
   const pageSize = 50;
@@ -762,6 +784,7 @@ const ResultadosPanel = () => {
     setSelectedAutorizacao("TODOS");
     setSelectedConsultaMargem("TODOS");
     setSelectedProposta("TODOS");
+    setSelectedMotivo(null);
     setSearchTerm("");
     setPage(1);
   }, [fetchResultadosLeads]);
@@ -775,48 +798,46 @@ const ResultadosPanel = () => {
       const propostaErroBase = p.status === "SUCCESS"
         ? null
         : (() => {
-            const picked = pickFirstErrorInOrder(
-              [
-                { origem: "Autorização", raw: l.retorno_autorizacao },
-                { origem: "Margem", raw: l.retorno_margem },
-                { origem: "Simulação", raw: l.retorno_simulacao },
-                { origem: "Proposta", raw: l.retorno_proposta },
-                { origem: "Get Proposta", raw: l.retorno_get_proposta },
-              ],
-              {
-                autorizacaoStatus: a.status,
-                margemStatus: m.status,
-              }
-            );
-            if (!picked) return null;
+            const funilErro = extrairErroFunil(l);
+            if (!funilErro) return null;
 
-            const statusResolved = (() => {
-              const preferred = getPreferredHttpStatus(`${picked.info.erro} ${picked.info.motivo ?? ""} ${picked.rawText}`);
-              if (preferred === 429) return "ERRO_429";
-              if (preferred === 400) return "ERRO_400";
-              return "OUTRO";
+            const origem = (() => {
+              if (funilErro.erro_etapa === "retorno_autorizacao") return "Autorização";
+              if (funilErro.erro_etapa === "retorno_margem") return "Margem";
+              if (funilErro.erro_etapa === "retorno_simulacao") return "Simulação";
+              if (funilErro.erro_etapa === "retorno_proposta") return "Proposta";
+              return "Get Proposta";
             })();
 
-            const motivo = buildPropostaMotivo({
-              status: statusResolved,
-              rawText: picked.rawText,
-              extractedMotivo: picked.info.motivo,
-              overrideMotivo: sanitizeErrorText(l.tipo_reprovacao),
-              origem: picked.origem,
-            });
+            const rawEtapa = (() => {
+              if (funilErro.erro_etapa === "retorno_autorizacao") return l.retorno_autorizacao;
+              if (funilErro.erro_etapa === "retorno_margem") return l.retorno_margem;
+              if (funilErro.erro_etapa === "retorno_simulacao") return l.retorno_simulacao;
+              if (funilErro.erro_etapa === "retorno_proposta") return l.retorno_proposta;
+              return l.retorno_get_proposta;
+            })();
 
-            const statusLabel =
-              statusResolved === "ERRO_429"
-                ? "Erro 429"
-                : statusResolved === "ERRO_400"
-                ? "Erro 400"
-                : picked.info.erro;
-            const trimmedMotivo = motivo?.trim() ?? null;
-            const hasStatusLabel = statusResolved === "ERRO_429" || statusResolved === "ERRO_400";
-            const erro = hasStatusLabel ? statusLabel : picked.info.erro;
-            const motivoExibido = trimmedMotivo;
+            const statusPropostaFromErro = (() => {
+              const preferred = getPreferredHttpStatus(`${funilErro.erro_code ?? ""} ${funilErro.erro_motivo ?? ""} ${stringifyUnknown(rawEtapa)}`);
+              if (preferred === 429) return "ERRO_429" as StatusProposta;
+              if (preferred === 400) return "ERRO_400" as StatusProposta;
+              return "OUTRO" as StatusProposta;
+            })();
 
-            return { origem: picked.origem, erro, motivo: motivoExibido } as PropostaErroInfo;
+            const motivoFinal =
+              buildPropostaMotivo({
+                status: statusPropostaFromErro,
+                rawText: stringifyUnknown(rawEtapa),
+                extractedMotivo: funilErro.erro_motivo,
+                overrideMotivo: l.tipo_reprovacao,
+                origem,
+              }) ?? funilErro.erro_motivo;
+
+            return {
+              origem,
+              erro: funilErro.erro_code ?? "Erro",
+              motivo: motivoFinal,
+            } as PropostaErroInfo;
           })();
 
       const propostaLabel = (() => {
@@ -922,6 +943,21 @@ const ResultadosPanel = () => {
     }));
   }, [totals.byResultado]);
 
+  const motivosChartData = useMemo<MotivosChartDatum[]>(() => {
+    const counts: Record<string, number> = {};
+
+    for (const l of annotated) {
+      const motivo = l.propostaErro?.motivo ?? null;
+      if (!motivo) continue;
+      counts[motivo] = (counts[motivo] || 0) + 1;
+    }
+
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+  }, [annotated]);
+
   const filteredLeads = useMemo(() => {
     let list = annotated;
 
@@ -943,8 +979,12 @@ const ResultadosPanel = () => {
       list = list.filter((l) => l.cpf.includes(term) || (l.nome?.toLowerCase().includes(term) ?? false));
     }
 
+    if (selectedMotivo) {
+      list = list.filter((l) => l.propostaErro?.motivo === selectedMotivo);
+    }
+
     return list;
-  }, [annotated, debouncedSearch, selectedAutorizacao, selectedConsultaMargem, selectedProposta, selectedResultado]);
+  }, [annotated, debouncedSearch, selectedAutorizacao, selectedConsultaMargem, selectedMotivo, selectedProposta, selectedResultado]);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(filteredLeads.length / pageSize)), [filteredLeads.length]);
 
@@ -962,6 +1002,7 @@ const ResultadosPanel = () => {
     setSelectedAutorizacao("TODOS");
     setSelectedConsultaMargem("TODOS");
     setSelectedProposta("TODOS");
+    setSelectedMotivo(null);
     setSearchTerm("");
     setPage(1);
   };
@@ -1006,6 +1047,7 @@ const ResultadosPanel = () => {
           selectedAutorizacao !== "TODOS" ||
           selectedConsultaMargem !== "TODOS" ||
           selectedProposta !== "TODOS" ||
+          selectedMotivo ||
           debouncedSearch.trim()) && (
           <Button variant="outline" onClick={clearSelection}>
             Limpar filtro
@@ -1098,49 +1140,96 @@ const ResultadosPanel = () => {
         </button>
       </div>
 
-      <Card className="glass-card">
-        <CardHeader className="p-4 lg:p-6">
-          <CardTitle className="text-base lg:text-lg font-semibold text-foreground">Distribuição por resultado</CardTitle>
-          <p className="text-xs lg:text-sm text-muted-foreground mt-1">Clique em uma barra para filtrar</p>
-        </CardHeader>
-        <CardContent className="p-4 lg:p-6 pt-0 lg:pt-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-[240px] text-muted-foreground">
-              <Loader2 className="w-6 h-6 animate-spin mr-2" />
-              Carregando...
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={chartData} margin={{ left: 8, right: 8 }}>
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-15} height={60} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <RechartsTooltip
-                  content={({ active, payload }) => {
-                    if (!active || !payload || payload.length === 0) return null;
-                    const p = payload[0].payload as ResultsChartDatum;
-                    return (
-                      <div className="bg-popover border border-border rounded-lg p-3 shadow-lg">
-                        <p className="font-semibold text-foreground">{p.name}</p>
-                        <p className="text-sm text-muted-foreground">{Number(p.value || 0).toLocaleString("pt-BR")} leads</p>
-                      </div>
-                    );
-                  }}
-                />
-                <Bar
-                  dataKey="value"
-                  fill="hsl(var(--primary))"
-                  radius={[6, 6, 0, 0]}
-                  onClick={(data: unknown) => {
-                    if (!data || typeof data !== "object" || !("key" in data)) return;
-                    setSelectedResultado((data as ResultsChartDatum).key);
-                    setPage(1);
-                  }}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-6">
+        <Card className="glass-card">
+          <CardHeader className="p-4 lg:p-6">
+            <CardTitle className="text-base lg:text-lg font-semibold text-foreground">Distribuição por resultado</CardTitle>
+            <p className="text-xs lg:text-sm text-muted-foreground mt-1">Clique em uma barra para filtrar</p>
+          </CardHeader>
+          <CardContent className="p-4 lg:p-6 pt-0 lg:pt-0">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-[240px] text-muted-foreground">
+                <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                Carregando...
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={chartData} margin={{ left: 8, right: 8 }}>
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-15} height={60} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload || payload.length === 0) return null;
+                      const p = payload[0].payload as ResultsChartDatum;
+                      return (
+                        <div className="bg-popover border border-border rounded-lg p-3 shadow-lg">
+                          <p className="font-semibold text-foreground">{p.name}</p>
+                          <p className="text-sm text-muted-foreground">{Number(p.value || 0).toLocaleString("pt-BR")} leads</p>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar
+                    dataKey="value"
+                    fill="hsl(var(--primary))"
+                    radius={[6, 6, 0, 0]}
+                    onClick={(data: unknown) => {
+                      if (!data || typeof data !== "object" || !("key" in data)) return;
+                      setSelectedResultado((data as ResultsChartDatum).key);
+                      setSelectedMotivo(null);
+                      setPage(1);
+                    }}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card">
+          <CardHeader className="p-4 lg:p-6">
+            <CardTitle className="text-base lg:text-lg font-semibold text-foreground">Top motivos</CardTitle>
+            <p className="text-xs lg:text-sm text-muted-foreground mt-1">Clique em uma barra para filtrar</p>
+          </CardHeader>
+          <CardContent className="p-4 lg:p-6 pt-0 lg:pt-0">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-[240px] text-muted-foreground">
+                <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                Carregando...
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={motivosChartData} margin={{ left: 8, right: 8 }}>
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-15} height={60} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload || payload.length === 0) return null;
+                      const p = payload[0].payload as MotivosChartDatum;
+                      return (
+                        <div className="bg-popover border border-border rounded-lg p-3 shadow-lg max-w-[320px]">
+                          <p className="font-semibold text-foreground whitespace-pre-wrap break-words">{p.name}</p>
+                          <p className="text-sm text-muted-foreground">{Number(p.value || 0).toLocaleString("pt-BR")} leads</p>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar
+                    dataKey="value"
+                    fill="hsl(var(--primary))"
+                    radius={[6, 6, 0, 0]}
+                    onClick={(data: unknown) => {
+                      if (!data || typeof data !== "object" || !("name" in data)) return;
+                      setSelectedMotivo(String((data as MotivosChartDatum).name));
+                      setPage(1);
+                    }}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card className="bg-card border-border">
         <CardHeader className="pb-4">
@@ -1153,6 +1242,7 @@ const ResultadosPanel = () => {
                 {selectedAutorizacao !== "TODOS" ? ` | Autorização: ${selectedAutorizacao}` : ""}
                 {selectedConsultaMargem !== "TODOS" ? ` | Margem: ${selectedConsultaMargem}` : ""}
                 {selectedProposta !== "TODOS" ? ` | Proposta: ${selectedProposta}` : ""}
+                {selectedMotivo ? ` | Motivo: ${selectedMotivo}` : ""}
                 {debouncedSearch.trim() ? ` | Busca: ${debouncedSearch}` : ""}
               </p>
             </div>

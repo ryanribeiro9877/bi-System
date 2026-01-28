@@ -66,6 +66,39 @@ interface LeadPorErro {
   retorno_simulacao: unknown;
 }
 
+const normalizarMotivoConsulta = (raw: string | null): string => {
+  if (!raw) return "Não informado";
+  const text = String(raw).trim();
+  if (!text) return "Não informado";
+
+  const normalized = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  const hasCpfNaoEncontrado =
+    normalized.includes("cpf") &&
+    normalized.includes("nao encontrado") &&
+    normalized.includes("base");
+  if (hasCpfNaoEncontrado) return "CPF não encontrado na base";
+
+  const hasViradaCompetencia = normalized.includes("virada") && normalized.includes("competencia");
+  if (hasViradaCompetencia) return "Virada de competência";
+
+  const hasPhone = normalized.includes("phonenumber") || normalized.includes("phone number") || normalized.includes("phone_number") || normalized.includes("telefone");
+  const hasFormularioInvalido = normalized.includes("validar") && normalized.includes("dados") && normalized.includes("formulario");
+  if (hasPhone || hasFormularioInvalido) return "Número de telefone inválido";
+
+  const hasRateLimit =
+    normalized.includes("too_many_requests") ||
+    normalized.includes("too many requests") ||
+    normalized.includes("rate limit") ||
+    (normalized.includes("limite") && normalized.includes("excedido"));
+  if (hasRateLimit) return "Limite excedido no Dataprev";
+
+  return text;
+};
+
 const ResultadosConsultasPanel = () => {
   const { selectedImportFile } = useDashboard();
   const [resumo, setResumo] = useState<ErroResumo | null>(null);
@@ -89,16 +122,74 @@ const ResultadosConsultasPanel = () => {
     return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
 
+  function categorizarErro(tipoReprovacao: string | null): string {
+    if (!tipoReprovacao) return 'Não Categorizado';
+    const texto = tipoReprovacao.toLowerCase();
+    if (texto.includes('autorização') || texto.includes('autorizacao')) return 'Autorização';
+    if (texto.includes('margem')) return 'Margem';
+    if (texto.includes('6 meses') || texto.includes('vínculo') || texto.includes('vinculo') || texto.includes('tempo de atividade')) return 'Tempo de Vínculo';
+    if (texto.includes('cbo') || texto.includes('ocupação') || texto.includes('ocupacao')) return 'CBO Bloqueado';
+    if (texto.includes('timeout') || texto.includes('timed out') || texto.includes('curl error')) return 'Timeout/Conexão';
+    if (texto.includes('email') || texto.includes('phone') || texto.includes('telefone') || texto.includes('cpf') || texto.includes('nome') || texto.includes('validar')) return 'Validação de Dados';
+    if (texto.includes('política') || texto.includes('politica') || texto.includes('elegível') || texto.includes('elegivel') || texto.includes('porte') || texto.includes('cnpj')) return 'Política/Elegibilidade';
+    if (texto.includes('horário') || texto.includes('horario') || texto.includes('noturno')) return 'Horário';
+    if (texto.includes('limite') || texto.includes('valor') || texto.includes('parcelas') || texto.includes('rate limit')) return 'Limite/Valor';
+    if (texto.includes('idade')) return 'Idade';
+    if (texto.includes('contrato') || texto.includes('afastamento')) return 'Contrato';
+    if (texto.includes('servidor') || texto.includes('server') || texto.includes('interno')) return 'Sistema/Servidor';
+    if (texto.includes('proposta') || texto.includes('operação') || texto.includes('operacao')) return 'Proposta';
+    return 'Outros';
+  }
+
+  const erroOrigemMap = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const e of errosAnalise) {
+      const original = e.tipo_erro || "Não informado";
+      const normalizado = normalizarMotivoConsulta(original);
+      if (!map.has(normalizado)) map.set(normalizado, new Set());
+      map.get(normalizado)?.add(original);
+    }
+    return map;
+  }, [errosAnalise]);
+
+  const errosAnaliseNormalizados = useMemo(() => {
+    return errosAnalise
+      .filter((e) => e.tipo_erro && e.tipo_erro !== "Não informado")
+      .map((e) => {
+        const tipoNormalizado = normalizarMotivoConsulta(e.tipo_erro);
+        return {
+          ...e,
+          tipo_erro: tipoNormalizado,
+          categoria_erro: categorizarErro(tipoNormalizado),
+        };
+      });
+  }, [errosAnalise]);
+
+  const getTiposOriginais = (motivos: string[]): string[] => {
+    const set = new Set<string>();
+    for (const motivo of motivos) {
+      const originals = erroOrigemMap.get(motivo);
+      if (!originals) continue;
+      for (const o of originals) set.add(o);
+    }
+    return Array.from(set);
+  };
+
   const handleBarClick = async (data: { nomeCompleto: string; quantidade: number; banco: string }) => {
     if (!data?.nomeCompleto) return;
     setLoadingLeads(true);
     setDialogOpen(true);
     setDialogData({ titulo: `Leads com Erro`, subtitulo: `Carregando...`, leads: [] });
     try {
+      const tiposOriginais = getTiposOriginais([data.nomeCompleto]);
+      if (tiposOriginais.length === 0) {
+        setDialogData({ titulo: `Leads - ${data.nomeCompleto.substring(0, 50)}${data.nomeCompleto.length > 50 ? '...' : ''}`, subtitulo: `Nenhum lead encontrado`, leads: [] });
+        return;
+      }
       const { data: leads, error } = await supabase
         .from('leads')
         .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao')
-        .eq('tipo_reprovacao', data.nomeCompleto)
+        .in('tipo_reprovacao', tiposOriginais)
         .eq('status', 'reprovado')
         .limit(100);
       
@@ -133,13 +224,13 @@ const ResultadosConsultasPanel = () => {
     setDialogOpen(true);
     setDialogData({ titulo: `Leads - Categoria: ${data.name}`, subtitulo: `Carregando...`, leads: [] });
     try {
-      // Buscar os tipos de erro que pertencem a esta categoria
-      // Usar categoria_erro do banco de dados para consistência
-      const errosDaCategoria = errosAnalise
-        .filter(e => {
-          return e.categoria_erro === data.name && (bancoSelecionado === "todos" || e.banco === bancoSelecionado);
-        })
-        .map(e => e.tipo_erro);
+      const motivosDaCategoria = errosAnaliseNormalizados
+        .filter((e) => e.categoria_erro === data.name)
+        .filter((e) => bancoSelecionado === "todos" || e.banco === bancoSelecionado)
+        .map((e) => e.tipo_erro);
+
+      const motivosUnicos = Array.from(new Set(motivosDaCategoria));
+      const errosDaCategoria = getTiposOriginais(motivosUnicos);
 
       if (errosDaCategoria.length === 0) {
         setDialogData({ titulo: `Leads - Categoria: ${data.name}`, subtitulo: `Nenhum erro encontrado nesta categoria`, leads: [] });
@@ -170,35 +261,16 @@ const ResultadosConsultasPanel = () => {
     }
   };
 
-  const categorizarErro = (tipoReprovacao: string | null): string => {
-    if (!tipoReprovacao) return 'Não Categorizado';
-    const texto = tipoReprovacao.toLowerCase();
-    if (texto.includes('autorização') || texto.includes('autorizacao')) return 'Autorização';
-    if (texto.includes('margem')) return 'Margem';
-    if (texto.includes('6 meses') || texto.includes('vínculo') || texto.includes('vinculo') || texto.includes('tempo de atividade')) return 'Tempo de Vínculo';
-    if (texto.includes('cbo') || texto.includes('ocupação') || texto.includes('ocupacao')) return 'CBO Bloqueado';
-    if (texto.includes('timeout') || texto.includes('timed out') || texto.includes('curl error')) return 'Timeout/Conexão';
-    if (texto.includes('email') || texto.includes('phone') || texto.includes('cpf') || texto.includes('nome') || texto.includes('validar')) return 'Validação de Dados';
-    if (texto.includes('política') || texto.includes('politica') || texto.includes('elegível') || texto.includes('elegivel') || texto.includes('porte') || texto.includes('cnpj')) return 'Política/Elegibilidade';
-    if (texto.includes('horário') || texto.includes('horario') || texto.includes('noturno')) return 'Horário';
-    if (texto.includes('limite') || texto.includes('valor') || texto.includes('parcelas') || texto.includes('rate limit')) return 'Limite/Valor';
-    if (texto.includes('idade')) return 'Idade';
-    if (texto.includes('contrato') || texto.includes('afastamento')) return 'Contrato';
-    if (texto.includes('servidor') || texto.includes('server') || texto.includes('interno')) return 'Sistema/Servidor';
-    if (texto.includes('proposta') || texto.includes('operação') || texto.includes('operacao')) return 'Proposta';
-    return 'Outros';
-  };
-
   // Lista única de todos os tipos de erro disponíveis
   const tiposErroDisponiveis = useMemo(() => {
     const tipos = new Set<string>();
-    errosAnalise.forEach(e => {
+    errosAnaliseNormalizados.forEach(e => {
       if (e.tipo_erro && e.tipo_erro !== 'Não informado') {
         tipos.add(e.tipo_erro);
       }
     });
     return Array.from(tipos).sort();
-  }, [errosAnalise]);
+  }, [errosAnaliseNormalizados]);
 
   // Função para extrair a grade/detalhamento de um erro (ex: meses de vínculo)
   const extrairGradeDoErro = (tipoErro: string): string => {
@@ -450,7 +522,7 @@ const ResultadosConsultasPanel = () => {
   // Agrupar erros por categoria (apenas categorias com dados > 0 e excluindo "Não Categorizado" vazio)
   const errosPorCategoria = useMemo(() => {
     const grouped = new Map<string, number>();
-    errosAnalise
+    errosAnaliseNormalizados
       .filter(e => bancoSelecionado === "todos" || e.banco === bancoSelecionado)
       .filter(e => e.tipo_erro && e.tipo_erro !== 'Não informado') // Excluir erros sem tipo
       .forEach(e => {
@@ -461,22 +533,41 @@ const ResultadosConsultasPanel = () => {
       .map(([name, value]) => ({ name, value }))
       .filter(item => item.value > 0 && item.name !== 'Não Categorizado') // Excluir "Não Categorizado"
       .sort((a, b) => b.value - a.value);
-  }, [errosAnalise, bancoSelecionado]);
+  }, [errosAnaliseNormalizados, bancoSelecionado]);
 
   // Top 10 erros específicos
   const top10Erros = useMemo(() => {
-    return errosAnalise
-      .filter(e => bancoSelecionado === "todos" || e.banco === bancoSelecionado)
-      .filter(e => e.tipo_erro !== 'Não informado')
-      .slice(0, 10)
-      .map(e => ({
-        nome: e.tipo_erro.length > 50 ? e.tipo_erro.substring(0, 47) + '...' : e.tipo_erro,
-        nomeCompleto: e.tipo_erro,
-        quantidade: Number(e.quantidade),
-        banco: e.banco,
-        categoria: e.categoria_erro,
-      }));
-  }, [errosAnalise, bancoSelecionado]);
+    const grouped = new Map<string, { quantidade: number; banco: string; categoria: string }>();
+
+    for (const e of errosAnaliseNormalizados) {
+      if (bancoSelecionado !== "todos" && e.banco !== bancoSelecionado) continue;
+      if (!e.tipo_erro || e.tipo_erro === 'Não informado') continue;
+
+      const key = e.tipo_erro;
+      const prev = grouped.get(key);
+      const quantidade = Number(e.quantidade);
+      if (!prev) {
+        grouped.set(key, {
+          quantidade,
+          banco: bancoSelecionado === "todos" ? "todos" : e.banco,
+          categoria: e.categoria_erro || 'Outros',
+        });
+      } else {
+        prev.quantidade += quantidade;
+      }
+    }
+
+    return Array.from(grouped.entries())
+      .map(([tipo, info]) => ({
+        nome: tipo.length > 50 ? tipo.substring(0, 47) + '...' : tipo,
+        nomeCompleto: tipo,
+        quantidade: info.quantidade,
+        banco: info.banco,
+        categoria: info.categoria,
+      }))
+      .sort((a, b) => b.quantidade - a.quantidade)
+      .slice(0, 10);
+  }, [errosAnaliseNormalizados, bancoSelecionado]);
 
   // Função para download do relatório
   const handleDownloadReport = () => {

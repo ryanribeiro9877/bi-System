@@ -27,6 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import LeadDetailDialog from "@/components/leads/LeadDetailDialog";
 import { useLeadDetails } from "@/hooks/useLeadsPaginated";
 import type { Lead as LeadData } from "@/hooks/useLeadsData";
+import { extrairMotivoErro } from "@/lib/leadStatusUtils";
 
 type AuthCategory = "EXISTING_AUTH" | "TOKEN" | "ERRO_400" | "ERRO_429" | "OUTROS" | "VAZIO";
 
@@ -36,6 +37,7 @@ type AuthLeadRow = {
   nome: string | null;
   banco: string | null;
   status: string | null;
+  tipo_reprovacao: string | null;
   valor: number | null;
   created_at: string;
   retorno_autorizacao: unknown;
@@ -131,7 +133,7 @@ const auth429SubtypeLabel = (subtype: Auth429Subtype): string => {
 const auth400SubtypeLabel = (subtype: Auth400Subtype): string => {
   if (subtype === "BUSINESS_RULE_CPF_NAO_ENCONTRADO") return "CPF não encontrado na base";
   if (subtype === "BUSINESS_RULE_VIRADA_COMPETENCIA") return "Virada de competência";
-  if (subtype === "INVALID_FORM_PHONE_NUMBER") return "PhoneNumber inválido";
+  if (subtype === "INVALID_FORM_PHONE_NUMBER") return "Número de telefone inválido";
   return "Outros 400";
 };
 
@@ -352,7 +354,7 @@ const CBOsPanel = () => {
       const buildBaseQuery = () => {
         let query = supabase
           .from("leads")
-          .select("id, cpf, nome, banco, status, valor, created_at, retorno_autorizacao, import_batch_id")
+          .select("id, cpf, nome, banco, status, tipo_reprovacao, valor, created_at, retorno_autorizacao, import_batch_id")
           .order("created_at", { ascending: false });
 
         if (filters?.dataInicial) {
@@ -388,6 +390,7 @@ const CBOsPanel = () => {
           nome: (row.nome as string) ?? null,
           banco: (row.banco as string) ?? null,
           status: (row.status as string) ?? null,
+          tipo_reprovacao: (row.tipo_reprovacao as string) ?? null,
           valor: typeof row.valor === "number" ? row.valor : row.valor === null || row.valor === undefined ? null : Number(row.valor),
           created_at: String(row.created_at ?? ""),
           retorno_autorizacao: row.retorno_autorizacao,
@@ -420,12 +423,14 @@ const CBOsPanel = () => {
   const annotated = useMemo<AnnotatedAuthLead[]>(() => {
     return authLeads.map((l) => {
       const c = classifyAuth(l.retorno_autorizacao);
+      const motivo = extrairMotivoErro(l as unknown as LeadData);
+      const motivoExterno = c.category === "TOKEN" || c.category === "EXISTING_AUTH" ? null : motivo ?? l.tipo_reprovacao ?? c.reason;
       const auth400Subtype = c.category === "ERRO_400" ? classify400Subtype(l.retorno_autorizacao) : null;
       const auth429Subtype = c.category === "ERRO_429" ? classify429Subtype(l.retorno_autorizacao) : null;
       return {
         ...l,
         authCategory: c.category,
-        authReason: c.reason,
+        authReason: motivoExterno,
         authLabel: c.label,
         auth400Subtype,
         auth429Subtype,
@@ -457,7 +462,22 @@ const CBOsPanel = () => {
 
     const isExcludedReason = (reason: string): boolean => {
       const r = reason.trim().toLowerCase();
-      return r === "invalid_business_rule" || r === "too_many_requests";
+      if (r === "invalid_business_rule" || r === "too_many_requests") return true;
+
+      const normalized = r.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+      // Duplicados já exibidos como subtipo/label
+      const isFormularioInvalido = normalized.includes("validar") && normalized.includes("dados") && normalized.includes("formulario");
+      const isCpfNaoEncontrado =
+        normalized.includes("cpf") &&
+        normalized.includes("nao encontrado") &&
+        normalized.includes("base");
+      const isViradaCompetencia = normalized.includes("virada") && normalized.includes("competencia");
+
+      // Excluir o motivo genérico "Limite excedido" pois já existe "Limite excedido no DataPrev"
+      const isLimiteExcedidoGenerico = normalized === "limite excedido";
+
+      return isFormularioInvalido || isCpfNaoEncontrado || isViradaCompetencia || isLimiteExcedidoGenerico;
     };
 
     for (const l of annotated) {
@@ -790,9 +810,7 @@ const CBOsPanel = () => {
                       </button>
                     ))}
                   </div>
-                  {totals.topReasons400.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Sem detalhes de motivo.</p>
-                  ) : (
+                  {totals.topReasons400.length === 0 ? null : (
                     <div className="flex flex-wrap gap-2">
                       {totals.topReasons400.map((r) => (
                         <button
@@ -840,9 +858,7 @@ const CBOsPanel = () => {
                       </button>
                     ))}
                   </div>
-                  {totals.topReasons429.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Sem detalhes de motivo.</p>
-                  ) : (
+                  {totals.topReasons429.length === 0 ? null : (
                     <div className="flex flex-wrap gap-2">
                       {totals.topReasons429.map((r) => (
                         <button

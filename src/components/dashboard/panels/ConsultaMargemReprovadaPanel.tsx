@@ -8,15 +8,21 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useDashboard } from "@/contexts/DashboardContext";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from "recharts";
+import { classificarMargemReprovada } from "@/lib/leadStatusUtils";
 
 interface LeadMargemReprovada {
+  id: string;
   cpf: string;
   nome: string | null;
   banco: string | null;
   tipo_reprovacao: string | null;
+  tipo_reprovacao_classificado: string;
   valor?: number | null;
   retorno_margem: Record<string, unknown> | null;
   retorno_simulacao: Record<string, unknown> | null;
+  retorno_autorizacao?: unknown;
+  retorno_proposta?: unknown;
+  retorno_get_proposta?: unknown;
 }
 
 const COLORS = [
@@ -28,11 +34,18 @@ const ConsultaMargemReprovadaPanel = () => {
   const { selectedImportFile } = useDashboard();
   const [leads, setLeads] = useState<LeadMargemReprovada[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [bancoSelecionado, setBancoSelecionado] = useState<string>("todos");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogData, setDialogData] = useState<{ titulo: string; subtitulo: string; leads: LeadMargemReprovada[] } | null>(null);
   const [selectedLead, setSelectedLead] = useState<LeadMargemReprovada | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+
+  const motivoLabelMap: Record<string, string> = {
+    margem_zerada: "Margem zerada",
+    margem_negativa: "Margem negativa",
+    margem_insuficiente: "Margem baixa",
+  };
 
   const formatCpf = (cpf: string) => {
     const cleaned = cpf.replace(/\D/g, "");
@@ -43,7 +56,7 @@ const ConsultaMargemReprovadaPanel = () => {
   const handleBarClick = (motivo: string, banco: string) => {
     const leadsDoMotivoBanco = leads.filter(lead => {
       // Tratar "Não informado" como null/undefined/vazio
-      const motivoLead = lead.tipo_reprovacao || 'Não informado';
+      const motivoLead = lead.tipo_reprovacao_classificado || 'Não informado';
       const bancoLead = lead.banco || 'Não informado';
       return motivoLead === motivo && bancoLead === banco;
     });
@@ -60,83 +73,93 @@ const ConsultaMargemReprovadaPanel = () => {
     setDetailDialogOpen(true);
   };
 
-  // Função para categorizar erro como "Margem" - mesma lógica do ResultadosConsultasPanel
-  const isErroMargem = (tipoReprovacao: string | null): boolean => {
-    if (!tipoReprovacao) return false;
-    const texto = tipoReprovacao.toLowerCase();
-    return texto.includes('margem');
-  };
-
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+      setErrorMessage(null);
       try {
-        // Carregar TODOS os leads reprovados em lotes paralelos para máxima velocidade
-        const pageSize = 1000;
-        
-        // Primeiro, obter contagem total para saber quantas requisições fazer
-        let countQuery = supabase
-          .from('leads')
-          .select('cpf', { count: 'exact', head: true })
-          .eq('status', 'reprovado')
-          .ilike('tipo_reprovacao', '%margem%');
-        
-        if (selectedImportFile) {
-          countQuery = countQuery.eq('import_batch_id', selectedImportFile);
-        }
-        
-        const { count } = await countQuery;
-        const totalCount = count || 0;
-        console.log('[ConsultaMargemReprovada] Total de leads:', totalCount);
-        
-        if (totalCount === 0) {
-          setLeads([]);
-          setLoading(false);
-          return;
-        }
-        
-        // Calcular número de páginas necessárias
-        const numPages = Math.ceil(totalCount / pageSize);
-        
-        // Criar todas as requisições em paralelo (máximo 10 paralelas por vez)
+        // Paginação por cursor (evita offsets grandes) e sem paralelismo (evita 500 / rate limits)
+        const pageSize = 500;
+        const maxRecords = 20000;
+
         const allLeads: LeadMargemReprovada[] = [];
-        const batchSize = 10; // Requisições paralelas por vez
-        
-        for (let batch = 0; batch < numPages; batch += batchSize) {
-          const promises = [];
+        let lastId: string | null = null;
+
+        while (allLeads.length < maxRecords) {
+          let query = supabase
+            .from('leads')
+            .select('id, cpf, nome, banco, tipo_reprovacao, retorno_autorizacao, retorno_margem, retorno_simulacao, retorno_proposta, retorno_get_proposta, valor')
+            .order('id', { ascending: true })
+            .limit(pageSize);
+
+          if (selectedImportFile) {
+            query = query.eq('import_batch_id', selectedImportFile);
+          }
+          if (lastId) {
+            query = query.gt('id', lastId);
+          }
+
+          const { data, error } = await query;
+          if (error) throw error;
+
+          const rows = (data || []) as unknown as Omit<LeadMargemReprovada, "tipo_reprovacao_classificado">[];
+          if (rows.length === 0) break;
+
+          const mapped = rows.map((row) => {
+            const info = classificarMargemReprovada(row);
+            return {
+              ...row,
+              tipo_reprovacao_classificado: info.tipo_reprovacao,
+              _debug_criterios: info.criterios,
+              _debug_valorMargem: info.valorMargemDisponivel,
+            } as LeadMargemReprovada & { _debug_criterios: string[]; _debug_valorMargem: number | null };
+          });
+
+          const allowed = new Set(["margem_zerada", "margem_negativa", "margem_insuficiente"]);
+          const filtered = mapped.filter((l) => allowed.has(l.tipo_reprovacao_classificado));
           
-          for (let i = batch; i < Math.min(batch + batchSize, numPages); i++) {
-            let query = supabase
-              .from('leads')
-              .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, valor')
-              .eq('status', 'reprovado')
-              .ilike('tipo_reprovacao', '%margem%')
-              .range(i * pageSize, (i + 1) * pageSize - 1);
-            
-            if (selectedImportFile) {
-              query = query.eq('import_batch_id', selectedImportFile);
+          // DEBUG: Log para diagnóstico (remover depois)
+          if (allLeads.length === 0 && rows.length > 0) {
+            const tipoCount: Record<string, number> = {};
+            mapped.forEach((l) => {
+              tipoCount[l.tipo_reprovacao_classificado] = (tipoCount[l.tipo_reprovacao_classificado] || 0) + 1;
+            });
+            console.log("[DEBUG ConsultaMargemReprovadaPanel] Primeira página:", {
+              totalRows: rows.length,
+              classificacoes: tipoCount,
+              primeiros5: mapped.slice(0, 5).map((l) => ({
+                id: l.id,
+                tipo: l.tipo_reprovacao_classificado,
+                criterios: (l as any)._debug_criterios,
+                valorMargem: (l as any)._debug_valorMargem,
+                hasRetornoMargem: !!l.retorno_margem,
+                hasRetornoSimulacao: !!l.retorno_simulacao,
+                retornoMargemKeys: l.retorno_margem ? Object.keys(l.retorno_margem as object).slice(0, 10) : null,
+                retornoSimulacaoKeys: l.retorno_simulacao ? Object.keys(l.retorno_simulacao as object).slice(0, 10) : null,
+              })),
+            });
+            // Log de um lead que TEM retorno_margem para ver a estrutura
+            const leadComMargem = mapped.find((l) => !!l.retorno_margem);
+            if (leadComMargem) {
+              console.log("[DEBUG] Lead com retorno_margem:", {
+                id: leadComMargem.id,
+                retorno_margem: leadComMargem.retorno_margem,
+                tipo: leadComMargem.tipo_reprovacao_classificado,
+                criterios: (leadComMargem as any)._debug_criterios,
+              });
             }
-            
-            promises.push(query);
           }
           
-          const results = await Promise.all(promises);
-          
-          for (const { data, error } of results) {
-            if (error) {
-              console.error('[ConsultaMargemReprovada] Erro na query:', error);
-              continue;
-            }
-            if (data) {
-              allLeads.push(...(data as LeadMargemReprovada[]));
-            }
-          }
+          allLeads.push(...filtered);
+          lastId = rows[rows.length - 1]?.id ?? null;
+
+          if (rows.length < pageSize) break;
         }
-        
-        console.log('[ConsultaMargemReprovada] Leads carregados:', allLeads.length);
+
         setLeads(allLeads);
       } catch (err) {
-        console.error('Erro ao buscar leads com margem reprovada:', err);
+        setLeads([]);
+        setErrorMessage(err instanceof Error ? err.message : 'Erro ao buscar leads com margem reprovada');
       } finally {
         setLoading(false);
       }
@@ -161,75 +184,16 @@ const ConsultaMargemReprovadaPanel = () => {
   }, [leads, bancoSelecionado]);
 
   // Função auxiliar para extrair valor de margem
-  // UY3: usa valorMargemDisponivel do retorno_simulacao
-  // PRESENÇA: usa valorMargemDisponivel (positivo) ou valorMargem (negativo) do retorno_margem
-  // Outros: usa valorMargemDisponivel do retorno_margem
+  // Extrai valorMargemDisponivel de múltiplos caminhos possíveis:
+  // 1. Direto em retorno_margem.valorMargemDisponivel
+  // 2. Em retorno_margem.details.dataprevValidationResponses[].employeeRelationShip.valorMargemDisponivel
+  // 3. Em JSON embutido no campo retorno_margem.error (Response completo: {...})
   const extrairValorMargemLead = (lead: LeadMargemReprovada): number => {
-    const banco = lead.banco?.toUpperCase() || '';
-    
-    // Para banco UY3: buscar em retorno_simulacao
-    if (banco === 'UY3') {
-      const simulacaoRaw = lead.retorno_simulacao;
-      if (!simulacaoRaw) return 0;
-      
-      // retorno_simulacao pode ser um Array ou um objeto
-      let simulacao: Record<string, unknown> | null = null;
-      
-      if (Array.isArray(simulacaoRaw)) {
-        simulacao = simulacaoRaw[0] as Record<string, unknown> | null;
-      } else {
-        simulacao = simulacaoRaw as Record<string, unknown>;
-      }
-      
-      if (!simulacao) return 0;
-      
-      // Para UY3: valorMargemDisponivel está em result[0].valorMargemDisponivel
-      // Estrutura: retorno_simulacao[0].result[0].valorMargemDisponivel
-      const resultArray = simulacao?.result as Array<Record<string, unknown>> | undefined;
-      if (resultArray && Array.isArray(resultArray) && resultArray.length > 0) {
-        const valorMargem = resultArray[0]?.valorMargemDisponivel;
-        
-        if (typeof valorMargem === 'number') return valorMargem;
-        if (typeof valorMargem === 'string' && !isNaN(parseFloat(valorMargem))) return parseFloat(valorMargem);
-      }
-      
-      return 0;
-    }
-    
-    // Para PRESENÇA: tratar padrões específicos do retorno_margem
-    if (banco.includes('PRESEN')) {
-      const margemRaw = lead.retorno_margem;
-      if (!margemRaw) return 0;
-
-      let margem: Record<string, unknown> | null = null;
-      if (Array.isArray(margemRaw)) {
-        margem = margemRaw[0] as Record<string, unknown> | null;
-      } else {
-        margem = margemRaw as Record<string, unknown>;
-      }
-
-      if (!margem) return 0;
-
-      const valorMargemDisponivel = margem.valorMargemDisponivel;
-      if (typeof valorMargemDisponivel === 'number') return valorMargemDisponivel;
-      if (typeof valorMargemDisponivel === 'string' && !isNaN(parseFloat(valorMargemDisponivel))) {
-        return parseFloat(valorMargemDisponivel);
-      }
-
-      const valorMargem = margem.valorMargem;
-      if (typeof valorMargem === 'number') return valorMargem;
-      if (typeof valorMargem === 'string' && !isNaN(parseFloat(valorMargem))) return parseFloat(valorMargem);
-
-      return 0;
-    }
-
-    // Para outros bancos: buscar em retorno_margem
     const margemRaw = lead.retorno_margem;
     if (!margemRaw) return 0;
     
     // retorno_margem pode ser um Array ou um objeto
     let margem: Record<string, unknown> | null = null;
-    
     if (Array.isArray(margemRaw)) {
       margem = margemRaw[0] as Record<string, unknown> | null;
     } else {
@@ -238,11 +202,54 @@ const ConsultaMargemReprovadaPanel = () => {
     
     if (!margem) return 0;
     
-    // Buscar valorMargemDisponivel
-    const valorMargem = margem?.valorMargemDisponivel;
+    // 1. Tentar direto em valorMargemDisponivel
+    const valorDireto = margem?.valorMargemDisponivel;
+    if (typeof valorDireto === 'number') return valorDireto;
+    if (typeof valorDireto === 'string' && !isNaN(parseFloat(valorDireto))) return parseFloat(valorDireto);
     
-    if (typeof valorMargem === 'number') return valorMargem;
-    if (typeof valorMargem === 'string' && !isNaN(parseFloat(valorMargem))) return parseFloat(valorMargem);
+    // 2. Tentar em details.dataprevValidationResponses[].employeeRelationShip.valorMargemDisponivel
+    const details = margem?.details as Record<string, unknown> | undefined;
+    if (details) {
+      const dataprevResponses = details?.dataprevValidationResponses;
+      if (Array.isArray(dataprevResponses) && dataprevResponses.length > 0) {
+        for (const response of dataprevResponses) {
+          const employee = (response as Record<string, unknown>)?.employeeRelationShip as Record<string, unknown> | undefined;
+          if (employee) {
+            const valor = employee?.valorMargemDisponivel;
+            if (typeof valor === 'number') return valor;
+            if (typeof valor === 'string' && !isNaN(parseFloat(valor))) return parseFloat(valor);
+          }
+        }
+      }
+    }
+    
+    // 3. Tentar extrair do JSON embutido no campo error
+    const errorStr = typeof margem?.error === 'string' ? margem.error : null;
+    if (errorStr) {
+      const match = errorStr.match(/Response completo:\s*(\{[\s\S]*\})/);
+      if (match?.[1]) {
+        try {
+          const cleanJson = match[1].replace(/\\n/g, "").replace(/\\t/g, "").replace(/\\"/g, '"');
+          const parsed = JSON.parse(cleanJson) as Record<string, unknown>;
+          const parsedDetails = parsed?.details as Record<string, unknown> | undefined;
+          if (parsedDetails) {
+            const dataprevResponses = parsedDetails?.dataprevValidationResponses;
+            if (Array.isArray(dataprevResponses) && dataprevResponses.length > 0) {
+              for (const response of dataprevResponses) {
+                const employee = (response as Record<string, unknown>)?.employeeRelationShip as Record<string, unknown> | undefined;
+                if (employee) {
+                  const valor = employee?.valorMargemDisponivel;
+                  if (typeof valor === 'number') return valor;
+                  if (typeof valor === 'string' && !isNaN(parseFloat(valor))) return parseFloat(valor);
+                }
+              }
+            }
+          }
+        } catch {
+          // Ignorar erro de parse
+        }
+      }
+    }
     
     return 0;
   };
@@ -265,19 +272,14 @@ const ConsultaMargemReprovadaPanel = () => {
       }
     });
 
-    // Soma Total = Margem Positiva - Margem Negativa (valor absoluto)
-    const somaMargens = somaPositivas - Math.abs(somaNegativas);
+    // Soma Total = soma das margens positivas + soma das margens negativas (negativas já são negativas)
+    const somaMargens = somaPositivas + somaNegativas;
+    // Média = soma total / quantidade de leads com margem reprovada
     const mediaMargens = quantidade > 0 ? somaMargens / quantidade : 0;
 
-    // Valor em produção - REGRA: usar liquidValue do retorno_simulacao
-    const valorProducao = leadsFiltrados.reduce((sum, lead) => {
-      const simulacao = lead.retorno_simulacao;
-      // Prioridade: liquidValue é o valor principal para cálculo de produção gasto
-      const liquidValue = simulacao?.liquidValue;
-      const valor = typeof liquidValue === 'number' ? liquidValue : 
-                    typeof liquidValue === 'string' ? parseFloat(liquidValue) || 0 : 0;
-      return sum + Math.abs(valor);
-    }, 0);
+    // Valor em produção gasto - REGRA: cada lead tem custo de R$ 1,15
+    const custoporLead = 1.15;
+    const valorProducao = quantidade * custoporLead;
 
     return {
       quantidade,
@@ -295,7 +297,7 @@ const ConsultaMargemReprovadaPanel = () => {
 
     leadsFiltrados.forEach(lead => {
       const banco = lead.banco || 'Não informado';
-      const motivo = lead.tipo_reprovacao || 'Não informado';
+      const motivo = lead.tipo_reprovacao_classificado || 'Não informado';
 
       if (!motivosMap.has(motivo)) {
         motivosMap.set(motivo, new Map());
@@ -341,6 +343,24 @@ const ConsultaMargemReprovadaPanel = () => {
             <div key={i} className="h-32 bg-muted/50 animate-pulse rounded-lg" />
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <div className="space-y-6">
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              Falha ao carregar
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{errorMessage}</p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -478,8 +498,11 @@ const ConsultaMargemReprovadaPanel = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {motivosPorBanco.map((item, idx) => (
                 <div key={item.motivo} className="p-4 rounded-lg border border-border">
-                  <h4 className="text-sm font-medium text-foreground mb-4 line-clamp-2" title={item.motivo}>
-                    {item.motivo.length > 60 ? item.motivo.substring(0, 60) + '...' : item.motivo}
+                  <h4
+                    className="text-sm font-medium text-foreground mb-4 line-clamp-2"
+                    title={motivoLabelMap[item.motivo] || item.motivo}
+                  >
+                    {motivoLabelMap[item.motivo] || item.motivo}
                   </h4>
                   <div className="h-[200px]">
                     <ResponsiveContainer width="100%" height="100%">
@@ -608,7 +631,7 @@ const ConsultaMargemReprovadaPanel = () => {
                     </div>
                     <div>
                       <span className="text-muted-foreground">Tipo de Erro:</span>
-                      <span className="ml-2 text-red-400">{selectedLead.tipo_reprovacao || 'Não informado'}</span>
+                      <span className="ml-2 text-red-400">{motivoLabelMap[selectedLead.tipo_reprovacao_classificado] || selectedLead.tipo_reprovacao_classificado || 'Não informado'}</span>
                     </div>
                   </div>
                 </div>

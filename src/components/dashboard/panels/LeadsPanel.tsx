@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileText, Upload, Eye, ChevronLeft, ChevronRight, Search, Users, Download, ChevronsLeft, ChevronsRight, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,8 +14,9 @@ import {
 } from "@/components/ui/table";
 import { useNavigate } from "react-router-dom";
 import { useDashboard } from "@/contexts/DashboardContext";
-import { LeadListItem, useLeadDetails } from "@/hooks/useLeadsPaginated";
+import { LeadListItem } from "@/hooks/useLeadsPaginated";
 import LeadDetailDialog from "@/components/leads/LeadDetailDialog";
+import { useLeadsQuery, useLeadDetails } from "@/hooks/useLeadsQuery";
 
 // Formata data como dd/mm/aaaa - hh:nn:ss
 const formatDateTime = (dateString: string | null): string => {
@@ -38,13 +39,43 @@ const formatDateTime = (dateString: string | null): string => {
   }
 };
 
+
+
+
+
+
+
 const LeadsPanel = () => {
   const navigate = useNavigate();
-  const { leads, stats, pagination, goToPage, isLoading, filters, setFilters } = useDashboard();
+  const { stats, isLoading: isLoadingDashboard, filters, setFilters } = useDashboard();
   const [searchCpf, setSearchCpf] = useState("");
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const { lead } = useLeadDetails(selectedLeadId);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+  const [listStatus, setListStatus] = useState("aprovado");
+
+  const listFilters = useMemo(
+    () => ({
+      ...filters,
+      status: listStatus === "todos" ? "" : listStatus,
+    }),
+    [filters, listStatus]
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [listFilters]);
+
+  const { leads, totalCount, isLoading: isLoadingLeads } = useLeadsQuery(listFilters, page, pageSize);
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(totalCount / pageSize)), [totalCount, pageSize]);
+
+  const goToPage = (nextPage: number) => {
+    if (nextPage >= 1 && nextPage <= totalPages) {
+      setPage(nextPage);
+    }
+  };
 
   const formatCpf = (cpf: string) => {
     const cleaned = cpf.replace(/\D/g, "");
@@ -64,6 +95,7 @@ const LeadsPanel = () => {
   // Busca por CPF - atualiza filtros do contexto
   const handleSearch = () => {
     setFilters({ ...filters, cpf: searchCpf });
+    setPage(1);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -74,10 +106,13 @@ const LeadsPanel = () => {
 
   // Filtro por status
   const handleStatusFilter = (status: string) => {
-    setFilters({ ...filters, status: status === "todos" ? "" : status });
+    setListStatus(status === "todos" ? "todos" : status);
+    setPage(1);
   };
 
-  if (stats.totalLeads === 0 && !isLoading) {
+  const isLoading = isLoadingDashboard || isLoadingLeads;
+
+  if (stats.totalLeads === 0 && !isLoadingDashboard && !isLoadingLeads) {
     return (
       <Card className="glass-card">
         <CardHeader>
@@ -114,7 +149,7 @@ const LeadsPanel = () => {
           <div className="flex items-center gap-2">
             <Badge variant="secondary">Aprovados: {stats.leadsAprovados.toLocaleString("pt-BR")}</Badge>
             <Badge variant="secondary">Reprovados: {stats.leadsReprovados.toLocaleString("pt-BR")}</Badge>
-            <span className="text-sm text-muted-foreground ml-2">{pagination.totalCount.toLocaleString("pt-BR")} contratos</span>
+            <span className="text-sm text-muted-foreground ml-2">{totalCount.toLocaleString("pt-BR")} contratos</span>
           </div>
         </div>
 
@@ -135,7 +170,7 @@ const LeadsPanel = () => {
           </Button>
           <select 
             className="h-10 px-3 rounded-md border border-input bg-background text-sm" 
-            value={filters.status || "todos"} 
+            value={listStatus || "todos"} 
             onChange={(e) => handleStatusFilter(e.target.value)}
           >
             <option value="todos">Todos</option>
@@ -216,7 +251,7 @@ const LeadsPanel = () => {
             {/* Pagination - usando paginação do servidor */}
             <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
               <span className="text-sm text-muted-foreground">
-                Página {pagination.page} de {pagination.totalPages} ({pagination.totalCount.toLocaleString("pt-BR")} leads)
+                Página {page} de {totalPages} ({totalCount.toLocaleString("pt-BR")} leads)
               </span>
               <div className="flex gap-1">
                 <Button 
@@ -224,7 +259,7 @@ const LeadsPanel = () => {
                   size="icon" 
                   className="h-8 w-8" 
                   onClick={() => goToPage(1)} 
-                  disabled={pagination.page === 1}
+                  disabled={page === 1}
                 >
                   <ChevronsLeft className="h-4 w-4" />
                 </Button>
@@ -232,20 +267,20 @@ const LeadsPanel = () => {
                   variant="outline" 
                   size="icon" 
                   className="h-8 w-8" 
-                  onClick={() => goToPage(pagination.page - 1)} 
-                  disabled={pagination.page === 1}
+                  onClick={() => goToPage(page - 1)} 
+                  disabled={page === 1}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <span className="flex items-center px-3 text-sm text-muted-foreground">
-                  {pagination.page}
+                  {page}
                 </span>
                 <Button 
                   variant="outline" 
                   size="icon" 
                   className="h-8 w-8" 
-                  onClick={() => goToPage(pagination.page + 1)} 
-                  disabled={pagination.page === pagination.totalPages || pagination.totalPages === 0}
+                  onClick={() => goToPage(page + 1)} 
+                  disabled={page === totalPages || totalPages === 0}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -253,8 +288,8 @@ const LeadsPanel = () => {
                   variant="outline" 
                   size="icon" 
                   className="h-8 w-8" 
-                  onClick={() => goToPage(pagination.totalPages)} 
-                  disabled={pagination.page === pagination.totalPages || pagination.totalPages === 0}
+                  onClick={() => goToPage(totalPages)} 
+                  disabled={page === totalPages || totalPages === 0}
                 >
                   <ChevronsRight className="h-4 w-4" />
                 </Button>

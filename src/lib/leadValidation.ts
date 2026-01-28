@@ -70,7 +70,7 @@ export const LeadImportSchema = z.object({
     .nullable(),
   
   cbo: z.string()
-    .max(50, 'CBO deve ter no máximo 50 caracteres')
+    .max(200, 'CBO deve ter no máximo 200 caracteres')  // Aumentado de 50 para 200
     .optional()
     .nullable(),
   
@@ -162,7 +162,7 @@ export function validarCPFRelaxado(cpf: string): boolean {
  * @param leads - Array of leads to validate
  * @param forceImport - If true, uses relaxed CPF validation (ignores checksum)
  */
-export function validateLeads(leads: any[], forceImport: boolean = false): ValidationResult {
+export function validateLeads(leads: Record<string, unknown>[], forceImport: boolean = false): ValidationResult {
   const valid: ValidatedLead[] = [];
   const invalid: ValidationError[] = [];
   
@@ -178,8 +178,8 @@ export function validateLeads(leads: any[], forceImport: boolean = false): Valid
         ...lead,
         cpf: cpfLimpo,
         // Ensure valor is a number or undefined
-        valor: lead.valor !== undefined && lead.valor !== null && !isNaN(parseFloat(lead.valor))
-          ? parseFloat(lead.valor)
+        valor: lead.valor !== undefined && lead.valor !== null && !isNaN(parseFloat(String(lead.valor)))
+          ? parseFloat(String(lead.valor))
           : undefined,
       };
       

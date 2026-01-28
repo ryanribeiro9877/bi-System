@@ -1,15 +1,17 @@
-import { BarChart3, Building2, Briefcase, Users, AlertTriangle, TrendingDown } from "lucide-react";
+import { BarChart3, Building2, Briefcase, AlertTriangle, TrendingDown } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useState } from "react";
 import OverviewPanel from "./panels/OverviewPanel";
 import CBOsPanel from "./panels/CBOsPanel";
-import LeadsPanel from "./panels/LeadsPanel";
 import ResultadosPanel from "./panels/ResultadosPanel";
 import ResultadosConsultasPanel from "./panels/ResultadosConsultasPanel";
 import ConsultaMargemReprovadaPanel from "./panels/ConsultaMargemReprovadaPanel";
 
 const DashboardTabs = () => {
+  const [tab, setTab] = useState("overview");
+
   return (
-    <Tabs defaultValue="overview" className="w-full">
+    <Tabs value={tab} onValueChange={setTab} className="w-full">
       <div className="overflow-x-auto mb-4 lg:mb-6 -mx-4 px-4 lg:mx-0 lg:px-0">
         <TabsList className="flex w-full min-w-max md:min-w-0 h-11 lg:h-12 bg-muted/50 border border-border rounded-lg px-2 sm:px-3 lg:px-4 py-2 gap-6 justify-between items-center">
           <TabsTrigger
@@ -25,14 +27,6 @@ const DashboardTabs = () => {
           >
             <Briefcase className="h-3.5 w-3.5 lg:h-4 lg:w-4 mr-1.5 flex-shrink-0" />
             Autorizações
-          </TabsTrigger>
-          <TabsTrigger
-            value="leads"
-            className="min-w-[110px] md:flex-1 h-full data-[state=active]:bg-background data-[state=active]:border data-[state=active]:border-border data-[state=active]:shadow-sm rounded-md transition-all whitespace-nowrap text-[11px] lg:text-sm px-3 lg:px-4"
-          >
-            <Users className="h-3.5 w-3.5 lg:h-4 lg:w-4 mr-1.5 flex-shrink-0" />
-            <span className="hidden md:inline">Contratos Digitados</span>
-            <span className="md:hidden">Contratos</span>
           </TabsTrigger>
           <TabsTrigger
             value="resultados"
@@ -62,27 +56,23 @@ const DashboardTabs = () => {
       </div>
 
       <TabsContent value="overview" className="mt-0">
-        <OverviewPanel />
+        {tab === "overview" && <OverviewPanel />}
       </TabsContent>
 
       <TabsContent value="cbos" className="mt-0">
-        <CBOsPanel />
-      </TabsContent>
-
-      <TabsContent value="leads" className="mt-0">
-        <LeadsPanel />
+        {tab === "cbos" && <CBOsPanel />}
       </TabsContent>
 
       <TabsContent value="resultados" className="mt-0">
-        <ResultadosConsultasPanel />
+        {tab === "resultados" && <ResultadosConsultasPanel />}
       </TabsContent>
 
       <TabsContent value="erros-consulta" className="mt-0">
-        <ResultadosPanel />
+        {tab === "erros-consulta" && <ResultadosPanel />}
       </TabsContent>
 
       <TabsContent value="margem-reprovada" className="mt-0">
-        <ConsultaMargemReprovadaPanel />
+        {tab === "margem-reprovada" && <ConsultaMargemReprovadaPanel />}
       </TabsContent>
     </Tabs>
   );

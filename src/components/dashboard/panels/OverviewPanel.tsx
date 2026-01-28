@@ -1,11 +1,19 @@
 import { Users, Building2 } from "lucide-react";
 import KPICard from "../KPICard";
-import BankApprovalChart from "../BankApprovalChart";
-import CBOsPieChart from "../CBOsPieChart";
 import { useDashboard } from "@/contexts/DashboardContext";
+import { Suspense, lazy, useEffect, useState } from "react";
+
+const BankApprovalChart = lazy(() => import("../BankApprovalChart"));
+const CBOsPieChart = lazy(() => import("../CBOsPieChart"));
 
 const OverviewPanel = () => {
   const { stats, isLoading } = useDashboard();
+  const [showCharts, setShowCharts] = useState(false);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setShowCharts(true), 0);
+    return () => window.clearTimeout(id);
+  }, []);
 
   if (isLoading) {
     return (
@@ -40,8 +48,16 @@ const OverviewPanel = () => {
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-6">
-        <BankApprovalChart />
-        <CBOsPieChart />
+        {showCharts && (
+          <Suspense fallback={null}>
+            <BankApprovalChart />
+          </Suspense>
+        )}
+        {showCharts && (
+          <Suspense fallback={null}>
+            <CBOsPieChart />
+          </Suspense>
+        )}
       </div>
     </div>
   );

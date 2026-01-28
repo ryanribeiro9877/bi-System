@@ -12,7 +12,7 @@ export const queryClient = new QueryClient({
       // Não refetch ao focar a janela (evita requests desnecessários)
       refetchOnWindowFocus: false,
       // Stale-while-revalidate: mostra dados em cache enquanto busca novos
-      refetchOnMount: 'always',
+      refetchOnMount: false,
     },
   },
 });

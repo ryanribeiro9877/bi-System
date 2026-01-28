@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Lead } from "@/hooks/useLeadsData";
 import { FileText, CheckCircle, Clock, User, CreditCard, FileJson, AlertTriangle } from "lucide-react";
-import { normalizarStatusLead, extrairMotivoErro } from "@/lib/leadStatusUtils";
+import { normalizarStatusLead, extrairMotivoErro, extrairMotivoReprovacaoTecnica } from "@/lib/leadStatusUtils";
 
 interface LeadDetailDialogProps {
   lead: Lead | null;
@@ -12,10 +12,137 @@ interface LeadDetailDialogProps {
 }
 
 const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) => {
+  const sanitizeMotivo = (value: string | null): string | null => {
+    if (!value) return null;
+    const trimmed = value.trim();
+
+    const looksLikeJson =
+      trimmed.startsWith("{") ||
+      trimmed.startsWith("[") ||
+      trimmed.includes("Response completo:") ||
+      trimmed.includes("\"status\"") ||
+      trimmed.includes("\"statusDescription\"");
+
+    const extractFromObject = (obj: unknown): string | null => {
+      if (!obj || typeof obj !== "object") return null;
+      const o = obj as Record<string, unknown>;
+      const fields = ["status", "statusDescription", "message", "error", "detail", "details"];
+      for (const f of fields) {
+        const v = o[f];
+        if (typeof v === "string" && v.trim()) return v.trim();
+      }
+      return null;
+    };
+
+    if (looksLikeJson) {
+      const tryParse = (text: string): unknown | null => {
+        try {
+          return JSON.parse(text);
+        } catch {
+          return null;
+        }
+      };
+
+      const marker = "Response completo:";
+      const idx = trimmed.indexOf(marker);
+      if (idx >= 0) {
+        const candidate = trimmed.slice(idx + marker.length).trim();
+        const parsed = tryParse(candidate);
+        const extracted = extractFromObject(parsed);
+        if (extracted) return extracted;
+      }
+
+      const parsed = tryParse(trimmed);
+      const extracted = extractFromObject(parsed);
+      if (extracted) return extracted;
+
+      return "Pendente";
+    }
+
+    if (trimmed.length > 180) return `${trimmed.slice(0, 180)}...`;
+    return trimmed;
+  };
+
+  const getMotivoAguardandoPagamento = (l: Lead): string => {
+    const leadAny = l as unknown as Record<string, unknown>;
+    const manualStatus = leadAny.pagamento_status as string | null;
+
+    if (manualStatus === "aguardando") {
+      const motivoManual = leadAny.pagamento_descricao as string | null;
+      const sanitizedManual = sanitizeMotivo(motivoManual);
+      if (sanitizedManual) {
+        const normalized = sanitizedManual
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .trim();
+        if (normalized.includes("assinatura")) return "Assinatura pendente";
+      }
+    }
+
+    const obj = l.retorno_get_proposta as unknown;
+    const statusRaw =
+      obj && typeof obj === "object" && typeof (obj as Record<string, unknown>).status === "string"
+        ? ((obj as Record<string, unknown>).status as string)
+        : null;
+
+    if (!statusRaw) return "Pendente";
+
+    const normalized = statusRaw
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+
+    if (normalized.includes("assinatura")) return "Assinatura pendente";
+    return "Pendente";
+  };
+
   const formatCpf = (cpf: string) => {
     const cleaned = cpf.replace(/\D/g, "");
     if (cleaned.length !== 11) return cpf;
     return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  };
+
+  const getPagamentoInfo = (l: Lead): { label: string; variant: "success" | "warning" | "danger" | "neutral" } => {
+    const leadAny = l as unknown as Record<string, unknown>;
+    const manualStatus = leadAny.pagamento_status as string | null;
+
+    if (manualStatus) {
+      if (manualStatus === "pago") return { label: "Pago", variant: "success" };
+      if (manualStatus === "reprovado_cancelado") return { label: "Reprovado/Cancelado", variant: "danger" };
+      if (manualStatus === "aguardando") return { label: "Aguardando", variant: "warning" };
+    }
+
+    const obj = l.retorno_get_proposta as unknown;
+    const raw =
+      obj && typeof obj === "object" && typeof (obj as Record<string, unknown>).statusDescription === "string"
+        ? ((obj as Record<string, unknown>).statusDescription as string)
+        : null;
+    if (!raw) return { label: "-", variant: "neutral" };
+
+    const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const sd = normalize(raw);
+
+    const pagos = ["Encerrado", "Liquidação", "Liquidação Manual", "Pago", "Liquidado"].map(normalize);
+    const reprovadosCancelados = ["Cancelada", "Cancelado", "Reprovado"].map(normalize);
+
+    if (pagos.includes(sd)) return { label: "Pago", variant: "success" };
+    if (reprovadosCancelados.includes(sd)) return { label: "Reprovado/Cancelado", variant: "danger" };
+    return { label: "Aguardando", variant: "warning" };
+  };
+
+  const getPagamentoBadge = (info: { label: string; variant: "success" | "warning" | "danger" | "neutral" }) => {
+    if (info.variant === "success") {
+      return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ {info.label}</Badge>;
+    }
+    if (info.variant === "danger") {
+      return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">✕ {info.label}</Badge>;
+    }
+    if (info.variant === "warning") {
+      return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">⏳ {info.label}</Badge>;
+    }
+    return <Badge variant="secondary">{info.label}</Badge>;
   };
 
   const getStatusBadge = (status: string) => {
@@ -48,7 +175,11 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
 
   // Usa o status normalizado do utilitário
   const statusNormalizado = normalizarStatusLead(lead);
-  const motivoErro = extrairMotivoErro(lead);
+  const pagamentoInfo = getPagamentoInfo(lead);
+  const hideMotivoForCancelado = pagamentoInfo.variant === "danger";
+  const motivoErro = sanitizeMotivo(extrairMotivoErro(lead));
+  const motivoExibido =
+    pagamentoInfo.variant === "warning" ? getMotivoAguardandoPagamento(lead) : motivoErro;
 
   const margem = lead.retorno_margem as Record<string, unknown> | null;
   const nomeFromMargem = (margem?.registroEmpregaticio as Record<string, unknown>)?.nomeEmpregado as string | undefined;
@@ -87,8 +218,17 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
                 <p className="text-foreground truncate">{nome}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground mb-1">Status</p>
-                {getStatusBadge(statusNormalizado)}
+                {(lead.status === "reprovacao_tecnica" || statusNormalizado === "reprovacao_tecnica") ? (
+                  <>
+                    <p className="text-xs text-muted-foreground mb-1">Motivo</p>
+                    <p className="text-orange-400 text-sm">{lead.motivo_reprovacao_tecnica || extrairMotivoReprovacaoTecnica(lead) || "-"}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted-foreground mb-1">Status</p>
+                    {getStatusBadge(statusNormalizado)}
+                  </>
+                )}
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Banco</p>
@@ -104,8 +244,15 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
                   {valor > 0 ? `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-"}
                 </p>
               </div>
-              {/* Motivo do erro/pendência */}
-              {motivoErro && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Pagamento</p>
+                {getPagamentoBadge(pagamentoInfo)}
+              </div>
+              {/* Motivo do erro/pendência - não mostrar para reprovacao_tecnica pois já está no campo Motivo */}
+              {motivoExibido &&
+                !hideMotivoForCancelado &&
+                lead.status !== "reprovacao_tecnica" &&
+                statusNormalizado !== "reprovacao_tecnica" && (
                 <div className="col-span-2 md:col-span-3">
                   <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3" />
@@ -113,11 +260,11 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
                      statusNormalizado === "reprovado" ? "Motivo da Reprovação" : "Motivo"}
                   </p>
                   <p className={`${statusNormalizado === "pendente" ? "text-amber-400" : "text-red-400"} whitespace-pre-wrap break-words`}>
-                    {motivoErro}
+                    {motivoExibido}
                   </p>
                 </div>
               )}
-              {lead.tipo_reprovacao && !motivoErro && (
+              {lead.tipo_reprovacao && !motivoErro && lead.status !== "reprovacao_tecnica" && statusNormalizado !== "reprovacao_tecnica" && (
                 <div className="col-span-2 md:col-span-3">
                   <p className="text-xs text-muted-foreground mb-1">Motivo da Reprovação</p>
                   <p className="text-red-400 whitespace-pre-wrap break-words">{lead.tipo_reprovacao}</p>

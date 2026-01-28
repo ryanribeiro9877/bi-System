@@ -37,6 +37,8 @@ export interface Lead {
   // Campos de CBO bloqueado extraídos
   cbo_block_code: string | null;
   cbo_block_name: string | null;
+  // Campo calculado para motivo de reprovação técnica
+  motivo_reprovacao_tecnica?: string | null;
 }
 
 export interface FilterState {
@@ -46,6 +48,7 @@ export interface FilterState {
   tipoReprovacao: string;
   tiposReprovacaoMultiplos: string[]; // Novo: suporte a múltiplos tipos
   status: string;
+  statuses?: string[]; // Opcional: suporte a múltiplos status (ex.: aprovado + reprovacao_tecnica)
   cpf: string;
   importBatchId: string; // Filtro por arquivo importado
 }
@@ -81,60 +84,133 @@ export interface DashboardStats {
 const extrairNome = (lead: Lead): string => {
   if (lead.nome) return lead.nome;
 
-  const margem = lead.retorno_margem as any;
-  const simulacao = lead.retorno_simulacao as any;
-  const getProposta = lead.retorno_get_proposta as any;
-  const proposta = lead.retorno_proposta as any;
-  const autorizacao = lead.retorno_autorizacao as any;
+  const margem = lead.retorno_margem as Record<string, unknown>;
+  const simulacao = lead.retorno_simulacao as Record<string, unknown>;
+  const getProposta = lead.retorno_get_proposta as Record<string, unknown>;
+  const proposta = lead.retorno_proposta as Record<string, unknown>;
+  const autorizacao = lead.retorno_autorizacao as Record<string, unknown>;
 
   // Busca em todas as fontes possíveis
   const fontes = [
     // retorno_get_proposta
-    getProposta?.name,
+    (getProposta as Record<string, unknown>)?.name,
     // retorno_margem
-    margem?.registroEmpregaticio?.nomeEmpregado,
-    margem?.nomeEmpregado,
-    margem?.nome,
+    (margem as Record<string, unknown>)?.registroEmpregaticio && 
+      typeof (margem as Record<string, unknown>).registroEmpregaticio === 'object' &&
+      ((margem as Record<string, unknown>).registroEmpregaticio as Record<string, unknown>)?.nomeEmpregado,
+    (margem as Record<string, unknown>)?.nomeEmpregado,
+    (margem as Record<string, unknown>)?.nome,
     // retorno_simulacao
-    simulacao?.details?.name,
-    simulacao?.name,
-    simulacao?.nomeCliente,
+    (simulacao as Record<string, unknown>)?.details && 
+      typeof (simulacao as Record<string, unknown>).details === 'object' &&
+      ((simulacao as Record<string, unknown>).details as Record<string, unknown>)?.nome,
+    (simulacao as Record<string, unknown>)?.name,
+    (simulacao as Record<string, unknown>)?.nomeCliente,
     // retorno_proposta
-    proposta?.name,
-    proposta?.nomeCliente,
-    proposta?.nome,
+    (proposta as Record<string, unknown>)?.name,
+    (proposta as Record<string, unknown>)?.nomeCliente,
+    (proposta as Record<string, unknown>)?.nome,
     // retorno_autorizacao
-    autorizacao?.name,
-    autorizacao?.nomeCliente,
+    (autorizacao as Record<string, unknown>)?.name,
+    (autorizacao as Record<string, unknown>)?.nomeCliente,
   ];
   
-  return fontes.find(v => v && typeof v === 'string' && v.trim().length > 0) || "";
+  const found = fontes.find((v): v is string => v && typeof v === 'string' && v.trim().length > 0);
+  return found || "";
 };
 
 // Helper para extrair CBO - busca em TODAS as colunas incluindo estruturas aninhadas
 const extrairCBO = (lead: Lead): string => {
   if (lead.cbo) return lead.cbo;
   
-  const margem = lead.retorno_margem as any;
-  const simulacao = lead.retorno_simulacao as any;
-  const getProposta = lead.retorno_get_proposta as any;
-  const proposta = lead.retorno_proposta as any;
-  const autorizacao = lead.retorno_autorizacao as any;
+  // Importar o helper universal
+  const extrairCBOUniversal = (retornoMargem: any): string | null => {
+    const parseJsonSafe = <T = any>(value: any): T | null => {
+      if (!value) return null;
+      if (typeof value === "object") return value as T;
+      if (typeof value !== "string") return null;
 
-  // Tentar extrair de dataprevValidationResponses (estrutura UY3)
-  const dataprevResponses = margem?.details?.dataprevValidationResponses;
-  if (Array.isArray(dataprevResponses) && dataprevResponses.length > 0) {
-    const employeeRelationShip = dataprevResponses[0]?.employeeRelationShip;
-    if (employeeRelationShip?.cbo) {
-      const cboData = employeeRelationShip.cbo;
-      // Pode ser objeto com codigo/descricao ou string
-      if (typeof cboData === 'object' && cboData.descricao) {
-        return `${cboData.codigo || ''} - ${cboData.descricao}`.trim();
+      try {
+        return JSON.parse(value) as T;
+      } catch {
+        try {
+          return JSON.parse(value.replace(/""/g, '"')) as T;
+        } catch {
+          return null;
+        }
       }
-      if (typeof cboData === 'string') return cboData;
-      if (cboData.codigo) return String(cboData.codigo);
+    };
+
+    const extractResponseCompleto = (errorText?: string): any | null => {
+      if (!errorText) return null;
+      const marker = "Response completo:";
+      const idx = errorText.indexOf(marker);
+      if (idx === -1) return null;
+
+      const tail = errorText.slice(idx + marker.length).trim();
+      const start = tail.indexOf("{");
+      const end = tail.lastIndexOf("}");
+      if (start === -1 || end === -1 || end <= start) return null;
+
+      return parseJsonSafe(tail.slice(start, end + 1));
+    };
+
+    const formatCbo = (cbo: any): string | null => {
+      if (!cbo) return null;
+      if (typeof cbo === "string" && cbo.trim()) return cbo.trim();
+      if (typeof cbo === "object") {
+        const codigo = cbo.codigo ?? cbo.code ?? "";
+        const descricao = cbo.descricao ?? cbo.description ?? "";
+        const joined = `${codigo} - ${descricao}`.trim();
+        if (descricao) return joined;
+        if (codigo) return String(codigo);
+      }
+      return null;
+    };
+
+    const margem = parseJsonSafe<any>(retornoMargem);
+    if (!margem) return null;
+
+    // 1) Estrutura Dataprev: details.dataprevValidationResponses[0].employeeRelationShip.cbo
+    const dvr = margem?.details?.dataprevValidationResponses;
+    if (Array.isArray(dvr) && dvr.length) {
+      const er = dvr[0]?.employeeRelationShip ?? dvr[0]?.employeeRelationship;
+      const cbo = er?.cbo;
+      const formatted = formatCbo(cbo);
+      if (formatted) return formatted;
     }
-  }
+
+    // 2) Estrutura "result": margem.result[0].cbo
+    if (Array.isArray(margem?.result) && margem.result[0]) {
+      const formatted = formatCbo(margem.result[0]?.cbo);
+      if (formatted) return formatted;
+    }
+
+    // 3) Estrutura array: margem[0].result[0].cbo
+    if (Array.isArray(margem) && margem[0]?.result?.[0]) {
+      const formatted = formatCbo(margem[0].result[0]?.cbo);
+      if (formatted) return formatted;
+    }
+
+    // 4) CBO "solto" em chaves alternativas
+    const formattedLoose =
+      formatCbo(margem?.registroEmpregaticio?.cbo) ||
+      formatCbo(margem?.cbo);
+    if (formattedLoose) return formattedLoose;
+
+    // 5) Quando veio em erro: parsear Response completo
+    const errorText = typeof margem?.error === "string" ? margem.error : "";
+    const inner = extractResponseCompleto(errorText);
+    if (inner) {
+      return extrairCBOUniversal(inner);
+    }
+
+    return null;
+  };
+
+  // Tentar extrair de retorno_margem usando o helper universal
+  const cboFromMargem = extrairCBOUniversal(lead.retorno_margem);
+  if (cboFromMargem) return cboFromMargem;
 
   const fontes = [
     // retorno_margem
@@ -312,13 +388,56 @@ export const useLeadsData = (filters?: FilterState) => {
       statusNormalizado: normalizarStatus(l.status, l)
     }));
     
-    const leadsAprovados = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "aprovado").length;
+    const leadsAprovadosStatus = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "aprovado").length;
     const leadsReprovados = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovado").length;
     const leadsPendentes = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "pendente").length;
     // leadsCpfNaoEncontrado não existe mais - todos são: aprovado, reprovado ou pendente
     
+    // Helper para determinar status de pagamento de um lead
+    const getStatusPagamento = (lead: Lead): "pago" | "aguardando" | "reprovado_cancelado" => {
+      const leadAny = lead as unknown as Record<string, unknown>;
+      const manualStatus = leadAny.pagamento_status as string | null;
+      
+      // Se tem status manual, usa ele
+      if (manualStatus) {
+        if (manualStatus === "pago") return "pago";
+        if (manualStatus === "reprovado_cancelado") return "reprovado_cancelado";
+        if (manualStatus === "aguardando") return "aguardando";
+      }
+      
+      // Senão, usa o statusDescription do retorno_get_proposta
+      const getProposta = lead.retorno_get_proposta as Record<string, unknown> | null;
+      const statusDescription = getProposta?.statusDescription;
+      if (typeof statusDescription !== "string") return "aguardando";
+      
+      const normalize = (value: string) =>
+        value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+      
+      const sd = normalize(statusDescription);
+      
+      // Pagos: statusDescription IN (Encerrado, Liquidação, Liquidação Manual, Pago, Liquidado)
+      const pagos = ["encerrado", "liquidacao", "liquidacao manual", "pago", "liquidado"];
+      // Reprovados/Cancelados: statusDescription IN (Cancelada, Cancelado, Reprovado)
+      const reprovadosCancelados = ["cancelada", "cancelado", "reprovado"];
+      
+      if (pagos.includes(sd)) return "pago";
+      if (reprovadosCancelados.includes(sd)) return "reprovado_cancelado";
+      return "aguardando";
+    };
+    
+    // Total Aprovados = todos os leads (inclusive reprovados técnicos)
+    const leadsAprovados = totalLeads;
+    
+    // Taxa de Aprovação = leads com pagamento pago ou aguardando / total de leads
+    // Considera apenas leads com status "aprovado" para verificar pagamento
+    const leadsAprovadosComPagamentoPositivo = leadsComStatusNormalizado.filter(l => {
+      if (l.statusNormalizado !== "aprovado") return false;
+      const statusPag = getStatusPagamento(l);
+      return statusPag === "pago" || statusPag === "aguardando";
+    }).length;
+    
     const taxaReprovacao = totalLeads > 0 ? parseFloat(((leadsReprovados / totalLeads) * 100).toFixed(2)) : 0;
-    const taxaAprovacao = totalLeads > 0 ? parseFloat(((leadsAprovados / totalLeads) * 100).toFixed(2)) : 0;
+    const taxaAprovacao = totalLeads > 0 ? parseFloat(((leadsAprovadosComPagamentoPositivo / totalLeads) * 100).toFixed(2)) : 0;
     
     // Calcular valores
     const valorTotal = leads.reduce((acc, l) => acc + (l.valor || 0), 0);

@@ -20,10 +20,13 @@ const fetchLeads = async ({ filters, page, pageSize }: LeadsQueryParams): Promis
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  // SELECT apenas campos necessários para a tabela (não carrega JSONs pesados)
+  // SELECT da tabela leads
   let query = supabase
     .from("leads")
-    .select("id, cpf, nome, banco, status, tipo_reprovacao, valor, created_at, import_batch_id", { count: "exact" })
+    .select(
+      "id, cpf, nome, banco, status, tipo_reprovacao, valor, created_at, updated_at, import_batch_id, retorno_get_proposta",
+      { count: "planned" }
+    )
     .order("created_at", { ascending: false })
     .range(from, to);
 
@@ -33,11 +36,18 @@ const fetchLeads = async ({ filters, page, pageSize }: LeadsQueryParams): Promis
   if (filters.banco) {
     query = query.eq("banco", filters.banco);
   }
-  if (filters.status) {
+  if (filters.statuses && filters.statuses.length > 0) {
+    query = query.in("status", filters.statuses);
+  } else if (filters.status) {
     query = query.eq("status", filters.status);
   }
   if (filters.cpf) {
-    query = query.ilike("cpf", `%${filters.cpf}%`);
+    const digits = filters.cpf.replace(/\D/g, "");
+    if (digits.length === 11) {
+      query = query.eq("cpf", digits);
+    } else {
+      query = query.ilike("cpf", `%${filters.cpf}%`);
+    }
   }
   if (filters.dataInicial) {
     query = query.gte("created_at", filters.dataInicial.toISOString());
@@ -50,7 +60,7 @@ const fetchLeads = async ({ filters, page, pageSize }: LeadsQueryParams): Promis
 
   if (error) throw error;
 
-  // Mapear para o tipo Lead (campos JSON serão null para performance)
+  // Mapear para o tipo Lead
   const leads: Lead[] = (data || []).map((row) => ({
     id: row.id,
     cpf: row.cpf,
@@ -64,16 +74,17 @@ const fetchLeads = async ({ filters, page, pageSize }: LeadsQueryParams): Promis
     data_retorno: null,
     observacoes: null,
     created_at: row.created_at,
-    updated_at: row.created_at,
+    updated_at: row.updated_at ?? row.created_at,
     import_batch_id: row.import_batch_id,
     retorno_autorizacao: null,
     retorno_margem: null,
     retorno_simulacao: null,
     retorno_proposta: null,
-    retorno_get_proposta: null,
+    retorno_get_proposta: parseJsonSafe<RetornoGetProposta>(row.retorno_get_proposta),
     ultimo_log: null,
     cbo_block_code: null,
     cbo_block_name: null,
+    motivo_reprovacao_tecnica: null,
   }));
 
   return {
@@ -82,16 +93,76 @@ const fetchLeads = async ({ filters, page, pageSize }: LeadsQueryParams): Promis
   };
 };
 
-// Buscar detalhes completos de um lead (com JSONs)
+export const useLeadsQueryEnabled = (
+  filters: FilterState,
+  page: number,
+  pageSize: number = 50,
+  enabled: boolean = true
+) => {
+  const queryClient = useQueryClient();
+
+  const queryKey = useMemo(() => [
+    'leads',
+    filters.importBatchId || '',
+    filters.banco || '',
+    filters.status || '',
+    (filters.statuses || []).join(','),
+    filters.cpf || '',
+    filters.dataInicial?.toISOString() || '',
+    filters.dataFinal?.toISOString() || '',
+    page,
+    pageSize,
+  ], [filters, page, pageSize]);
+
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey,
+    queryFn: () => fetchLeads({ filters, page, pageSize }),
+    enabled,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+  });
+
+  useEffect(() => {
+    const unsubscribe = importEvents.subscribe(() => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    });
+    return unsubscribe;
+  }, [queryClient]);
+
+  return {
+    leads: data?.leads || [],
+    totalCount: data?.totalCount || 0,
+    isLoading,
+    error: error instanceof Error ? error.message : null,
+    refetch,
+  };
+};
+
+// Buscar detalhes completos de um lead (com JSONs e motivo_reprovacao_tecnica)
 export const fetchLeadDetails = async (leadId: string): Promise<Lead | null> => {
-  const { data, error } = await supabase
-    .from("leads")
+  // Buscar da view leads_com_motivo para incluir o campo calculado motivo_reprovacao_tecnica
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("leads_com_motivo")
     .select("*")
     .eq("id", leadId)
     .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error("[fetchLeadDetails] Erro ao buscar lead:", error);
+    throw error;
+  }
   if (!data) return null;
+
+  // Log apenas para leads com reprovacao_tecnica
+  if (data.status === "reprovacao_tecnica") {
+    console.log("[fetchLeadDetails] Lead reprovacao_tecnica:", {
+      id: data.id,
+      status: data.status,
+      motivo_reprovacao_tecnica: data.motivo_reprovacao_tecnica,
+    });
+  }
 
   return {
     ...data,
@@ -100,6 +171,7 @@ export const fetchLeadDetails = async (leadId: string): Promise<Lead | null> => 
     retorno_simulacao: parseJsonSafe<RetornoSimulacao>(data.retorno_simulacao),
     retorno_proposta: parseJsonSafe<RetornoProposta>(data.retorno_proposta),
     retorno_get_proposta: parseJsonSafe<RetornoGetProposta>(data.retorno_get_proposta),
+    motivo_reprovacao_tecnica: data.motivo_reprovacao_tecnica || null,
   } as Lead;
 };
 
@@ -112,6 +184,7 @@ export const useLeadsQuery = (filters: FilterState, page: number, pageSize: numb
     filters.importBatchId || '',
     filters.banco || '',
     filters.status || '',
+    (filters.statuses || []).join(','),
     filters.cpf || '',
     filters.dataInicial?.toISOString() || '',
     filters.dataFinal?.toISOString() || '',

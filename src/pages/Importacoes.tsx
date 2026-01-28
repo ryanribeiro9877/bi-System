@@ -9,8 +9,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import { importEvents } from "@/events/importEvents";
-import * as XLSX from "xlsx";
-import Papa from "papaparse";
 import { parseJsonSafe } from "@/types/lead";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
 import { validateLeads, ValidationError } from "@/lib/leadValidation";
@@ -49,11 +47,11 @@ interface ParsedLead {
   data_retorno?: string;
   observacoes?: string;
   // Novos campos JSONB
-  retorno_autorizacao?: any;
-  retorno_margem?: any;
-  retorno_simulacao?: any;
-  retorno_proposta?: any;
-  retorno_get_proposta?: any;
+  retorno_autorizacao?: Record<string, unknown>;
+  retorno_margem?: Record<string, unknown>;
+  retorno_simulacao?: Record<string, unknown>;
+  retorno_proposta?: Record<string, unknown>;
+  retorno_get_proposta?: Record<string, unknown>;
   ultimo_log?: string;
   // Campos de CBO bloqueado extraídos
   cbo_block_code?: string;
@@ -189,15 +187,138 @@ const extrairNomeDoJson = (margem: any, simulacao?: any, getProposta?: any, prop
   return fontes.find(v => v && typeof v === 'string' && v.trim().length > 0);
 };
 
+// Helper para parse seguro de JSON - já existe no arquivo mas vou garantir que está disponível
+function parseJsonSafe<T = any>(value: any): T | null {
+  if (!value) return null;
+  if (typeof value === "object") return value as T;
+  if (typeof value !== "string") return null;
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    try {
+      return JSON.parse(value.replace(/""/g, '"')) as T;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function extractResponseCompleto(errorText?: string): any | null {
+  if (!errorText) return null;
+  const marker = "Response completo:";
+  const idx = errorText.indexOf(marker);
+  if (idx === -1) return null;
+
+  const tail = errorText.slice(idx + marker.length).trim();
+  const start = tail.indexOf("{");
+  const end = tail.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+
+  return parseJsonSafe(tail.slice(start, end + 1));
+}
+
+function formatCbo(cbo: any): string | null {
+  if (!cbo) return null;
+  if (typeof cbo === "string" && cbo.trim()) return cbo.trim();
+  if (typeof cbo === "object") {
+    const codigo = cbo.codigo ?? cbo.code ?? "";
+    const descricao = cbo.descricao ?? cbo.description ?? "";
+    const joined = `${codigo} - ${descricao}`.trim();
+    if (descricao) return joined;
+    if (codigo) return String(codigo);
+  }
+  return null;
+}
+
+export function extrairCBOUniversal(retornoMargem: any): string | null {
+  const margem = parseJsonSafe<any>(retornoMargem);
+  if (!margem) {
+    console.log('[extrairCBOUniversal] margem é null após parseJsonSafe');
+    return null;
+  }
+
+  // Log completo da estrutura para depuração (apenas para os primeiros 5 leads)
+  if (typeof window !== 'undefined' && (!window.cboLogCount || window.cboLogCount < 5)) {
+    window.cboLogCount = (window.cboLogCount || 0) + 1;
+    console.log(`[extrairCBOUniversal] Estrutura completa #${window.cboLogCount}:`, {
+      retornoMargem_tipo: typeof retornoMargem,
+      retornoMargem_string: typeof retornoMargem === 'string' ? retornoMargem.substring(0, 200) + '...' : 'N/A',
+      margem_objeto: margem,
+      chaves_principais: Object.keys(margem || {}),
+      details: margem?.details,
+      dataprevValidationResponses: margem?.details?.dataprevValidationResponses
+    });
+  }
+
+  // 1) Estrutura Dataprev: details.dataprevValidationResponses[0].employeeRelationShip.cbo
+  const dvr = margem?.details?.dataprevValidationResponses;
+  if (Array.isArray(dvr) && dvr.length) {
+    const er = dvr[0]?.employeeRelationShip ?? dvr[0]?.employeeRelationship;
+    const cbo = er?.cbo;
+    const formatted = formatCbo(cbo);
+    if (formatted) return formatted;
+  }
+
+  // 2) Estrutura "result": margem.result[0].cbo
+  if (Array.isArray(margem?.result) && margem.result[0]) {
+    const formatted = formatCbo(margem.result[0]?.cbo);
+    if (formatted) return formatted;
+  }
+
+  // 3) Estrutura array: margem[0].result[0].cbo
+  if (Array.isArray(margem) && margem[0]?.result?.[0]) {
+    const formatted = formatCbo(margem[0].result[0]?.cbo);
+    if (formatted) return formatted;
+  }
+
+  // 4) CBO "solto" em chaves alternativas
+  const formattedLoose =
+    formatCbo(margem?.registroEmpregaticio?.cbo) ||
+    formatCbo(margem?.cbo);
+  if (formattedLoose) return formattedLoose;
+
+  // 5) Quando veio em erro: parsear Response completo
+  const errorText = typeof margem?.error === "string" ? margem.error : "";
+  const inner = extractResponseCompleto(errorText);
+  if (inner) {
+    return extrairCBOUniversal(inner);
+  }
+
+  return null;
+}
+
 // Função para extrair CBO do JSON - busca em TODAS as colunas disponíveis
-const extrairCBODoJson = (margem: any, simulacao?: any, getProposta?: any, proposta?: any, autorizacao?: any): string | undefined => {
+const extrairCBODoJson = (
+  margem: any,
+  simulacao?: any,
+  getProposta?: any,
+  proposta?: any,
+  autorizacao?: any
+): string | undefined => {
+  // Usar o helper universal para extração de CBO
+  const cbo = extrairCBOUniversal(margem);
+  
+  // Log para depuração
+  if (margem && typeof margem === 'object') {
+    console.log('[extrairCBODoJson] Estrutura de retorno_margem:', {
+      tem_details: !!(margem as any)?.details,
+      tem_dataprevValidationResponses: !!(margem as any)?.details?.dataprevValidationResponses,
+      tamanho_array: Array.isArray((margem as any)?.details?.dataprevValidationResponses) 
+        ? (margem as any).details.dataprevValidationResponses.length 
+        : 0,
+      cbo_extraido: cbo
+    });
+  }
+  
+  if (cbo) return cbo;
+  
+  // Buscar em outras fontes se não encontrou em margem
   const fontes = [
-    // retorno_margem
-    margem?.registroEmpregaticio?.cbo,
-    margem?.cbo,
     // retorno_simulacao
     simulacao?.details?.cbo,
     simulacao?.cbo,
+    simulacao?.details?.occupation,
     // retorno_get_proposta
     getProposta?.cbo,
     getProposta?.occupation,
@@ -256,28 +377,54 @@ const extrairTipoReprovacao = (simulacao: any, margem: any, getProposta?: any, p
   return erro;
 };
 
-// Função para extrair valor de margem disponível - busca em TODAS as colunas
-const extrairValorMargem = (simulacao: any, margem: any, getProposta?: any, proposta?: any): number | undefined => {
+// Função para extrair valor - busca liquidValue em retorno_simulacao
+// Suporta múltiplos formatos/estruturas do retorno_simulacao
+// IMPORTANTE: liquidValue vem em centavos (sem separadores), então divide por 100
+const extrairValorMargem = (simulacao: any, margem?: any, getProposta?: any, proposta?: any): number | undefined => {
+  if (!simulacao) return undefined;
+  
+  // Múltiplos padrões para encontrar liquidValue no retorno_simulacao
   const fontes = [
-    // retorno_margem
-    margem?.valorMargemDisponivel,
-    margem?.margemDisponivel,
-    margem?.valor,
-    // retorno_simulacao
-    simulacao?.details?.availableMarginValue,
-    simulacao?.availableMarginValue,
-    simulacao?.valor,
-    // retorno_get_proposta
-    getProposta?.issueAmount,
-    getProposta?.disbursedIssueAmount,
-    getProposta?.valor,
-    // retorno_proposta
-    proposta?.valor,
-    proposta?.valorContrato,
+    // Padrão 1: liquidValue direto na raiz
+    simulacao?.liquidValue,
+    
+    // Padrão 2: liquidValue dentro de details
+    simulacao?.details?.liquidValue,
+    
+    // Padrão 3: liquidValue dentro de result
+    simulacao?.result?.liquidValue,
+    
+    // Padrão 4: liquidValue dentro de data
+    simulacao?.data?.liquidValue,
+    
+    // Padrão 5: liquidValue dentro de response
+    simulacao?.response?.liquidValue,
+    
+    // Padrão 6: liquidValue dentro de simulation
+    simulacao?.simulation?.liquidValue,
+    
+    // Padrão 7: Array - primeiro item com liquidValue
+    Array.isArray(simulacao) ? simulacao[0]?.liquidValue : undefined,
+    
+    // Padrão 8: Array dentro de result
+    Array.isArray(simulacao?.result) ? simulacao.result[0]?.liquidValue : undefined,
+    
+    // Padrão 9: Array dentro de data
+    Array.isArray(simulacao?.data) ? simulacao.data[0]?.liquidValue : undefined,
+    
+    // Padrão 10: Variações de nome (camelCase, snake_case, etc)
+    simulacao?.liquid_value,
+    simulacao?.details?.liquid_value,
+    simulacao?.LiquidValue,
+    simulacao?.details?.LiquidValue,
   ];
   
-  const valor = fontes.find(v => v !== undefined && v !== null && v !== 0);
-  return valor !== undefined ? parseFloat(String(valor)) : undefined;
+  const valorBruto = fontes.find(v => v !== undefined && v !== null && v !== 0);
+  if (valorBruto === undefined) return undefined;
+  
+  // Converte para número e divide por 100 (valor vem em centavos)
+  const valorNumerico = parseFloat(String(valorBruto));
+  return valorNumerico / 100;
 };
 
 // Função para determinar status baseado nos retornos - suporta múltiplos formatos
@@ -420,9 +567,14 @@ const Importacoes = () => {
   }, [user, fetchImports]);
 
   const normalizeColumnName = (col: string): string => {
-    const normalized = col.toLowerCase().trim()
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]/g, "_");
+    const normalized = col
+      .toLowerCase()
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "");
     
     const mappings: Record<string, string> = {
       // Mapeamentos originais
@@ -451,6 +603,7 @@ const Importacoes = () => {
       "retorno_simulacao": "retorno_simulacao",
       "retorno_proposta": "retorno_proposta",
       "retorno_get_proposta": "retorno_get_proposta",
+      "retornogetproposta": "retorno_get_proposta",
       "ultimo_log": "ultimo_log",
     };
 
@@ -563,15 +716,35 @@ const Importacoes = () => {
     
     // Extrair dados adicionais - com try-catch para evitar erros
     try {
+      // Verificar se retorno_margem precisa de parse
+      if (typeof lead.retorno_margem === 'string' && lead.retorno_margem.startsWith('{')) {
+        console.log(`[processExcelRow] retorno_margem é string JSON para CPF ${lead.cpf}`);
+        lead.retorno_margem = parseJsonSafe(lead.retorno_margem);
+      }
+      
       if (!lead.nome) {
         lead.nome = extrairNomeDoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
       }
       if (!lead.cbo) {
         lead.cbo = extrairCBODoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
+        // Log para depurar CBO
+        if (lead.cbo) {
+          console.log(`[processExcelRow] CBO extraído para CPF ${lead.cpf}:`, lead.cbo);
+        } else {
+          console.log(`[processExcelRow] CBO NÃO encontrado para CPF ${lead.cpf}`);
+        }
       }
       lead.banco = extrairBancoDoNomeArquivo(fileName);
       if (!lead.status) {
         lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem, lead.banco);
+        // Log para depurar status
+        if (lead.status === "reprovacao_tecnica") {
+          console.log(`[processExcelRow] Reprovação TÉCNICA para CPF ${lead.cpf}:`, {
+            banco: lead.banco,
+            status_proposta: (lead.retorno_proposta as any)?.status,
+            tem_error: !!(lead.retorno_autorizacao as any)?.error || !!(lead.retorno_margem as any)?.error || !!(lead.retorno_simulacao as any)?.error
+          });
+        }
       }
       if (!lead.tipo_reprovacao && lead.status === "reprovado") {
         lead.tipo_reprovacao = extrairTipoReprovacao(lead.retorno_simulacao, lead.retorno_margem, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
@@ -598,6 +771,8 @@ const Importacoes = () => {
         try {
           console.log("[parseExcel] Iniciando leitura do arquivo:", file.name);
           const data = new Uint8Array(e.target?.result as ArrayBuffer);
+
+          const XLSX = await import("xlsx");
           
           // Ler workbook com opções otimizadas para memória
           const workbook = XLSX.read(data, { 
@@ -657,7 +832,9 @@ const Importacoes = () => {
 
   const parseCSV = (file: File): Promise<ParsedLead[]> => {
     return new Promise((resolve, reject) => {
-      Papa.parse(file, {
+      (async () => {
+        const Papa = (await import("papaparse")).default;
+        Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
         complete: async (results) => {
@@ -687,7 +864,8 @@ const Importacoes = () => {
           resolve(leads);
         },
         error: reject,
-      });
+        });
+      })().catch(reject);
     });
   };
 
@@ -809,10 +987,12 @@ const Importacoes = () => {
       for (let i = 0; i < validLeads.length; i += batchSize) {
         const batch = validLeads.slice(i, i + batchSize).map(lead => ({
           cpf: lead.cpf,
-          nome: lead.nome,
-          banco: lead.banco,
+          // Campos obrigatórios (NOT NULL) - garantir valores padrão
+          nome: lead.nome || "Não Informado",
+          banco: lead.banco || "Não Informado",
+          status: lead.status || "pendente",
+          // Campos opcionais
           cbo: lead.cbo,
-          status: lead.status,
           tipo_reprovacao: lead.tipo_reprovacao,
           valor: lead.valor,
           data_envio: lead.data_envio,
@@ -1305,10 +1485,13 @@ const Importacoes = () => {
                       "",
                       "2024-01-01 10:00:00"
                     ];
-                    const ws = XLSX.utils.aoa_to_sheet([headers, sampleRow]);
-                    const wb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb, ws, "Modelo");
-                    XLSX.writeFile(wb, "modelo_importacao.xlsx");
+                    (async () => {
+                      const XLSX = await import("xlsx");
+                      const ws = XLSX.utils.aoa_to_sheet([headers, sampleRow]);
+                      const wb = XLSX.utils.book_new();
+                      XLSX.utils.book_append_sheet(wb, ws, "Modelo");
+                      XLSX.writeFile(wb, "modelo_importacao.xlsx");
+                    })();
                   }}
                 >
                   <FileSpreadsheet className="w-4 h-4 mr-2" />
