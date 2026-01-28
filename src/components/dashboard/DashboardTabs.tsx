@@ -12,8 +12,11 @@ const DashboardTabs = () => {
 
   return (
     <Tabs value={tab} onValueChange={setTab} className="w-full">
-      <div className="overflow-x-auto mb-4 lg:mb-6 -mx-4 px-4 lg:mx-0 lg:px-0">
-        <TabsList className="flex w-full min-w-max md:min-w-0 h-11 lg:h-12 bg-muted/50 border border-border rounded-lg px-2 sm:px-3 lg:px-4 py-2 gap-6 justify-between items-center">
+      <div className="mb-4 lg:mb-6 -mx-4 px-4 lg:mx-0 lg:px-0">
+        {/* Container de largura total para manter o fundo/borda até o fim da página em telas menores */}
+        <div className="w-full bg-muted/50 border border-border rounded-lg">
+          <div className="overflow-x-auto">
+            <TabsList className="flex w-max md:w-full min-w-max md:min-w-0 h-11 lg:h-12 bg-transparent border-0 rounded-none px-2 sm:px-3 lg:px-4 py-2 gap-6 justify-between items-center">
           <TabsTrigger
             value="overview"
             className="min-w-[100px] md:flex-1 h-full data-[state=active]:bg-background data-[state=active]:border data-[state=active]:border-border data-[state=active]:shadow-sm rounded-md transition-all whitespace-nowrap text-[11px] lg:text-sm px-3 lg:px-4"
@@ -52,7 +55,9 @@ const DashboardTabs = () => {
             <span className="hidden md:inline">Margem Reprovada</span>
             <span className="md:hidden">Margem</span>
           </TabsTrigger>
-        </TabsList>
+            </TabsList>
+          </div>
+        </div>
       </div>
 
       <TabsContent value="overview" className="mt-0">

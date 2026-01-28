@@ -11,6 +11,7 @@ import {
   parseJsonSafe 
 } from "@/types/lead";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
+import { extrairCBOUniversal } from "@/lib/cboUtils";
 
 export interface Lead {
   id: string;
@@ -120,117 +121,40 @@ const extrairNome = (lead: Lead): string => {
 };
 
 // Helper para extrair CBO - busca em TODAS as colunas incluindo estruturas aninhadas
+// Helper para extrair CBO - busca em TODAS as colunas incluindo estruturas aninhadas
 const extrairCBO = (lead: Lead): string => {
   if (lead.cbo) return lead.cbo;
-  
-  // Importar o helper universal
-  const extrairCBOUniversal = (retornoMargem: any): string | null => {
-    const parseJsonSafe = <T = any>(value: any): T | null => {
-      if (!value) return null;
-      if (typeof value === "object") return value as T;
-      if (typeof value !== "string") return null;
 
-      try {
-        return JSON.parse(value) as T;
-      } catch {
-        try {
-          return JSON.parse(value.replace(/""/g, '"')) as T;
-        } catch {
-          return null;
-        }
-      }
-    };
+  const margem = lead.retorno_margem as any;
+  const simulacao = lead.retorno_simulacao as any;
+  const getProposta = lead.retorno_get_proposta as any;
+  const proposta = lead.retorno_proposta as any;
+  const autorizacao = lead.retorno_autorizacao as any;
 
-    const extractResponseCompleto = (errorText?: string): any | null => {
-      if (!errorText) return null;
-      const marker = "Response completo:";
-      const idx = errorText.indexOf(marker);
-      if (idx === -1) return null;
+  // Prioridade: margem -> simulação -> get_proposta -> proposta -> autorização
+  for (const c of [margem, simulacao, getProposta, proposta, autorizacao]) {
+    const cbo = extrairCBOUniversal(c);
+    if (cbo) return cbo;
+  }
 
-      const tail = errorText.slice(idx + marker.length).trim();
-      const start = tail.indexOf("{");
-      const end = tail.lastIndexOf("}");
-      if (start === -1 || end === -1 || end <= start) return null;
-
-      return parseJsonSafe(tail.slice(start, end + 1));
-    };
-
-    const formatCbo = (cbo: any): string | null => {
-      if (!cbo) return null;
-      if (typeof cbo === "string" && cbo.trim()) return cbo.trim();
-      if (typeof cbo === "object") {
-        const codigo = cbo.codigo ?? cbo.code ?? "";
-        const descricao = cbo.descricao ?? cbo.description ?? "";
-        const joined = `${codigo} - ${descricao}`.trim();
-        if (descricao) return joined;
-        if (codigo) return String(codigo);
-      }
-      return null;
-    };
-
-    const margem = parseJsonSafe<any>(retornoMargem);
-    if (!margem) return null;
-
-    // 1) Estrutura Dataprev: details.dataprevValidationResponses[0].employeeRelationShip.cbo
-    const dvr = margem?.details?.dataprevValidationResponses;
-    if (Array.isArray(dvr) && dvr.length) {
-      const er = dvr[0]?.employeeRelationShip ?? dvr[0]?.employeeRelationship;
-      const cbo = er?.cbo;
-      const formatted = formatCbo(cbo);
-      if (formatted) return formatted;
-    }
-
-    // 2) Estrutura "result": margem.result[0].cbo
-    if (Array.isArray(margem?.result) && margem.result[0]) {
-      const formatted = formatCbo(margem.result[0]?.cbo);
-      if (formatted) return formatted;
-    }
-
-    // 3) Estrutura array: margem[0].result[0].cbo
-    if (Array.isArray(margem) && margem[0]?.result?.[0]) {
-      const formatted = formatCbo(margem[0].result[0]?.cbo);
-      if (formatted) return formatted;
-    }
-
-    // 4) CBO "solto" em chaves alternativas
-    const formattedLoose =
-      formatCbo(margem?.registroEmpregaticio?.cbo) ||
-      formatCbo(margem?.cbo);
-    if (formattedLoose) return formattedLoose;
-
-    // 5) Quando veio em erro: parsear Response completo
-    const errorText = typeof margem?.error === "string" ? margem.error : "";
-    const inner = extractResponseCompleto(errorText);
-    if (inner) {
-      return extrairCBOUniversal(inner);
-    }
-
-    return null;
-  };
-
-  // Tentar extrair de retorno_margem usando o helper universal
-  const cboFromMargem = extrairCBOUniversal(lead.retorno_margem);
-  if (cboFromMargem) return cboFromMargem;
-
+  // Fallbacks (caso algum retorno venha com chaves diferentes)
   const fontes = [
-    // retorno_margem
     margem?.registroEmpregaticio?.cbo,
     margem?.cbo,
-    // retorno_simulacao
     simulacao?.details?.cbo,
     simulacao?.cbo,
     simulacao?.details?.occupation,
-    // retorno_get_proposta
+    simulacao?.occupation,
     getProposta?.cbo,
     getProposta?.occupation,
-    // retorno_proposta
     proposta?.cbo,
-    // retorno_autorizacao
+    proposta?.occupation,
     autorizacao?.cbo,
+    autorizacao?.occupation,
   ];
-  
-  const found = fontes.find(v => v && String(v).trim().length > 0);
-  return found ? String(found) : "";
+
+  const found = fontes.find((v) => v && String(v).trim().length > 0);
+  return found ? String(found).trim() : "";
 };
 
 // Helper para extrair banco - agora usa o campo banco que vem do nome do arquivo importado

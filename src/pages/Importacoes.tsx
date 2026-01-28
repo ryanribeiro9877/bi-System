@@ -11,6 +11,11 @@ import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import { importEvents } from "@/events/importEvents";
 import { parseJsonSafe } from "@/types/lead";
 import { normalizarStatusLead } from "@/lib/leadStatusUtils";
+import { extrairCBOUniversal } from "@/lib/cboUtils";
+
+const devLog = (...args: any[]) => {
+  if (import.meta.env.DEV) console.log(...args);
+};
 import { validateLeads, ValidationError } from "@/lib/leadValidation";
 import {
   AlertDialog,
@@ -187,148 +192,46 @@ const extrairNomeDoJson = (margem: any, simulacao?: any, getProposta?: any, prop
   return fontes.find(v => v && typeof v === 'string' && v.trim().length > 0);
 };
 
-// Helper para parse seguro de JSON - já existe no arquivo mas vou garantir que está disponível
-function parseJsonSafe<T = any>(value: any): T | null {
-  if (!value) return null;
-  if (typeof value === "object") return value as T;
-  if (typeof value !== "string") return null;
-
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    try {
-      return JSON.parse(value.replace(/""/g, '"')) as T;
-    } catch {
-      return null;
-    }
-  }
-}
-
-function extractResponseCompleto(errorText?: string): any | null {
-  if (!errorText) return null;
-  const marker = "Response completo:";
-  const idx = errorText.indexOf(marker);
-  if (idx === -1) return null;
-
-  const tail = errorText.slice(idx + marker.length).trim();
-  const start = tail.indexOf("{");
-  const end = tail.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) return null;
-
-  return parseJsonSafe(tail.slice(start, end + 1));
-}
-
-function formatCbo(cbo: any): string | null {
-  if (!cbo) return null;
-  if (typeof cbo === "string" && cbo.trim()) return cbo.trim();
-  if (typeof cbo === "object") {
-    const codigo = cbo.codigo ?? cbo.code ?? "";
-    const descricao = cbo.descricao ?? cbo.description ?? "";
-    const joined = `${codigo} - ${descricao}`.trim();
-    if (descricao) return joined;
-    if (codigo) return String(codigo);
-  }
-  return null;
-}
-
-export function extrairCBOUniversal(retornoMargem: any): string | null {
-  const margem = parseJsonSafe<any>(retornoMargem);
-  if (!margem) {
-    console.log('[extrairCBOUniversal] margem é null após parseJsonSafe');
-    return null;
-  }
-
-  // Log completo da estrutura para depuração (apenas para os primeiros 5 leads)
-  if (typeof window !== 'undefined' && (!window.cboLogCount || window.cboLogCount < 5)) {
-    window.cboLogCount = (window.cboLogCount || 0) + 1;
-    console.log(`[extrairCBOUniversal] Estrutura completa #${window.cboLogCount}:`, {
-      retornoMargem_tipo: typeof retornoMargem,
-      retornoMargem_string: typeof retornoMargem === 'string' ? retornoMargem.substring(0, 200) + '...' : 'N/A',
-      margem_objeto: margem,
-      chaves_principais: Object.keys(margem || {}),
-      details: margem?.details,
-      dataprevValidationResponses: margem?.details?.dataprevValidationResponses
-    });
-  }
-
-  // 1) Estrutura Dataprev: details.dataprevValidationResponses[0].employeeRelationShip.cbo
-  const dvr = margem?.details?.dataprevValidationResponses;
-  if (Array.isArray(dvr) && dvr.length) {
-    const er = dvr[0]?.employeeRelationShip ?? dvr[0]?.employeeRelationship;
-    const cbo = er?.cbo;
-    const formatted = formatCbo(cbo);
-    if (formatted) return formatted;
-  }
-
-  // 2) Estrutura "result": margem.result[0].cbo
-  if (Array.isArray(margem?.result) && margem.result[0]) {
-    const formatted = formatCbo(margem.result[0]?.cbo);
-    if (formatted) return formatted;
-  }
-
-  // 3) Estrutura array: margem[0].result[0].cbo
-  if (Array.isArray(margem) && margem[0]?.result?.[0]) {
-    const formatted = formatCbo(margem[0].result[0]?.cbo);
-    if (formatted) return formatted;
-  }
-
-  // 4) CBO "solto" em chaves alternativas
-  const formattedLoose =
-    formatCbo(margem?.registroEmpregaticio?.cbo) ||
-    formatCbo(margem?.cbo);
-  if (formattedLoose) return formattedLoose;
-
-  // 5) Quando veio em erro: parsear Response completo
-  const errorText = typeof margem?.error === "string" ? margem.error : "";
-  const inner = extractResponseCompleto(errorText);
-  if (inner) {
-    return extrairCBOUniversal(inner);
-  }
-
-  return null;
-}
-
 // Função para extrair CBO do JSON - busca em TODAS as colunas disponíveis
 const extrairCBODoJson = (
-  margem: any,
-  simulacao?: any,
-  getProposta?: any,
-  proposta?: any,
-  autorizacao?: any
+  margem: unknown,
+  simulacao?: unknown,
+  getProposta?: unknown,
+  proposta?: unknown,
+  autorizacao?: unknown
 ): string | undefined => {
-  // Usar o helper universal para extração de CBO
-  const cbo = extrairCBOUniversal(margem);
-  
-  // Log para depuração
-  if (margem && typeof margem === 'object') {
-    console.log('[extrairCBODoJson] Estrutura de retorno_margem:', {
-      tem_details: !!(margem as any)?.details,
-      tem_dataprevValidationResponses: !!(margem as any)?.details?.dataprevValidationResponses,
-      tamanho_array: Array.isArray((margem as any)?.details?.dataprevValidationResponses) 
-        ? (margem as any).details.dataprevValidationResponses.length 
-        : 0,
-      cbo_extraido: cbo
-    });
+  // Primeiro: tenta extrair pelo helper universal (cobre Dataprev/UY3 + variações)
+  const candidatos = [margem, simulacao, getProposta, proposta, autorizacao];
+  for (const c of candidatos) {
+    const cbo = extrairCBOUniversal(c);
+    if (cbo) return cbo;
   }
-  
-  if (cbo) return cbo;
-  
-  // Buscar em outras fontes se não encontrou em margem
+
+  // Fallback: procurar por chaves mais comuns em cada retorno
+  const objs = candidatos.map((v) => parseJsonSafe<any>(v)).filter(Boolean);
   const fontes = [
+    // retorno_margem
+    objs[0]?.registroEmpregaticio?.cbo,
+    objs[0]?.cbo,
+    objs[0]?.occupation,
     // retorno_simulacao
-    simulacao?.details?.cbo,
-    simulacao?.cbo,
-    simulacao?.details?.occupation,
+    objs[1]?.details?.cbo,
+    objs[1]?.cbo,
+    objs[1]?.details?.occupation,
+    objs[1]?.occupation,
     // retorno_get_proposta
-    getProposta?.cbo,
-    getProposta?.occupation,
+    objs[2]?.cbo,
+    objs[2]?.occupation,
     // retorno_proposta
-    proposta?.cbo,
+    objs[3]?.cbo,
+    objs[3]?.occupation,
     // retorno_autorizacao
-    autorizacao?.cbo,
+    objs[4]?.cbo,
+    objs[4]?.occupation,
   ];
-  
-  return fontes.find(v => v && String(v).trim().length > 0)?.toString();
+
+  const found = fontes.find((v) => v && String(v).trim().length > 0);
+  return found ? String(found).trim() : undefined;
 };
 
 // Função para extrair o banco do NOME DO ARQUIVO importado
@@ -469,7 +372,7 @@ const Importacoes = () => {
 
   // Função para excluir uma importação e seus leads associados
   const handleDeleteImport = async (importId: string, fileName: string) => {
-    console.log(`[Importacoes] Iniciando exclusão da importação: ${importId} (${fileName})`);
+    devLog(`[Importacoes] Iniciando exclusão da importação: ${importId} (${fileName})`);
     setDeletingImportId(importId);
     
     try {
@@ -479,7 +382,7 @@ const Importacoes = () => {
         .select("*", { count: "exact", head: true })
         .eq("import_batch_id", importId);
       
-      console.log(`[Importacoes] Leads a serem excluídos: ${leadsCount}`);
+      devLog(`[Importacoes] Leads a serem excluídos: ${leadsCount}`);
       
       if (countError) {
         console.error("Erro ao contar leads:", countError);
@@ -491,7 +394,7 @@ const Importacoes = () => {
         .delete({ count: "exact" })
         .eq("import_batch_id", importId);
       
-      console.log(`[Importacoes] Leads excluídos: ${deletedLeadsCount}, Erro: ${leadsError?.message || 'nenhum'}`);
+      devLog(`[Importacoes] Leads excluídos: ${deletedLeadsCount}, Erro: ${leadsError?.message || 'nenhum'}`);
       
       if (leadsError) {
         console.error("Erro ao excluir leads:", leadsError);
@@ -510,7 +413,7 @@ const Importacoes = () => {
         .delete()
         .eq("id", importId);
       
-      console.log(`[Importacoes] Importação excluída, Erro: ${importError?.message || 'nenhum'}`);
+      devLog(`[Importacoes] Importação excluída, Erro: ${importError?.message || 'nenhum'}`);
       
       if (importError) {
         console.error("Erro ao excluir importação:", importError);
@@ -527,7 +430,7 @@ const Importacoes = () => {
       setImports(prev => prev.filter(imp => imp.id !== importId));
       
       // 5. Emitir evento para atualizar dashboard e outras páginas
-      console.log(`[Importacoes] Emitindo evento de atualização...`);
+      devLog(`[Importacoes] Emitindo evento de atualização...`);
       importEvents.emit();
       
       toast({
@@ -718,7 +621,7 @@ const Importacoes = () => {
     try {
       // Verificar se retorno_margem precisa de parse
       if (typeof lead.retorno_margem === 'string' && lead.retorno_margem.startsWith('{')) {
-        console.log(`[processExcelRow] retorno_margem é string JSON para CPF ${lead.cpf}`);
+        devLog(`[processExcelRow] retorno_margem é string JSON para CPF ${lead.cpf}`);
         lead.retorno_margem = parseJsonSafe(lead.retorno_margem);
       }
       
@@ -729,9 +632,9 @@ const Importacoes = () => {
         lead.cbo = extrairCBODoJson(lead.retorno_margem, lead.retorno_simulacao, lead.retorno_get_proposta, lead.retorno_proposta, lead.retorno_autorizacao);
         // Log para depurar CBO
         if (lead.cbo) {
-          console.log(`[processExcelRow] CBO extraído para CPF ${lead.cpf}:`, lead.cbo);
+          devLog(`[processExcelRow] CBO extraído para CPF ${lead.cpf}:`, lead.cbo);
         } else {
-          console.log(`[processExcelRow] CBO NÃO encontrado para CPF ${lead.cpf}`);
+          devLog(`[processExcelRow] CBO NÃO encontrado para CPF ${lead.cpf}`);
         }
       }
       lead.banco = extrairBancoDoNomeArquivo(fileName);
@@ -739,7 +642,7 @@ const Importacoes = () => {
         lead.status = determinarStatus(lead.retorno_simulacao, lead.retorno_proposta, lead.retorno_get_proposta, lead.retorno_margem, lead.banco);
         // Log para depurar status
         if (lead.status === "reprovacao_tecnica") {
-          console.log(`[processExcelRow] Reprovação TÉCNICA para CPF ${lead.cpf}:`, {
+          devLog(`[processExcelRow] Reprovação TÉCNICA para CPF ${lead.cpf}:`, {
             banco: lead.banco,
             status_proposta: (lead.retorno_proposta as any)?.status,
             tem_error: !!(lead.retorno_autorizacao as any)?.error || !!(lead.retorno_margem as any)?.error || !!(lead.retorno_simulacao as any)?.error
@@ -769,7 +672,7 @@ const Importacoes = () => {
       const reader = new FileReader();
       reader.onload = async (e) => {
         try {
-          console.log("[parseExcel] Iniciando leitura do arquivo:", file.name);
+          devLog("[parseExcel] Iniciando leitura do arquivo:", file.name);
           const data = new Uint8Array(e.target?.result as ArrayBuffer);
 
           const XLSX = await import("xlsx");
@@ -788,7 +691,7 @@ const Importacoes = () => {
           // Obter range da planilha para processar em chunks
           const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
           const totalRows = range.e.r - range.s.r;
-          console.log("[parseExcel] Total de linhas:", totalRows);
+          devLog("[parseExcel] Total de linhas:", totalRows);
           
           // Converter para JSON em uma única operação (mais eficiente que row-by-row)
           const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: true, defval: null });
@@ -796,7 +699,7 @@ const Importacoes = () => {
           // Liberar memória do worksheet original
           delete workbook.Sheets[sheetName];
           
-          console.log("[parseExcel] Registros JSON:", jsonData.length);
+          devLog("[parseExcel] Registros JSON:", jsonData.length);
           
           // Processar em chunks para evitar bloqueio da UI
           const leads: ParsedLead[] = [];
@@ -818,7 +721,7 @@ const Importacoes = () => {
             }
           }
           
-          console.log("[parseExcel] Leads válidos:", leads.length);
+          devLog("[parseExcel] Leads válidos:", leads.length);
           resolve(leads);
         } catch (error) {
           console.error("[parseExcel] Erro:", error);
@@ -838,7 +741,7 @@ const Importacoes = () => {
         header: true,
         skipEmptyLines: true,
         complete: async (results) => {
-          console.log("[parseCSV] Registros encontrados:", results.data.length);
+          devLog("[parseCSV] Registros encontrados:", results.data.length);
           
           const leads: ParsedLead[] = [];
           const chunkSize = 500;
@@ -860,7 +763,7 @@ const Importacoes = () => {
             }
           }
           
-          console.log("[parseCSV] Leads válidos:", leads.length);
+          devLog("[parseCSV] Leads válidos:", leads.length);
           resolve(leads);
         },
         error: reject,
@@ -887,7 +790,7 @@ const Importacoes = () => {
     try {
       let parsed: ParsedLead[];
       
-      console.log("[Importacoes] Processando arquivo:", file.name, "Extensão:", extension);
+      devLog("[Importacoes] Processando arquivo:", file.name, "Extensão:", extension);
       
       if (extension === "csv") {
         parsed = await parseCSV(file);
@@ -895,7 +798,7 @@ const Importacoes = () => {
         parsed = await parseExcel(file);
       }
 
-      console.log("[Importacoes] Registros parseados:", parsed.length);
+      devLog("[Importacoes] Registros parseados:", parsed.length);
       
       if (parsed.length === 0) {
         toast({
@@ -1047,7 +950,7 @@ const Importacoes = () => {
       });
 
       // Emitir evento para sincronização global
-      console.log('[Importacoes] Emitindo evento de importação concluída...');
+      devLog('[Importacoes] Emitindo evento de importação concluída...');
       importEvents.emit();
 
       setSelectedFile(null);

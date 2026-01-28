@@ -143,11 +143,21 @@ export function extrairDadosLead(lead: LeadCompleto): LeadExtraido {
 
 // Função para parsear JSON de forma segura
 export function parseJsonSafe<T>(value: any): T | null {
-  if (!value) return null;
+  if (value === null || value === undefined) return null;
   if (typeof value === "object") return value as T;
+  if (typeof value !== "string") return null;
+
+  const raw = value.trim();
+  if (!raw) return null;
+
   try {
-    return JSON.parse(value) as T;
+    return JSON.parse(raw) as T;
   } catch {
-    return null;
+    // Alguns exports (Excel/CSV) podem duplicar aspas
+    try {
+      return JSON.parse(raw.replace(/""/g, '"')) as T;
+    } catch {
+      return null;
+    }
   }
 }
