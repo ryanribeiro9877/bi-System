@@ -1,83 +1,100 @@
-import { BarChart3, Building2, Briefcase, AlertTriangle, TrendingDown } from "lucide-react";
+import { BarChart3, Building2, Briefcase, AlertTriangle, TrendingDown, Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState } from "react";
-import OverviewPanel from "./panels/OverviewPanel";
-import CBOsPanel from "./panels/CBOsPanel";
-import ResultadosPanel from "./panels/ResultadosPanel";
-import ResultadosConsultasPanel from "./panels/ResultadosConsultasPanel";
-import ConsultaMargemReprovadaPanel from "./panels/ConsultaMargemReprovadaPanel";
+import { useState, Suspense, lazy } from "react";
+
+// Lazy load dos painéis para melhor performance
+const OverviewPanel = lazy(() => import("./panels/OverviewPanel"));
+const CBOsPanel = lazy(() => import("./panels/CBOsPanel"));
+const ResultadosPanel = lazy(() => import("./panels/ResultadosPanel"));
+const ResultadosConsultasPanel = lazy(() => import("./panels/ResultadosConsultasPanel"));
+const ConsultaMargemReprovadaPanel = lazy(() => import("./panels/ConsultaMargemReprovadaPanel"));
+
+// Componente de loading para os painéis
+const PanelLoader = () => (
+  <div className="flex items-center justify-center py-16">
+    <Loader2 className="w-8 h-8 animate-spin text-primary mr-3" />
+    <span className="text-muted-foreground">Carregando painel...</span>
+  </div>
+);
 
 const DashboardTabs = () => {
   const [tab, setTab] = useState("overview");
 
   return (
     <Tabs value={tab} onValueChange={setTab} className="w-full">
-      <div className="mb-4 lg:mb-6 -mx-4 px-4 lg:mx-0 lg:px-0">
-        {/* Container de largura total para manter o fundo/borda até o fim da página em telas menores */}
-        <div className="w-full bg-muted/50 border border-border rounded-lg">
-          <div className="overflow-x-auto">
-            <TabsList className="flex w-max md:w-full min-w-max md:min-w-0 h-11 lg:h-12 bg-transparent border-0 rounded-none px-2 sm:px-3 lg:px-4 py-2 gap-6 justify-between items-center">
+      <div className="mb-4 lg:mb-6">
+        <TabsList className="w-full grid grid-cols-5 bg-muted/50 border border-border rounded-lg p-1 h-auto gap-1">
           <TabsTrigger
             value="overview"
-            className="min-w-[100px] md:flex-1 h-full data-[state=active]:bg-background data-[state=active]:border data-[state=active]:border-border data-[state=active]:shadow-sm rounded-md transition-all whitespace-nowrap text-[11px] lg:text-sm px-3 lg:px-4"
+            className="flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
           >
-            <BarChart3 className="h-3.5 w-3.5 lg:h-4 lg:w-4 mr-1.5 flex-shrink-0" />
-            Visão Geral
+            <BarChart3 className="h-3.5 w-3.5 lg:h-4 lg:w-4 flex-shrink-0" />
+            <span className="hidden sm:inline">Visão Geral</span>
+            <span className="sm:hidden">Geral</span>
           </TabsTrigger>
           <TabsTrigger
             value="cbos"
-            className="min-w-[70px] md:flex-1 h-full data-[state=active]:bg-background data-[state=active]:border data-[state=active]:border-border data-[state=active]:shadow-sm rounded-md transition-all whitespace-nowrap text-[11px] lg:text-sm px-3 lg:px-4"
+            className="flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
           >
-            <Briefcase className="h-3.5 w-3.5 lg:h-4 lg:w-4 mr-1.5 flex-shrink-0" />
-            Autorizações
+            <Briefcase className="h-3.5 w-3.5 lg:h-4 lg:w-4 flex-shrink-0" />
+            <span className="hidden sm:inline">Autorizações</span>
+            <span className="sm:hidden">Auth</span>
           </TabsTrigger>
           <TabsTrigger
             value="resultados"
-            className="min-w-[95px] md:flex-1 h-full data-[state=active]:bg-background data-[state=active]:border data-[state=active]:border-border data-[state=active]:shadow-sm rounded-md transition-all whitespace-nowrap text-[11px] lg:text-sm px-3 lg:px-4"
+            className="flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
           >
-            <AlertTriangle className="h-3.5 w-3.5 lg:h-4 lg:w-4 mr-1.5 flex-shrink-0" />
-            <span className="hidden md:inline">Resultados das Consultas</span>
-            <span className="md:hidden">Resultados</span>
+            <AlertTriangle className="h-3.5 w-3.5 lg:h-4 lg:w-4 flex-shrink-0" />
+            <span className="hidden md:inline">Resultado Consultas</span>
+            <span className="md:hidden">Result.</span>
           </TabsTrigger>
           <TabsTrigger
             value="erros-consulta"
-            className="min-w-[95px] md:flex-1 h-full data-[state=active]:bg-background data-[state=active]:border data-[state=active]:border-border data-[state=active]:shadow-sm rounded-md transition-all whitespace-nowrap text-[11px] lg:text-sm px-3 lg:px-4"
+            className="flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
           >
-            <AlertTriangle className="h-3.5 w-3.5 lg:h-4 lg:w-4 mr-1.5 flex-shrink-0" />
-            <span className="hidden md:inline">Erros de Consulta</span>
+            <AlertTriangle className="h-3.5 w-3.5 lg:h-4 lg:w-4 flex-shrink-0" />
+            <span className="hidden md:inline">Erros Consulta</span>
             <span className="md:hidden">Erros</span>
           </TabsTrigger>
           <TabsTrigger
             value="margem-reprovada"
-            className="min-w-[85px] md:flex-1 h-full data-[state=active]:bg-background data-[state=active]:border data-[state=active]:border-border data-[state=active]:shadow-sm rounded-md transition-all whitespace-nowrap text-[11px] lg:text-sm px-3 lg:px-4"
+            className="flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
           >
-            <TrendingDown className="h-3.5 w-3.5 lg:h-4 lg:w-4 mr-1.5 flex-shrink-0" />
+            <TrendingDown className="h-3.5 w-3.5 lg:h-4 lg:w-4 flex-shrink-0" />
             <span className="hidden md:inline">Margem Reprovada</span>
             <span className="md:hidden">Margem</span>
           </TabsTrigger>
-            </TabsList>
-          </div>
-        </div>
+        </TabsList>
       </div>
 
       <TabsContent value="overview" className="mt-0">
-        {tab === "overview" && <OverviewPanel />}
+        <Suspense fallback={<PanelLoader />}>
+          {tab === "overview" && <OverviewPanel />}
+        </Suspense>
       </TabsContent>
 
       <TabsContent value="cbos" className="mt-0">
-        {tab === "cbos" && <CBOsPanel />}
+        <Suspense fallback={<PanelLoader />}>
+          {tab === "cbos" && <CBOsPanel />}
+        </Suspense>
       </TabsContent>
 
       <TabsContent value="resultados" className="mt-0">
-        {tab === "resultados" && <ResultadosConsultasPanel />}
+        <Suspense fallback={<PanelLoader />}>
+          {tab === "resultados" && <ResultadosConsultasPanel />}
+        </Suspense>
       </TabsContent>
 
       <TabsContent value="erros-consulta" className="mt-0">
-        {tab === "erros-consulta" && <ResultadosPanel />}
+        <Suspense fallback={<PanelLoader />}>
+          {tab === "erros-consulta" && <ResultadosPanel />}
+        </Suspense>
       </TabsContent>
 
       <TabsContent value="margem-reprovada" className="mt-0">
-        {tab === "margem-reprovada" && <ConsultaMargemReprovadaPanel />}
+        <Suspense fallback={<PanelLoader />}>
+          {tab === "margem-reprovada" && <ConsultaMargemReprovadaPanel />}
+        </Suspense>
       </TabsContent>
     </Tabs>
   );

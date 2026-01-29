@@ -96,64 +96,28 @@ const fetchContratosAprovadosAnalysis = async (params?: FetchParams): Promise<Co
     .sort((a, b) => b.quantidade - a.quantidade)
     .slice(0, 3);
 
-  // Processar pagos/não pagos por banco PRIMEIRO (para usar na filtragem de tempos de digitação)
-  const pagoPorBancoMap = new Map<string, { pagos: number; naoPagos: number; valorPago: number }>();
-  const leadsPagos: LeadPago[] = [];
-  const leadsNaoPagos: LeadPago[] = [];
-
-  leads.forEach(lead => {
-    const banco = lead.banco || 'Não informado';
-    const getProposta = lead.retorno_get_proposta as Record<string, unknown> | null;
-    
-    // Verificar se foi pago - baseado no statusDescription do retorno_get_proposta
-    const statusDescription = getProposta?.statusDescription as string | null;
-    const normalizedStatus = statusDescription 
-      ? statusDescription.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()
-      : '';
-    
-    const statusPagos = ['encerrado', 'liquidacao', 'liquidacao manual', 'pago', 'liquidado'];
-    const isPago = statusPagos.some(s => normalizedStatus.includes(s));
-    
-    const valorLead = lead.valor || Number(getProposta?.disbursedIssueAmount || getProposta?.requestedAmount || 0);
-    const dataPagamento = getProposta?.disbursementDate || getProposta?.paymentDate || getProposta?.dataPagamento || null;
-    const nome = lead.nome || (getProposta?.name as string) || '';
-    
-    const leadInfo: LeadPago = {
-      id: lead.id,
-      cpf: lead.cpf,
-      nome,
-      banco,
-      valorPago: valorLead,
-      dataPagamento: dataPagamento ? String(dataPagamento) : null,
-      dataDigitacao: lead.created_at,
-    };
-    
-    if (!pagoPorBancoMap.has(banco)) {
-      pagoPorBancoMap.set(banco, { pagos: 0, naoPagos: 0, valorPago: 0 });
-    }
-    
-    const stats = pagoPorBancoMap.get(banco)!;
-    if (isPago) {
-      stats.pagos++;
-      stats.valorPago += valorLead;
-      leadsPagos.push(leadInfo);
-    } else {
-      stats.naoPagos++;
-      leadsNaoPagos.push(leadInfo);
-    }
-  });
-
-  // Processar tempo de digitação - APENAS para leads PAGOS
-  // (diferença entre data de aprovação e data de pagamento, em dias)
+  // Processar tempo de digitação (diferença entre data de aprovação e data de pagamento, em dias)
   const temposDigitacaoMap = new Map<string, number>();
-  leadsPagos.forEach(lead => {
-    // Data de aprovação = dataDigitacao (created_at)
-    const dataAprovacao = new Date(lead.dataDigitacao);
+  leads.forEach(lead => {
+    const getProposta = lead.retorno_get_proposta as Record<string, unknown> | null;
+    const simulacao = lead.retorno_simulacao as Record<string, unknown> | null;
     
-    // Data de pagamento
-    if (!lead.dataPagamento) return;
+    // Data de aprovação = created_at (quando o contrato foi aprovado/importado)
+    const dataAprovacao = new Date(lead.created_at);
     
-    const dataPagamento = new Date(lead.dataPagamento);
+    // Data de pagamento = buscar em múltiplas fontes
+    const dataPagamentoStr = 
+      getProposta?.disbursementDate || 
+      getProposta?.paymentDate || 
+      getProposta?.dataPagamento ||
+      getProposta?.firstPaymentDate ||
+      simulacao?.firstPaymentDate ||
+      lead.data_retorno || // Usar data_retorno como fallback
+      null;
+    
+    if (!dataPagamentoStr) return; // Só calcular para contratos com data de pagamento
+    
+    const dataPagamento = new Date(String(dataPagamentoStr));
     
     if (isNaN(dataPagamento.getTime()) || isNaN(dataAprovacao.getTime())) return;
     
@@ -177,6 +141,50 @@ const fetchContratosAprovadosAnalysis = async (params?: FetchParams): Promise<Co
     .map(([faixa, quantidade]) => ({ faixa, quantidade }))
     .sort((a, b) => b.quantidade - a.quantidade)
     .slice(0, 3);
+
+  // Processar pagos/não pagos por banco
+  const pagoPorBancoMap = new Map<string, { pagos: number; naoPagos: number; valorPago: number }>();
+  const leadsPagos: LeadPago[] = [];
+  const leadsNaoPagos: LeadPago[] = [];
+
+  leads.forEach(lead => {
+    const banco = lead.banco || 'Não informado';
+    const getProposta = lead.retorno_get_proposta as Record<string, unknown> | null;
+    
+    // Verificar se foi pago - disbursedIssueAmount > 0 indica pagamento
+    const valorPago = Number(getProposta?.disbursedIssueAmount || getProposta?.paidAmount || getProposta?.valorPago || 0);
+    const isPago = valorPago > 0;
+    
+    // Extrair data de pagamento
+    const dataPagamento = getProposta?.disbursementDate || getProposta?.paymentDate || getProposta?.dataPagamento || null;
+    
+    // Extrair nome
+    const nome = lead.nome || (getProposta?.name as string) || '';
+    
+    const leadInfo: LeadPago = {
+      id: lead.id,
+      cpf: lead.cpf,
+      nome,
+      banco,
+      valorPago: isPago ? valorPago : (lead.valor || 0),
+      dataPagamento: dataPagamento ? String(dataPagamento) : null,
+      dataDigitacao: lead.created_at,
+    };
+    
+    if (!pagoPorBancoMap.has(banco)) {
+      pagoPorBancoMap.set(banco, { pagos: 0, naoPagos: 0, valorPago: 0 });
+    }
+    
+    const stats = pagoPorBancoMap.get(banco)!;
+    if (isPago) {
+      stats.pagos++;
+      stats.valorPago += valorPago;
+      leadsPagos.push(leadInfo);
+    } else {
+      stats.naoPagos++;
+      leadsNaoPagos.push(leadInfo);
+    }
+  });
 
   const pagoPorBanco = Array.from(pagoPorBancoMap.entries())
     .map(([banco, stats]) => ({ banco, ...stats }))

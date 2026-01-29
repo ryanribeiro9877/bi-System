@@ -1480,6 +1480,179 @@ export const extrairCNAECompleto = (lead: LeadData): string | null => {
 };
 
 /**
+ * Extrai o nome do trabalhador de múltiplas fontes
+ * Prioriza: 1) retorno_margem, 2) retorno_autorizacao, 3) campo nome do lead
+ */
+export const extrairNomeTrabalhador = (lead: LeadData): string | null => {
+  // 1. Tentar do retorno_margem (dados do trabalhador)
+  const dadosTrabalhador = extrairDadosTrabalhador(lead);
+  if (dadosTrabalhador.nome) {
+    return dadosTrabalhador.nome;
+  }
+
+  // 2. Tentar do campo nome do lead diretamente
+  if (lead.nome && lead.nome.trim() && lead.nome.trim().toLowerCase() !== 'não informado') {
+    return lead.nome.trim();
+  }
+
+  // 3. Tentar extrair do retorno_autorizacao
+  if (lead.retorno_autorizacao) {
+    const textoAuth = typeof lead.retorno_autorizacao === 'string' 
+      ? lead.retorno_autorizacao 
+      : JSON.stringify(lead.retorno_autorizacao);
+    
+    const nomeMatch = textoAuth.match(/"nome"\s*:\s*"([A-Z][A-Z\s]+)"/);
+    if (nomeMatch && nomeMatch[1].length > 5 && nomeMatch[1].includes(' ')) {
+      return nomeMatch[1];
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Interface para erros individuais de um lead
+ */
+export interface ErroIndividual {
+  tipo: string;
+  descricao: string;
+  etapa: string;
+}
+
+/**
+ * Extrai todos os erros/problemas de um lead
+ * Retorna array de erros individuais para exibição separada
+ */
+export const extrairTodosErrosLead = (lead: LeadData): ErroIndividual[] => {
+  const erros: ErroIndividual[] = [];
+  
+  const textoMargem = lead.retorno_margem 
+    ? (typeof lead.retorno_margem === 'string' ? lead.retorno_margem : JSON.stringify(lead.retorno_margem))
+    : '';
+  
+  // 1. CBO Bloqueado
+  const cboBloqueadoMatch = textoMargem.match(/CBO bloqueado[:\s]+(\d{6})\s*[-–]\s*([^,\.\n"\\]+)/i);
+  if (cboBloqueadoMatch) {
+    erros.push({
+      tipo: 'CBO bloqueado',
+      descricao: `${cboBloqueadoMatch[1]} - ${cboBloqueadoMatch[2].trim()}`,
+      etapa: 'Margem'
+    });
+  }
+
+  // 2. Vínculo com data de desligamento
+  if (textoMargem.toLowerCase().includes('vínculo com data de desligamento') || 
+      textoMargem.toLowerCase().includes('vinculo com data de desligamento')) {
+    erros.push({
+      tipo: 'Vínculo com data de desligamento',
+      descricao: 'O trabalhador possui vínculo empregatício encerrado',
+      etapa: 'Margem'
+    });
+  }
+
+  // 3. Data de início da atividade do empregador
+  if (textoMargem.toLowerCase().includes('data de inicio da atividade do empregador') ||
+      textoMargem.toLowerCase().includes('data de início da atividade do empregador')) {
+    const match = textoMargem.match(/data de in[íi]cio da atividade do empregador[^0-9]*(\d+)\s*meses/i);
+    const meses = match ? match[1] : '36';
+    erros.push({
+      tipo: 'Empregador novo',
+      descricao: `A data de início da atividade do empregador não deve ser inferior a ${meses} meses configurado`,
+      etapa: 'Margem'
+    });
+  }
+
+  // 4. Não existe valor de margem disponível
+  if (textoMargem.toLowerCase().includes('não existe valor de margem disponível') ||
+      textoMargem.toLowerCase().includes('nao existe valor de margem disponivel')) {
+    erros.push({
+      tipo: 'Sem margem disponível',
+      descricao: 'Não existe valor de margem disponível R$ 0,00',
+      etapa: 'Margem'
+    });
+  }
+
+  // 5. Empresa não atende aos requisitos mínimos
+  const empresaMatch = textoMargem.match(/A empresa (\d+) não atende aos requisitos mínimos[^:]*:\s*([^,\.]+)/i);
+  if (empresaMatch) {
+    erros.push({
+      tipo: 'Empresa não elegível',
+      descricao: `Empresa ${empresaMatch[1]} - ${empresaMatch[2].trim()}`,
+      etapa: 'Margem'
+    });
+  }
+
+  // 6. Funcionários insuficientes
+  if (textoMargem.toLowerCase().includes('funcionários') && textoMargem.includes('< 20')) {
+    erros.push({
+      tipo: 'Funcionários insuficientes',
+      descricao: 'A empresa possui menos de 20 funcionários',
+      etapa: 'Margem'
+    });
+  }
+
+  // 7. Faturamento insuficiente
+  if (textoMargem.toLowerCase().includes('faturamento') && textoMargem.includes('< R$')) {
+    const fatMatch = textoMargem.match(/Faturamento[^<]*<\s*R\$\s*([\d\.,]+)/i);
+    const valor = fatMatch ? fatMatch[1] : '50.000,00';
+    erros.push({
+      tipo: 'Faturamento insuficiente',
+      descricao: `Faturamento da empresa inferior a R$ ${valor}`,
+      etapa: 'Margem'
+    });
+  }
+
+  // 8. Capital Social insuficiente
+  if (textoMargem.toLowerCase().includes('capital social') && textoMargem.includes('< R$')) {
+    erros.push({
+      tipo: 'Capital Social insuficiente',
+      descricao: 'Capital Social da empresa inferior ao mínimo exigido',
+      etapa: 'Margem'
+    });
+  }
+
+  // 9. Natureza jurídica não atendida
+  if (textoMargem.toLowerCase().includes('natureza jurídica') || textoMargem.toLowerCase().includes('natureza juridica')) {
+    const njMatch = textoMargem.match(/natureza jur[íi]dica[^(]*\((\d+)\)[^a-z]*não atendida/i);
+    const codigo = njMatch ? njMatch[1] : '';
+    erros.push({
+      tipo: 'Natureza jurídica não atendida',
+      descricao: codigo ? `Natureza jurídica (${codigo}) não é aceita pelo produto` : 'Natureza jurídica não é aceita pelo produto',
+      etapa: 'Margem'
+    });
+  }
+
+  // 10. Erro 400 genérico
+  if (textoMargem.includes('400') && textoMargem.toLowerCase().includes('erro')) {
+    if (!erros.some(e => e.tipo !== 'Erro 400')) {
+      // Não adicionar se já tem erro específico
+    }
+  }
+
+  // Se não encontrou erros específicos mas tem erro no campo
+  if (erros.length === 0 && textoMargem.toLowerCase().includes('error')) {
+    const errorMatch = textoMargem.match(/"error"\s*:\s*"([^"]+)"/);
+    if (errorMatch) {
+      const errorText = errorMatch[1].substring(0, 100);
+      erros.push({
+        tipo: 'Erro na consulta',
+        descricao: errorText,
+        etapa: 'Margem'
+      });
+    }
+  }
+
+  return erros;
+};
+
+/**
+ * Conta quantidade de erros/problemas em um lead
+ */
+export const contarErrosLead = (lead: LeadData): number => {
+  return extrairTodosErrosLead(lead).length;
+};
+
+/**
  * Exporta funções úteis para visualizações e outros módulos
  */
 export { extrairValorMargem, hasValoresFinanceiros, hasStatusSuccess, hasBloqueioNegocio, hasErrosTecnicosNoProcesso };

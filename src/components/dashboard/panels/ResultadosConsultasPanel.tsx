@@ -64,9 +64,6 @@ interface LeadPorErro {
   tipo_reprovacao: string;
   retorno_margem: unknown;
   retorno_simulacao: unknown;
-  retorno_autorizacao: unknown;
-  retorno_proposta: unknown;
-  created_at: string;
 }
 
 const normalizarMotivoConsulta = (raw: string | null): string => {
@@ -123,49 +120,6 @@ const ResultadosConsultasPanel = () => {
     const cleaned = cpf.replace(/\D/g, "");
     if (cleaned.length !== 11) return cpf;
     return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-  };
-
-  const formatDateTime = (dateString: string | null): string => {
-    if (!dateString) return "-";
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return "-";
-      const day = date.getDate().toString().padStart(2, "0");
-      const month = (date.getMonth() + 1).toString().padStart(2, "0");
-      const year = date.getFullYear();
-      const hours = date.getHours().toString().padStart(2, "0");
-      const minutes = date.getMinutes().toString().padStart(2, "0");
-      return `${day}/${month}/${year} ${hours}:${minutes}`;
-    } catch {
-      return "-";
-    }
-  };
-
-  // Função para contar erros de um lead (verifica múltiplas etapas)
-  const contarErrosLead = (lead: LeadPorErro): number => {
-    let count = 0;
-    const checkError = (retorno: unknown): boolean => {
-      if (!retorno) return false;
-      const str = typeof retorno === 'string' ? retorno : JSON.stringify(retorno);
-      const lower = str.toLowerCase();
-      return lower.includes('error') || lower.includes('erro') || 
-             lower.includes('400') || lower.includes('429') ||
-             lower.includes('failed') || lower.includes('invalid');
-    };
-    if (checkError(lead.retorno_autorizacao)) count++;
-    if (checkError(lead.retorno_margem)) count++;
-    if (checkError(lead.retorno_simulacao)) count++;
-    if (checkError(lead.retorno_proposta)) count++;
-    return count || 1; // Mínimo 1 erro (o tipo_reprovacao)
-  };
-
-  // Função para extrair motivo resumido
-  const extrairMotivoResumido = (lead: LeadPorErro): string => {
-    const motivo = lead.tipo_reprovacao;
-    if (!motivo) return "Não informado";
-    // Normalizar e truncar se necessário
-    const normalizado = normalizarMotivoConsulta(motivo);
-    return normalizado.length > 60 ? normalizado.substring(0, 57) + '...' : normalizado;
   };
 
   function categorizarErro(tipoReprovacao: string | null): string {
@@ -234,10 +188,9 @@ const ResultadosConsultasPanel = () => {
       }
       const { data: leads, error } = await supabase
         .from('leads')
-        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, retorno_autorizacao, retorno_proposta, created_at')
+        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao')
         .in('tipo_reprovacao', tiposOriginais)
         .eq('status', 'reprovado')
-        .order('created_at', { ascending: false })
         .limit(100);
       
       if (error) throw error;
@@ -287,10 +240,9 @@ const ResultadosConsultasPanel = () => {
 
       const { data: leads, error, count } = await supabase
         .from('leads')
-        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, retorno_autorizacao, retorno_proposta, created_at', { count: 'exact' })
+        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao', { count: 'exact' })
         .in('tipo_reprovacao', errosDaCategoria)
         .eq('status', 'reprovado')
-        .order('created_at', { ascending: false })
         .limit(100);
       
       if (error) throw error;
@@ -467,11 +419,10 @@ const ResultadosConsultasPanel = () => {
     try {
       const { data: leads, error } = await supabase
         .from('leads')
-        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, retorno_autorizacao, retorno_proposta, created_at')
+        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao')
         .eq('banco', data.banco)
         .in('tipo_reprovacao', errosSelecionados)
         .eq('status', 'reprovado')
-        .order('created_at', { ascending: false })
         .limit(100);
       
       if (error) throw error;
@@ -508,10 +459,9 @@ const ResultadosConsultasPanel = () => {
 
       const { data: leads, error } = await supabase
         .from('leads')
-        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, retorno_autorizacao, retorno_proposta, created_at')
+        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao')
         .in('tipo_reprovacao', errosComGrade)
         .eq('status', 'reprovado')
-        .order('created_at', { ascending: false })
         .limit(100);
       
       if (error) throw error;
@@ -1173,7 +1123,7 @@ const ResultadosConsultasPanel = () => {
 
       {/* Dialog para exibir leads por erro */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-6xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-red-500" />
@@ -1196,52 +1146,28 @@ const ResultadosConsultasPanel = () => {
                     <TableHead>CPF</TableHead>
                     <TableHead>Nome</TableHead>
                     <TableHead>Banco</TableHead>
-                    <TableHead>Motivo</TableHead>
-                    <TableHead className="text-center">Erros</TableHead>
-                    <TableHead>Data</TableHead>
                     <TableHead className="text-center">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {dialogData.leads.map((item, index) => {
-                    const numErros = contarErrosLead(item);
-                    const motivoResumido = extrairMotivoResumido(item);
-                    return (
-                      <TableRow key={index}>
-                        <TableCell className="font-mono text-sm">{formatCpf(item.cpf)}</TableCell>
-                        <TableCell className="max-w-[180px]" title={item.nome || "-"}>
-                          {item.nome || "-"}
-                        </TableCell>
-                        <TableCell>{item.banco}</TableCell>
-                        <TableCell className="max-w-[220px]">
-                          <div className="space-y-1" title={item.tipo_reprovacao}>
-                            <div className="text-sm font-medium text-foreground line-clamp-2">
-                              {motivoResumido}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant={numErros > 1 ? "destructive" : "secondary"}>
-                            {numErros} {numErros === 1 ? 'erro' : 'erros'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground whitespace-nowrap text-sm">
-                          {formatDateTime(item.created_at)}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewDetail(item)}
-                            className="gap-1"
-                          >
-                            <Eye className="w-4 h-4" />
-                            Detalhes
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {dialogData.leads.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-mono text-sm">{formatCpf(item.cpf)}</TableCell>
+                      <TableCell className="max-w-[200px] truncate">{item.nome || "-"}</TableCell>
+                      <TableCell>{item.banco}</TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleViewDetail(item)}
+                          className="gap-1"
+                        >
+                          <Eye className="w-4 h-4" />
+                          Ver Proposta
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             ) : (
