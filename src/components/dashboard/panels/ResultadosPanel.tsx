@@ -27,7 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import LeadDetailDialog from "@/components/leads/LeadDetailDialog";
 import { useLeadDetails } from "@/hooks/useLeadsPaginated";
 import type { Lead as LeadData } from "@/hooks/useLeadsData";
-import { extrairErroFunil, extrairNomeTrabalhador, contarErrosLead } from "@/lib/leadStatusUtils";
+import { extrairErroFunil } from "@/lib/leadStatusUtils";
 
 type StatusAutorizacao = "EXISTING_AUTH" | "TOKEN" | "ERRO_400" | "ERRO_429" | "OUTROS" | "VAZIO";
 
@@ -288,8 +288,7 @@ type AnnotatedResultsLead = ResultsLeadRow & {
   resultadoNegocio: ResultadoNegocio;
   resultadoNegocioLabel: string;
   propostaErro: PropostaErroInfo | null;
-  nomeExtraido: string | null;
-  quantidadeErros: number;
+  numErros: number;
 };
 
 type ResultsChartDatum = {
@@ -862,12 +861,14 @@ const ResultadosPanel = () => {
         return p.status;
       })();
 
-      // Extrair nome do trabalhador (prioriza dados extraídos sobre campo nome)
-      const leadData = l as unknown as import("@/hooks/useLeadsData").Lead;
-      const nomeExtraido = extrairNomeTrabalhador(leadData) || l.nome;
-      
-      // Contar quantidade de erros
-      const quantidadeErros = contarErrosLead(leadData);
+      // Contar erros em cada etapa
+      const contarErros = (): number => {
+        let count = 0;
+        if (a.status === "ERRO_400" || a.status === "ERRO_429" || a.status === "OUTROS") count++;
+        if (m.status === "ERRO_400" || m.status === "ERRO_429" || m.status === "ERRO_OUTRO") count++;
+        if (propostaStatus === "ERRO_400" || propostaStatus === "ERRO_429" || propostaStatus === "OUTRO") count++;
+        return count || (propostaErroBase ? 1 : 0);
+      };
 
       return {
         ...l,
@@ -880,8 +881,7 @@ const ResultadosPanel = () => {
         resultadoNegocio: n.resultado,
         resultadoNegocioLabel: n.label,
         propostaErro: propostaErroBase,
-        nomeExtraido,
-        quantidadeErros,
+        numErros: contarErros(),
       };
     });
   }, [resultsLeads]);
@@ -1394,6 +1394,7 @@ const ResultadosPanel = () => {
                       <TableHead className="text-muted-foreground">Autorização</TableHead>
                       <TableHead className="text-muted-foreground">Margem</TableHead>
                       <TableHead className="text-muted-foreground">Proposta</TableHead>
+                      <TableHead className="text-muted-foreground text-center">Erros</TableHead>
                       <TableHead className="text-muted-foreground">Data</TableHead>
                       <TableHead className="text-muted-foreground text-right">Ações</TableHead>
                     </TableRow>
@@ -1402,7 +1403,7 @@ const ResultadosPanel = () => {
                     {pagedLeads.map((l) => (
                       <TableRow key={l.id} className="border-border/50 hover:bg-muted/30">
                         <TableCell className="font-mono text-foreground">{formatCpf(l.cpf)}</TableCell>
-                        <TableCell className="text-muted-foreground truncate max-w-[220px]">{l.nomeExtraido || "Não Informado"}</TableCell>
+                        <TableCell className="text-muted-foreground truncate max-w-[220px]">{l.nome || "-"}</TableCell>
                         <TableCell className="text-muted-foreground">{l.banco || "-"}</TableCell>
                         <TableCell>
                           <Badge variant="secondary">{l.resultadoNegocioLabel}</Badge>
@@ -1414,14 +1415,31 @@ const ResultadosPanel = () => {
                           <Badge variant="secondary">{l.statusConsultaMargemLabel}</Badge>
                         </TableCell>
                         <TableCell>
-                          {l.quantidadeErros > 0 ? (
-                            <Badge variant="destructive" className="text-xs">
-                              {l.quantidadeErros} {l.quantidadeErros === 1 ? 'erro' : 'erros'}
-                            </Badge>
-                          ) : l.propostaErro ? (
-                            <span className="text-muted-foreground text-sm">{l.propostaErro.motivo?.substring(0, 50)}{(l.propostaErro.motivo?.length ?? 0) > 50 ? '...' : ''}</span>
+                          {l.propostaErro ? (
+                            <div className="space-y-1 max-w-[260px]" title={l.statusPropostaLabel}>
+                              <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                MOTIVO
+                              </span>
+                              <div className="text-sm font-medium text-foreground line-clamp-2">
+                                {l.propostaErro.erro}
+                              </div>
+                              {l.propostaErro.motivo && (
+                                <div className="text-xs text-muted-foreground line-clamp-2">
+                                  {l.propostaErro.motivo}
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <Badge variant="secondary">{l.statusPropostaLabel}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {l.numErros > 0 ? (
+                            <Badge variant={l.numErros > 1 ? "destructive" : "secondary"}>
+                              {l.numErros} {l.numErros === 1 ? 'erro' : 'erros'}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-muted-foreground whitespace-nowrap">{formatDateTime(l.created_at)}</TableCell>

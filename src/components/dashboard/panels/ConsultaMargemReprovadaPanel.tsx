@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useDashboard } from "@/contexts/DashboardContext";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from "recharts";
-import { classificarMargemReprovada, extrairValorMargemDisponivelLead } from "@/lib/leadStatusUtils";
+import { classificarMargemReprovada } from "@/lib/leadStatusUtils";
 
 interface LeadMargemReprovada {
   id: string;
@@ -183,11 +183,75 @@ const ConsultaMargemReprovadaPanel = () => {
     return leads.filter(lead => lead.banco === bancoSelecionado);
   }, [leads, bancoSelecionado]);
 
-  // Função auxiliar para extrair valor de margem - usa função centralizada
+  // Função auxiliar para extrair valor de margem
+  // Extrai valorMargemDisponivel de múltiplos caminhos possíveis:
+  // 1. Direto em retorno_margem.valorMargemDisponivel
+  // 2. Em retorno_margem.details.dataprevValidationResponses[].employeeRelationShip.valorMargemDisponivel
+  // 3. Em JSON embutido no campo retorno_margem.error (Response completo: {...})
   const extrairValorMargemLead = (lead: LeadMargemReprovada): number => {
-    // Usa a função centralizada que já tem todos os caminhos de extração
-    const valor = extrairValorMargemDisponivelLead(lead as any);
-    return valor ?? 0;
+    const margemRaw = lead.retorno_margem;
+    if (!margemRaw) return 0;
+    
+    // retorno_margem pode ser um Array ou um objeto
+    let margem: Record<string, unknown> | null = null;
+    if (Array.isArray(margemRaw)) {
+      margem = margemRaw[0] as Record<string, unknown> | null;
+    } else {
+      margem = margemRaw as Record<string, unknown>;
+    }
+    
+    if (!margem) return 0;
+    
+    // 1. Tentar direto em valorMargemDisponivel
+    const valorDireto = margem?.valorMargemDisponivel;
+    if (typeof valorDireto === 'number') return valorDireto;
+    if (typeof valorDireto === 'string' && !isNaN(parseFloat(valorDireto))) return parseFloat(valorDireto);
+    
+    // 2. Tentar em details.dataprevValidationResponses[].employeeRelationShip.valorMargemDisponivel
+    const details = margem?.details as Record<string, unknown> | undefined;
+    if (details) {
+      const dataprevResponses = details?.dataprevValidationResponses;
+      if (Array.isArray(dataprevResponses) && dataprevResponses.length > 0) {
+        for (const response of dataprevResponses) {
+          const employee = (response as Record<string, unknown>)?.employeeRelationShip as Record<string, unknown> | undefined;
+          if (employee) {
+            const valor = employee?.valorMargemDisponivel;
+            if (typeof valor === 'number') return valor;
+            if (typeof valor === 'string' && !isNaN(parseFloat(valor))) return parseFloat(valor);
+          }
+        }
+      }
+    }
+    
+    // 3. Tentar extrair do JSON embutido no campo error
+    const errorStr = typeof margem?.error === 'string' ? margem.error : null;
+    if (errorStr) {
+      const match = errorStr.match(/Response completo:\s*(\{[\s\S]*\})/);
+      if (match?.[1]) {
+        try {
+          const cleanJson = match[1].replace(/\\n/g, "").replace(/\\t/g, "").replace(/\\"/g, '"');
+          const parsed = JSON.parse(cleanJson) as Record<string, unknown>;
+          const parsedDetails = parsed?.details as Record<string, unknown> | undefined;
+          if (parsedDetails) {
+            const dataprevResponses = parsedDetails?.dataprevValidationResponses;
+            if (Array.isArray(dataprevResponses) && dataprevResponses.length > 0) {
+              for (const response of dataprevResponses) {
+                const employee = (response as Record<string, unknown>)?.employeeRelationShip as Record<string, unknown> | undefined;
+                if (employee) {
+                  const valor = employee?.valorMargemDisponivel;
+                  if (typeof valor === 'number') return valor;
+                  if (typeof valor === 'string' && !isNaN(parseFloat(valor))) return parseFloat(valor);
+                }
+              }
+            }
+          }
+        } catch {
+          // Ignorar erro de parse
+        }
+      }
+    }
+    
+    return 0;
   };
 
   // KPIs
@@ -572,167 +636,87 @@ const ConsultaMargemReprovadaPanel = () => {
                   </div>
                 </div>
 
-                {/* Motivo do Erro - Extraído dos dados reais */}
+                {/* Motivo da Reprovação - Apenas valor da margem */}
                 {(() => {
-                  const margem = selectedLead.retorno_margem as Record<string, unknown> | null;
-                  const simulacao = selectedLead.retorno_simulacao as Record<string, unknown> | null;
+                  const valorMargem = extrairValorMargemLead(selectedLead);
+                  const tipoMargem = selectedLead.tipo_reprovacao_classificado;
                   
-                  // Helper para extrair mensagem limpa de erro (sem JSON bruto)
-                  const extrairMensagemLimpa = (valor: unknown): string | null => {
-                    if (!valor) return null;
-                    
-                    // Se for string, tentar extrair apenas a parte legível
-                    if (typeof valor === 'string') {
-                      // Se contém JSON, extrair apenas a mensagem inicial
-                      const jsonIndex = valor.indexOf('Response completo:');
-                      if (jsonIndex > 0) {
-                        return valor.substring(0, jsonIndex).trim();
-                      }
-                      const codeIndex = valor.indexOf('(Code:');
-                      if (codeIndex > 0) {
-                        return valor.substring(0, codeIndex).trim();
-                      }
-                      // Se a string é muito longa e parece JSON, ignorar
-                      if (valor.length > 500 && (valor.includes('{') || valor.includes('['))) {
-                        // Tentar extrair apenas a primeira frase
-                        const primeiraFrase = valor.split('.')[0];
-                        if (primeiraFrase && primeiraFrase.length < 200) {
-                          return primeiraFrase + '.';
-                        }
-                        return null;
-                      }
-                      return valor;
-                    }
-                    
-                    // Se for objeto, tentar extrair message ou description
-                    if (typeof valor === 'object' && valor !== null) {
-                      const obj = valor as Record<string, unknown>;
-                      if (obj.message && typeof obj.message === 'string') return obj.message;
-                      if (obj.description && typeof obj.description === 'string') return obj.description;
-                      if (obj.error && typeof obj.error === 'string') return obj.error;
-                    }
-                    
-                    return null;
-                  };
+                  // Determinar cor e descrição baseado no tipo/valor
+                  let corFundo = "bg-yellow-500/10 border-yellow-500/30";
+                  let corTexto = "text-yellow-500";
+                  let descricaoTipo = "Margem baixa";
                   
-                  // Extrair motivos de erro dos dados reais
-                  const motivos: { campo: string; valor: string }[] = [];
-                  
-                  // Verificar retorno_margem - extrair valores de margem primeiro (mais importantes)
-                  if (margem) {
-                    // Valores de margem são a informação mais importante
-                    if (typeof margem.valorMargemDisponivel !== 'undefined') {
-                      const valorMargem = Number(margem.valorMargemDisponivel);
-                      motivos.push({ 
-                        campo: 'Margem Disponível', 
-                        valor: `${formatCurrency(valorMargem)}${valorMargem === 0 ? ' (zerada)' : valorMargem < 100 ? ' (menor que o mínimo)' : ''}`
-                      });
-                    }
-                    if (typeof margem.valorMargemBase !== 'undefined') {
-                      motivos.push({ campo: 'Margem Base', valor: formatCurrency(Number(margem.valorMargemBase)) });
-                    }
-                    
-                    // Extrair mensagens de erro de forma limpa
-                    const mensagemErro = extrairMensagemLimpa(margem.error);
-                    if (mensagemErro) motivos.push({ campo: 'Erro', valor: mensagemErro });
-                    
-                    const mensagemMotivo = extrairMensagemLimpa(margem.motivo);
-                    if (mensagemMotivo) motivos.push({ campo: 'Motivo', valor: mensagemMotivo });
-                    
-                    const mensagemMessage = extrairMensagemLimpa(margem.message);
-                    if (mensagemMessage) motivos.push({ campo: 'Mensagem', valor: mensagemMessage });
-                    
-                    if (margem.statusDescription && typeof margem.statusDescription === 'string' && margem.statusDescription.length < 200) {
-                      motivos.push({ campo: 'Status', valor: margem.statusDescription });
-                    }
-                    
-                    // Extrair motivo de inelegibilidade se existir
-                    const motivoInelegibilidade = margem.motivoInelegibilidade as Record<string, unknown> | undefined;
-                    if (motivoInelegibilidade?.descricao) {
-                      motivos.push({ campo: 'Motivo Inelegibilidade', valor: String(motivoInelegibilidade.descricao) });
-                    }
+                  if (tipoMargem === "margem_zerada" || valorMargem === 0) {
+                    corFundo = "bg-orange-500/10 border-orange-500/30";
+                    corTexto = "text-orange-500";
+                    descricaoTipo = "Margem zerada";
+                  } else if (tipoMargem === "margem_negativa" || valorMargem < 0) {
+                    corFundo = "bg-red-500/10 border-red-500/30";
+                    corTexto = "text-red-500";
+                    descricaoTipo = "Margem negativa";
                   }
                   
-                  // Verificar retorno_simulacao
-                  if (simulacao) {
-                    const mensagemErroSim = extrairMensagemLimpa(simulacao.error);
-                    if (mensagemErroSim) motivos.push({ campo: 'Erro Simulação', valor: mensagemErroSim });
-                    
-                    const mensagemMotivoSim = extrairMensagemLimpa(simulacao.motivo);
-                    if (mensagemMotivoSim) motivos.push({ campo: 'Motivo Simulação', valor: mensagemMotivoSim });
-                    
-                    const mensagemMessageSim = extrairMensagemLimpa(simulacao.message);
-                    if (mensagemMessageSim) motivos.push({ campo: 'Mensagem Simulação', valor: mensagemMessageSim });
-                    
-                    const details = simulacao.details as Record<string, unknown> | undefined;
-                    if (details) {
-                      const detailError = extrairMensagemLimpa(details.error);
-                      if (detailError) motivos.push({ campo: 'Detalhe', valor: detailError });
-                      
-                      const detailDesc = extrairMensagemLimpa(details.description);
-                      if (detailDesc) motivos.push({ campo: 'Descrição', valor: detailDesc });
-                    }
-                  }
-                  
-                  if (motivos.length > 0) {
-                    return (
-                      <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30">
-                        <h4 className="font-medium text-red-400 mb-3 flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4" />
-                          Motivo da Reprovação
-                        </h4>
-                        <div className="space-y-2">
-                          {motivos.map((m, idx) => (
-                            <div key={idx} className="text-sm">
-                              <span className="text-muted-foreground">{m.campo}:</span>
-                              <span className="ml-2 text-foreground">{m.valor}</span>
-                            </div>
-                          ))}
-                        </div>
+                  return (
+                    <div className={`p-6 rounded-lg border ${corFundo}`}>
+                      <h4 className={`font-medium ${corTexto} mb-4 flex items-center gap-2 justify-center`}>
+                        <AlertTriangle className="w-5 h-5" />
+                        Motivo da Reprovação: {descricaoTipo}
+                      </h4>
+                      <div className="text-center">
+                        <p className="text-sm text-muted-foreground mb-2">Valor da Margem Disponível</p>
+                        <p className={`text-5xl font-bold ${corTexto}`}>
+                          {formatCurrency(valorMargem)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-3">
+                          {valorMargem < 0 
+                            ? "Cliente possui margem negativa, impossibilitando a contratação"
+                            : valorMargem === 0 
+                            ? "Cliente não possui margem disponível para contratação"
+                            : "Cliente possui margem insuficiente para o valor solicitado"}
+                        </p>
                       </div>
-                    );
-                  }
-                  return null;
+                    </div>
+                  );
                 })()}
 
-                {/* Dados de Margem */}
+                {/* Informações Adicionais de Margem (sem JSON) */}
                 {selectedLead.retorno_margem && (
                   <div className="p-4 rounded-lg bg-muted/30 border border-border">
-                    <h4 className="font-medium text-foreground mb-2">Dados de Margem</h4>
-                    <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                    <h4 className="font-medium text-foreground mb-3">Informações Adicionais</h4>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
                       {(() => {
                         const m = selectedLead.retorno_margem as Record<string, unknown>;
                         const campos: { label: string; valor: string }[] = [];
                         
-                        if (typeof m.valorMargemDisponivel !== 'undefined') campos.push({ label: 'Margem Disponível', valor: formatCurrency(Number(m.valorMargemDisponivel)) });
                         if (typeof m.valorMargemBase !== 'undefined') campos.push({ label: 'Margem Base', valor: formatCurrency(Number(m.valorMargemBase)) });
-                        if (typeof m.margemDisponivel !== 'undefined') campos.push({ label: 'Margem', valor: formatCurrency(Number(m.margemDisponivel)) });
+                        if (typeof m.margemDisponivel !== 'undefined' && m.margemDisponivel !== m.valorMargemDisponivel) {
+                          campos.push({ label: 'Margem', valor: formatCurrency(Number(m.margemDisponivel)) });
+                        }
                         if (m.status) campos.push({ label: 'Status', valor: String(m.status) });
                         if (m.matricula) campos.push({ label: 'Matrícula', valor: String(m.matricula) });
                         if (m.convenio) campos.push({ label: 'Convênio', valor: String(m.convenio) });
+                        if (m.empregador) campos.push({ label: 'Empregador', valor: String(m.empregador) });
+                        
+                        if (campos.length === 0) {
+                          return <p className="text-muted-foreground col-span-2">Nenhuma informação adicional disponível</p>;
+                        }
                         
                         return campos.map((c, idx) => (
-                          <div key={idx}>
-                            <span className="text-muted-foreground">{c.label}:</span>
-                            <span className="ml-2 text-foreground">{c.valor}</span>
+                          <div key={idx} className="flex justify-between items-center p-2 rounded bg-background/50">
+                            <span className="text-muted-foreground">{c.label}</span>
+                            <span className="text-foreground font-medium">{c.valor}</span>
                           </div>
                         ));
                       })()}
                     </div>
-                    <details className="text-xs">
-                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Ver dados completos</summary>
-                      <pre className="text-xs text-muted-foreground overflow-auto max-h-[150px] bg-background p-2 rounded mt-2">
-                        {JSON.stringify(selectedLead.retorno_margem, null, 2)}
-                      </pre>
-                    </details>
                   </div>
                 )}
 
-                {/* Dados de Simulação */}
+                {/* Dados de Simulação (sem JSON) */}
                 {selectedLead.retorno_simulacao && (
                   <div className="p-4 rounded-lg bg-muted/30 border border-border">
-                    <h4 className="font-medium text-foreground mb-2">Dados de Simulação</h4>
-                    <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                    <h4 className="font-medium text-foreground mb-3">Dados de Simulação</h4>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
                       {(() => {
                         const s = selectedLead.retorno_simulacao as Record<string, unknown>;
                         const campos: { label: string; valor: string }[] = [];
@@ -744,20 +728,18 @@ const ConsultaMargemReprovadaPanel = () => {
                         if (s.numberOfPayments) campos.push({ label: 'Parcelas', valor: String(s.numberOfPayments) });
                         if (s.productName) campos.push({ label: 'Produto', valor: String(s.productName) });
                         
+                        if (campos.length === 0) {
+                          return <p className="text-muted-foreground col-span-2">Nenhum dado de simulação disponível</p>;
+                        }
+                        
                         return campos.map((c, idx) => (
-                          <div key={idx}>
-                            <span className="text-muted-foreground">{c.label}:</span>
-                            <span className="ml-2 text-foreground">{c.valor}</span>
+                          <div key={idx} className="flex justify-between items-center p-2 rounded bg-background/50">
+                            <span className="text-muted-foreground">{c.label}</span>
+                            <span className="text-foreground font-medium">{c.valor}</span>
                           </div>
                         ));
                       })()}
                     </div>
-                    <details className="text-xs">
-                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Ver dados completos</summary>
-                      <pre className="text-xs text-muted-foreground overflow-auto max-h-[150px] bg-background p-2 rounded mt-2">
-                        {JSON.stringify(selectedLead.retorno_simulacao, null, 2)}
-                      </pre>
-                    </details>
                   </div>
                 )}
               </div>

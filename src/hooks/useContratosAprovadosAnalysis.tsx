@@ -53,10 +53,9 @@ interface FetchParams {
 
 const fetchContratosAprovadosAnalysis = async (params?: FetchParams): Promise<ContratosAprovadosAnalysis> => {
   // Buscar leads aprovados diretamente
-  // Nota: pagamento_status é um campo dinâmico que pode não estar no schema, acessamos via cast
   let query = supabase
     .from('leads')
-    .select('*')
+    .select('id, cpf, nome, banco, created_at, data_envio, data_retorno, retorno_get_proposta, retorno_simulacao, valor')
     .eq('status', 'aprovado');
 
   if (params?.banco) {
@@ -84,38 +83,20 @@ const fetchContratosAprovadosAnalysis = async (params?: FetchParams): Promise<Co
     };
   }
 
-  // NOTA: Datas de digitação e tempo de digitação são calculados APÓS identificar os leads pagos
-  // para usar apenas leads efetivamente pagos (não apenas aprovados)
-
-  // Helper para normalizar texto (remover acentos e converter para minúsculas)
-  const normalize = (value: string) =>
-    value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-
-  // Helper para determinar se o lead está PAGO
-  // CRITÉRIO: 
-  // 1. Primeiro verifica pagamento_status manual (se existir)
-  // 2. Senão, verifica statusDescription do retorno_get_proposta
-  // Pago = statusDescription IN (Encerrado, Liquidação, Liquidação Manual, Pago, Liquidado)
-  const isLeadPago = (leadAny: Record<string, unknown>, getProposta: Record<string, unknown> | null): boolean => {
-    // 1. Verificar status manual primeiro (prioridade)
-    const manualStatus = leadAny.pagamento_status as string | null;
-    if (manualStatus) {
-      return manualStatus === "pago";
+  // Processar dados de digitação (created_at)
+  const datasDigitacaoMap = new Map<string, number>();
+  leads.forEach(lead => {
+    if (lead.created_at) {
+      const data = new Date(lead.created_at).toLocaleDateString('pt-BR');
+      datasDigitacaoMap.set(data, (datasDigitacaoMap.get(data) || 0) + 1);
     }
-    
-    // 2. Verificar statusDescription do retorno_get_proposta
-    const statusDescription = getProposta?.statusDescription;
-    if (typeof statusDescription !== "string") return false;
-    
-    const sd = normalize(statusDescription);
-    
-    // Status que indicam PAGO efetivamente
-    const statusPagos = ["encerrado", "liquidacao", "liquidacao manual", "pago", "liquidado"];
-    
-    return statusPagos.includes(sd);
-  };
+  });
+  const topDatasDigitacao = Array.from(datasDigitacaoMap.entries())
+    .map(([data, quantidade]) => ({ data, quantidade }))
+    .sort((a, b) => b.quantidade - a.quantidade)
+    .slice(0, 3);
 
-  // Processar pagos/não pagos por banco
+  // Processar pagos/não pagos por banco PRIMEIRO (para usar na filtragem de tempos de digitação)
   const pagoPorBancoMap = new Map<string, { pagos: number; naoPagos: number; valorPago: number }>();
   const leadsPagos: LeadPago[] = [];
   const leadsNaoPagos: LeadPago[] = [];
@@ -123,18 +104,18 @@ const fetchContratosAprovadosAnalysis = async (params?: FetchParams): Promise<Co
   leads.forEach(lead => {
     const banco = lead.banco || 'Não informado';
     const getProposta = lead.retorno_get_proposta as Record<string, unknown> | null;
-    const leadAny = lead as unknown as Record<string, unknown>;
     
-    // Verificar se foi pago usando statusDescription ou pagamento_status manual
-    const isPago = isLeadPago(leadAny, getProposta);
+    // Verificar se foi pago - baseado no statusDescription do retorno_get_proposta
+    const statusDescription = getProposta?.statusDescription as string | null;
+    const normalizedStatus = statusDescription 
+      ? statusDescription.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()
+      : '';
     
-    // Extrair valor (para exibição, não para determinar se é pago)
-    const valorPago = Number(getProposta?.disbursedIssueAmount || getProposta?.paidAmount || getProposta?.valorPago || lead.valor || 0);
+    const statusPagos = ['encerrado', 'liquidacao', 'liquidacao manual', 'pago', 'liquidado'];
+    const isPago = statusPagos.some(s => normalizedStatus.includes(s));
     
-    // Extrair data de pagamento
+    const valorLead = lead.valor || Number(getProposta?.disbursedIssueAmount || getProposta?.requestedAmount || 0);
     const dataPagamento = getProposta?.disbursementDate || getProposta?.paymentDate || getProposta?.dataPagamento || null;
-    
-    // Extrair nome
     const nome = lead.nome || (getProposta?.name as string) || '';
     
     const leadInfo: LeadPago = {
@@ -142,7 +123,7 @@ const fetchContratosAprovadosAnalysis = async (params?: FetchParams): Promise<Co
       cpf: lead.cpf,
       nome,
       banco,
-      valorPago: isPago ? valorPago : (lead.valor || 0),
+      valorPago: valorLead,
       dataPagamento: dataPagamento ? String(dataPagamento) : null,
       dataDigitacao: lead.created_at,
     };
@@ -154,7 +135,7 @@ const fetchContratosAprovadosAnalysis = async (params?: FetchParams): Promise<Co
     const stats = pagoPorBancoMap.get(banco)!;
     if (isPago) {
       stats.pagos++;
-      stats.valorPago += valorPago;
+      stats.valorPago += valorLead;
       leadsPagos.push(leadInfo);
     } else {
       stats.naoPagos++;
@@ -162,23 +143,22 @@ const fetchContratosAprovadosAnalysis = async (params?: FetchParams): Promise<Co
     }
   });
 
-  const pagoPorBanco = Array.from(pagoPorBancoMap.entries())
-    .map(([banco, stats]) => ({ banco, ...stats }))
-    .sort((a, b) => b.pagos - a.pagos);
-
-  // Processar tempo de digitação baseado nos leads PAGOS (não aprovados)
-  // Diferença entre data de digitação (created_at) e data de pagamento
+  // Processar tempo de digitação - APENAS para leads PAGOS
+  // (diferença entre data de aprovação e data de pagamento, em dias)
   const temposDigitacaoMap = new Map<string, number>();
   leadsPagos.forEach(lead => {
+    // Data de aprovação = dataDigitacao (created_at)
+    const dataAprovacao = new Date(lead.dataDigitacao);
+    
+    // Data de pagamento
     if (!lead.dataPagamento) return;
     
-    const dataDigitacao = new Date(lead.dataDigitacao);
     const dataPagamento = new Date(lead.dataPagamento);
     
-    if (isNaN(dataPagamento.getTime()) || isNaN(dataDigitacao.getTime())) return;
+    if (isNaN(dataPagamento.getTime()) || isNaN(dataAprovacao.getTime())) return;
     
     // Calcular diferença em dias (valor absoluto para evitar negativos)
-    const diffMs = Math.abs(dataPagamento.getTime() - dataDigitacao.getTime());
+    const diffMs = Math.abs(dataPagamento.getTime() - dataAprovacao.getTime());
     const diffDias = Math.round(diffMs / (1000 * 60 * 60 * 24));
     
     // Classificar em faixas de dias
@@ -198,18 +178,9 @@ const fetchContratosAprovadosAnalysis = async (params?: FetchParams): Promise<Co
     .sort((a, b) => b.quantidade - a.quantidade)
     .slice(0, 3);
 
-  // Processar datas de digitação baseado nos leads PAGOS (não aprovados)
-  const datasDigitacaoPagosMap = new Map<string, number>();
-  leadsPagos.forEach(lead => {
-    if (lead.dataDigitacao) {
-      const data = new Date(lead.dataDigitacao).toLocaleDateString('pt-BR');
-      datasDigitacaoPagosMap.set(data, (datasDigitacaoPagosMap.get(data) || 0) + 1);
-    }
-  });
-  const topDatasDigitacaoPagos = Array.from(datasDigitacaoPagosMap.entries())
-    .map(([data, quantidade]) => ({ data, quantidade }))
-    .sort((a, b) => b.quantidade - a.quantidade)
-    .slice(0, 3);
+  const pagoPorBanco = Array.from(pagoPorBancoMap.entries())
+    .map(([banco, stats]) => ({ banco, ...stats }))
+    .sort((a, b) => b.pagos - a.pagos);
 
   // Processar datas de pagamento
   const datasPagamentoMap = new Map<string, { quantidade: number; valorTotal: number }>();
@@ -230,7 +201,7 @@ const fetchContratosAprovadosAnalysis = async (params?: FetchParams): Promise<Co
     .slice(0, 3);
 
   return {
-    topDatasDigitacao: topDatasDigitacaoPagos, // Usar datas de digitação dos leads PAGOS
+    topDatasDigitacao,
     topTemposDigitacao,
     pagoPorBanco,
     topDatasPagamento,

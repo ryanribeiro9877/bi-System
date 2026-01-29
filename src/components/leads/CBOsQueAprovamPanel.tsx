@@ -1,13 +1,14 @@
-import { Briefcase, Upload, TrendingUp, Eye, Building2, Download } from "lucide-react";
+import { Briefcase, Upload, TrendingUp, Eye, Building2, Download, Layers } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useMemo, useState, useEffect } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { useApprovedLeadsAnalysis } from "@/hooks/useApprovedLeadsAnalysis";
+import { agruparCBOsAprovadosPorSetor } from "@/lib/cboSetorMapping";
 
 interface CBOsQueAprovamPanelProps {
   bancoFilter?: string;
@@ -120,6 +121,27 @@ const CBOsQueAprovamPanel = ({ bancoFilter = "todos", importBatchId }: CBOsQueAp
       };
     });
   }, [analysis.topCBOs, cboEmpresaMap]);
+
+  // Agrupar CBOs aprovados por setor
+  const cbosPorSetor = useMemo(() => {
+    const cbosParaAgrupar = (analysis.topCBOs || []).map(cbo => ({
+      code: cbo.codigo,
+      name: cbo.descricao,
+      count: cbo.quantidade,
+      margemAprovada: 0,
+    }));
+    return agruparCBOsAprovadosPorSetor(cbosParaAgrupar);
+  }, [analysis.topCBOs]);
+
+  // Dados para o gráfico de pizza por setor
+  const setorChartData = useMemo(() => {
+    return cbosPorSetor.slice(0, 8).map(setor => ({
+      name: setor.setorNome,
+      value: setor.totalLeads,
+      color: setor.cor,
+      profissoes: setor.cbos.length,
+    }));
+  }, [cbosPorSetor]);
 
   const totalAprovados = analysis.totalAprovados;
 
@@ -424,6 +446,88 @@ const CBOsQueAprovamPanel = ({ bancoFilter = "todos", importBatchId }: CBOsQueAp
           )}
         </CardContent>
       </Card>
+      {/* Distribuição por Setor */}
+      {setorChartData.length > 0 && (
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Layers className="w-5 h-5 text-emerald-400" />
+              CBOs Aprovados por Setor
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Distribuição das aprovações por área de atuação
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Gráfico de Pizza */}
+              <div className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={setorChartData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      outerRadius={100}
+                      fill="#8884d8"
+                      dataKey="value"
+                      label={({ name, percent }) => 
+                        percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ''
+                      }
+                    >
+                      {setorChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-popover border border-border rounded-lg p-3 shadow-lg">
+                              <p className="font-semibold text-foreground">{data.name}</p>
+                              <p className="text-sm text-emerald-400">{data.value} aprovações</p>
+                              <p className="text-xs text-muted-foreground">{data.profissoes} profissões</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              
+              {/* Lista de Setores */}
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {cbosPorSetor.map((setor, index) => (
+                  <div 
+                    key={setor.setor}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: setor.cor }}
+                      />
+                      <div>
+                        <p className="font-medium text-foreground text-sm">{setor.setorNome}</p>
+                        <p className="text-xs text-muted-foreground">{setor.cbos.length} profissões</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-emerald-400">{setor.totalLeads}</p>
+                      <p className="text-xs text-muted-foreground">aprovações</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Dialog para exibir leads por CBO */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">

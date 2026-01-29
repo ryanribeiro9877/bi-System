@@ -1480,176 +1480,359 @@ export const extrairCNAECompleto = (lead: LeadData): string | null => {
 };
 
 /**
- * Extrai o nome do trabalhador de múltiplas fontes
- * Prioriza: 1) retorno_margem, 2) retorno_autorizacao, 3) campo nome do lead
+ * Interface para CBO com informações de status
  */
-export const extrairNomeTrabalhador = (lead: LeadData): string | null => {
-  // 1. Tentar do retorno_margem (dados do trabalhador)
-  const dadosTrabalhador = extrairDadosTrabalhador(lead);
-  if (dadosTrabalhador.nome) {
-    return dadosTrabalhador.nome;
-  }
+export interface CBOInfo {
+  codigo: string;
+  descricao: string;
+  isBloqueado: boolean;
+  fonte: 'result' | 'employeeRelationShip' | 'erro_cbo_bloqueado' | null;
+}
 
-  // 2. Tentar do campo nome do lead diretamente
-  if (lead.nome && lead.nome.trim() && lead.nome.trim().toLowerCase() !== 'não informado') {
-    return lead.nome.trim();
-  }
+/**
+ * Verifica se o lead tem CBO bloqueado
+ * Retorna true se o CBO foi extraído de uma mensagem de erro de bloqueio
+ */
+export const isCBOBloqueado = (lead: LeadData): boolean => {
+  const dados = extrairDadosTrabalhador(lead);
+  return dados.fonte === 'erro_cbo_bloqueado';
+};
 
-  // 3. Tentar extrair do retorno_autorizacao
-  if (lead.retorno_autorizacao) {
-    const textoAuth = typeof lead.retorno_autorizacao === 'string' 
-      ? lead.retorno_autorizacao 
-      : JSON.stringify(lead.retorno_autorizacao);
-    
-    const nomeMatch = textoAuth.match(/"nome"\s*:\s*"([A-Z][A-Z\s]+)"/);
-    if (nomeMatch && nomeMatch[1].length > 5 && nomeMatch[1].includes(' ')) {
-      return nomeMatch[1];
-    }
-  }
+/**
+ * Extrai informações completas do CBO incluindo status de bloqueio
+ */
+export const extrairCBOInfo = (lead: LeadData): CBOInfo | null => {
+  const dados = extrairDadosTrabalhador(lead);
+  if (!dados.cboCodigo) return null;
+  
+  return {
+    codigo: dados.cboCodigo,
+    descricao: dados.cboDescricao || '',
+    isBloqueado: dados.fonte === 'erro_cbo_bloqueado',
+    fonte: dados.fonte
+  };
+};
 
+/**
+ * Extrai valor da margem disponível do lead
+ * Busca em múltiplos caminhos do retorno_margem
+ */
+export const extrairValorMargemDisponivelLead = (lead: LeadData): number | null => {
+  const margemRaw = lead.retorno_margem;
+  if (!margemRaw) return null;
+
+  const texto = typeof margemRaw === 'string' ? margemRaw : JSON.stringify(margemRaw);
+  
+  // Padrão 1: "valorMargemDisponivel": 123.45
+  const match1 = texto.match(/"valorMargemDisponivel"\s*:\s*([\d.,-]+)/);
+  if (match1) {
+    const valor = parseFloat(match1[1].replace(',', '.'));
+    if (!isNaN(valor)) return valor;
+  }
+  
+  // Padrão 2: "margemDisponivel": 123.45
+  const match2 = texto.match(/"margemDisponivel"\s*:\s*([\d.,-]+)/);
+  if (match2) {
+    const valor = parseFloat(match2[1].replace(',', '.'));
+    if (!isNaN(valor)) return valor;
+  }
+  
+  // Padrão 3: R$ 0,00 em mensagens de erro
+  const match3 = texto.match(/R\$\s*([\d.,]+)/);
+  if (match3) {
+    const valor = parseFloat(match3[1].replace('.', '').replace(',', '.'));
+    if (!isNaN(valor)) return valor;
+  }
+  
   return null;
 };
 
 /**
- * Interface para erros individuais de um lead
+ * Extrai informações de CBO bloqueado com valor de margem perdida
  */
-export interface ErroIndividual {
-  tipo: string;
+export interface CBOBloqueadoInfo {
+  codigo: string;
   descricao: string;
-  etapa: string;
+  valorMargemPerdida: number | null;
 }
 
-/**
- * Extrai todos os erros/problemas de um lead
- * Retorna array de erros individuais para exibição separada
- */
-export const extrairTodosErrosLead = (lead: LeadData): ErroIndividual[] => {
-  const erros: ErroIndividual[] = [];
+export const extrairCBOBloqueadoComMargem = (lead: LeadData): CBOBloqueadoInfo | null => {
+  const dados = extrairDadosTrabalhador(lead);
   
-  const textoMargem = lead.retorno_margem 
-    ? (typeof lead.retorno_margem === 'string' ? lead.retorno_margem : JSON.stringify(lead.retorno_margem))
-    : '';
+  // Só retorna se for um CBO bloqueado
+  if (dados.fonte !== 'erro_cbo_bloqueado' || !dados.cboCodigo) {
+    return null;
+  }
   
-  // 1. CBO Bloqueado
-  const cboBloqueadoMatch = textoMargem.match(/CBO bloqueado[:\s]+(\d{6})\s*[-–]\s*([^,\.\n"\\]+)/i);
-  if (cboBloqueadoMatch) {
-    erros.push({
-      tipo: 'CBO bloqueado',
-      descricao: `${cboBloqueadoMatch[1]} - ${cboBloqueadoMatch[2].trim()}`,
-      etapa: 'Margem'
-    });
-  }
-
-  // 2. Vínculo com data de desligamento
-  if (textoMargem.toLowerCase().includes('vínculo com data de desligamento') || 
-      textoMargem.toLowerCase().includes('vinculo com data de desligamento')) {
-    erros.push({
-      tipo: 'Vínculo com data de desligamento',
-      descricao: 'O trabalhador possui vínculo empregatício encerrado',
-      etapa: 'Margem'
-    });
-  }
-
-  // 3. Data de início da atividade do empregador
-  if (textoMargem.toLowerCase().includes('data de inicio da atividade do empregador') ||
-      textoMargem.toLowerCase().includes('data de início da atividade do empregador')) {
-    const match = textoMargem.match(/data de in[íi]cio da atividade do empregador[^0-9]*(\d+)\s*meses/i);
-    const meses = match ? match[1] : '36';
-    erros.push({
-      tipo: 'Empregador novo',
-      descricao: `A data de início da atividade do empregador não deve ser inferior a ${meses} meses configurado`,
-      etapa: 'Margem'
-    });
-  }
-
-  // 4. Não existe valor de margem disponível
-  if (textoMargem.toLowerCase().includes('não existe valor de margem disponível') ||
-      textoMargem.toLowerCase().includes('nao existe valor de margem disponivel')) {
-    erros.push({
-      tipo: 'Sem margem disponível',
-      descricao: 'Não existe valor de margem disponível R$ 0,00',
-      etapa: 'Margem'
-    });
-  }
-
-  // 5. Empresa não atende aos requisitos mínimos
-  const empresaMatch = textoMargem.match(/A empresa (\d+) não atende aos requisitos mínimos[^:]*:\s*([^,\.]+)/i);
-  if (empresaMatch) {
-    erros.push({
-      tipo: 'Empresa não elegível',
-      descricao: `Empresa ${empresaMatch[1]} - ${empresaMatch[2].trim()}`,
-      etapa: 'Margem'
-    });
-  }
-
-  // 6. Funcionários insuficientes
-  if (textoMargem.toLowerCase().includes('funcionários') && textoMargem.includes('< 20')) {
-    erros.push({
-      tipo: 'Funcionários insuficientes',
-      descricao: 'A empresa possui menos de 20 funcionários',
-      etapa: 'Margem'
-    });
-  }
-
-  // 7. Faturamento insuficiente
-  if (textoMargem.toLowerCase().includes('faturamento') && textoMargem.includes('< R$')) {
-    const fatMatch = textoMargem.match(/Faturamento[^<]*<\s*R\$\s*([\d\.,]+)/i);
-    const valor = fatMatch ? fatMatch[1] : '50.000,00';
-    erros.push({
-      tipo: 'Faturamento insuficiente',
-      descricao: `Faturamento da empresa inferior a R$ ${valor}`,
-      etapa: 'Margem'
-    });
-  }
-
-  // 8. Capital Social insuficiente
-  if (textoMargem.toLowerCase().includes('capital social') && textoMargem.includes('< R$')) {
-    erros.push({
-      tipo: 'Capital Social insuficiente',
-      descricao: 'Capital Social da empresa inferior ao mínimo exigido',
-      etapa: 'Margem'
-    });
-  }
-
-  // 9. Natureza jurídica não atendida
-  if (textoMargem.toLowerCase().includes('natureza jurídica') || textoMargem.toLowerCase().includes('natureza juridica')) {
-    const njMatch = textoMargem.match(/natureza jur[íi]dica[^(]*\((\d+)\)[^a-z]*não atendida/i);
-    const codigo = njMatch ? njMatch[1] : '';
-    erros.push({
-      tipo: 'Natureza jurídica não atendida',
-      descricao: codigo ? `Natureza jurídica (${codigo}) não é aceita pelo produto` : 'Natureza jurídica não é aceita pelo produto',
-      etapa: 'Margem'
-    });
-  }
-
-  // 10. Erro 400 genérico
-  if (textoMargem.includes('400') && textoMargem.toLowerCase().includes('erro')) {
-    if (!erros.some(e => e.tipo !== 'Erro 400')) {
-      // Não adicionar se já tem erro específico
-    }
-  }
-
-  // Se não encontrou erros específicos mas tem erro no campo
-  if (erros.length === 0 && textoMargem.toLowerCase().includes('error')) {
-    const errorMatch = textoMargem.match(/"error"\s*:\s*"([^"]+)"/);
-    if (errorMatch) {
-      const errorText = errorMatch[1].substring(0, 100);
-      erros.push({
-        tipo: 'Erro na consulta',
-        descricao: errorText,
-        etapa: 'Margem'
-      });
-    }
-  }
-
-  return erros;
+  const margemPerdida = extrairValorMargemDisponivelLead(lead);
+  
+  return {
+    codigo: dados.cboCodigo,
+    descricao: dados.cboDescricao || '',
+    valorMargemPerdida: margemPerdida
+  };
 };
 
 /**
- * Conta quantidade de erros/problemas em um lead
+ * Extrai informações de CBO aprovado (leads com proposta aprovada)
  */
-export const contarErrosLead = (lead: LeadData): number => {
-  return extrairTodosErrosLead(lead).length;
+export interface CBOAprovadoInfo {
+  codigo: string;
+  descricao: string;
+  valorMargem: number | null;
+  empregador: string | null;
+}
+
+export const extrairCBOAprovado = (lead: LeadData): CBOAprovadoInfo | null => {
+  // Verificar se o lead foi aprovado (retorno_proposta.status === "success")
+  const propostaRaw = lead.retorno_proposta;
+  if (!propostaRaw) return null;
+  
+  const propostaTexto = typeof propostaRaw === 'string' ? propostaRaw : JSON.stringify(propostaRaw);
+  const isAprovado = propostaTexto.includes('"status":"success"') || 
+                     propostaTexto.includes('"status": "success"');
+  
+  if (!isAprovado) return null;
+  
+  const dados = extrairDadosTrabalhador(lead);
+  
+  // Só retorna se encontrou CBO e NÃO é de erro de bloqueio
+  if (!dados.cboCodigo || dados.fonte === 'erro_cbo_bloqueado') {
+    return null;
+  }
+  
+  return {
+    codigo: dados.cboCodigo,
+    descricao: dados.cboDescricao || '',
+    valorMargem: extrairValorMargemDisponivelLead(lead),
+    empregador: dados.empregador
+  };
+};
+
+/**
+ * Agrupa CBOs bloqueados por código e calcula totais
+ */
+export interface CBOBloqueadoAgrupado {
+  codigo: string;
+  descricao: string;
+  quantidade: number;
+  margemTotalPerdida: number;
+  margemMediaPerdida: number;
+}
+
+export const agruparCBOsBloqueados = (leads: LeadData[]): CBOBloqueadoAgrupado[] => {
+  const agrupamento: Record<string, { 
+    descricao: string; 
+    quantidade: number; 
+    margemTotal: number;
+    leadsComMargem: number;
+  }> = {};
+  
+  leads.forEach(lead => {
+    const cboInfo = extrairCBOBloqueadoComMargem(lead);
+    if (!cboInfo) return;
+    
+    if (!agrupamento[cboInfo.codigo]) {
+      agrupamento[cboInfo.codigo] = {
+        descricao: cboInfo.descricao,
+        quantidade: 0,
+        margemTotal: 0,
+        leadsComMargem: 0
+      };
+    }
+    
+    agrupamento[cboInfo.codigo].quantidade++;
+    
+    if (cboInfo.valorMargemPerdida !== null && cboInfo.valorMargemPerdida > 0) {
+      agrupamento[cboInfo.codigo].margemTotal += cboInfo.valorMargemPerdida;
+      agrupamento[cboInfo.codigo].leadsComMargem++;
+    }
+  });
+  
+  return Object.entries(agrupamento)
+    .map(([codigo, dados]) => ({
+      codigo,
+      descricao: dados.descricao,
+      quantidade: dados.quantidade,
+      margemTotalPerdida: dados.margemTotal,
+      margemMediaPerdida: dados.leadsComMargem > 0 
+        ? dados.margemTotal / dados.leadsComMargem 
+        : 0
+    }))
+    .sort((a, b) => b.quantidade - a.quantidade);
+};
+
+/**
+ * Agrupa CBOs aprovados por código e calcula totais
+ */
+export interface CBOAprovadoAgrupado {
+  codigo: string;
+  descricao: string;
+  quantidade: number;
+  margemTotalAprovada: number;
+  margemMediaAprovada: number;
+  topEmpregador: string | null;
+}
+
+export const agruparCBOsAprovados = (leads: LeadData[]): CBOAprovadoAgrupado[] => {
+  const agrupamento: Record<string, { 
+    descricao: string; 
+    quantidade: number; 
+    margemTotal: number;
+    leadsComMargem: number;
+    empregadores: Record<string, number>;
+  }> = {};
+  
+  leads.forEach(lead => {
+    const cboInfo = extrairCBOAprovado(lead);
+    if (!cboInfo) return;
+    
+    if (!agrupamento[cboInfo.codigo]) {
+      agrupamento[cboInfo.codigo] = {
+        descricao: cboInfo.descricao,
+        quantidade: 0,
+        margemTotal: 0,
+        leadsComMargem: 0,
+        empregadores: {}
+      };
+    }
+    
+    agrupamento[cboInfo.codigo].quantidade++;
+    
+    if (cboInfo.valorMargem !== null && cboInfo.valorMargem > 0) {
+      agrupamento[cboInfo.codigo].margemTotal += cboInfo.valorMargem;
+      agrupamento[cboInfo.codigo].leadsComMargem++;
+    }
+    
+    if (cboInfo.empregador) {
+      agrupamento[cboInfo.codigo].empregadores[cboInfo.empregador] = 
+        (agrupamento[cboInfo.codigo].empregadores[cboInfo.empregador] || 0) + 1;
+    }
+  });
+  
+  return Object.entries(agrupamento)
+    .map(([codigo, dados]) => {
+      // Encontrar empregador com mais leads
+      let topEmpregador: string | null = null;
+      let maxLeads = 0;
+      Object.entries(dados.empregadores).forEach(([emp, count]) => {
+        if (count > maxLeads) {
+          maxLeads = count;
+          topEmpregador = emp;
+        }
+      });
+      
+      return {
+        codigo,
+        descricao: dados.descricao,
+        quantidade: dados.quantidade,
+        margemTotalAprovada: dados.margemTotal,
+        margemMediaAprovada: dados.leadsComMargem > 0 
+          ? dados.margemTotal / dados.leadsComMargem 
+          : 0,
+        topEmpregador
+      };
+    })
+    .sort((a, b) => b.quantidade - a.quantidade);
+};
+
+/**
+ * Interface para CBO bloqueado com informações de margem
+ */
+export interface CBOBloqueadoInfo {
+  codigo: string;
+  descricao: string;
+  margemDisponivel: number | null;
+  fonte: 'erro_cbo_bloqueado' | 'result' | 'employeeRelationShip';
+}
+
+/**
+ * Extrai informações de CBO bloqueado de um lead, incluindo valor de margem
+ * Usado para calcular margem perdida por CBO bloqueado
+ */
+export const extrairCBOBloqueado = (lead: LeadData): CBOBloqueadoInfo | null => {
+  const margemRaw = lead.retorno_margem;
+  if (!margemRaw) return null;
+
+  const textoOriginal = typeof margemRaw === 'string' ? margemRaw : JSON.stringify(margemRaw);
+  
+  // Buscar padrão "CBO bloqueado: 123456 - DESCRICAO"
+  const cboBloq = textoOriginal.match(/CBO bloqueado[:\s]+(\d{6})\s*[-–]\s*([^,\.\n"\\]+)/i);
+  
+  if (!cboBloq) return null;
+
+  // Extrair valor de margem disponível
+  let margemDisponivel: number | null = null;
+  
+  // Padrão 1: "valorMargemDisponivel": 123.45
+  const margemMatch1 = textoOriginal.match(/"valorMargemDisponivel"\s*:\s*([\d.,-]+)/);
+  if (margemMatch1) {
+    margemDisponivel = parseFloat(margemMatch1[1].replace(',', '.'));
+  }
+  
+  // Padrão 2: R$ 123,45 na mensagem de erro
+  if (margemDisponivel === null) {
+    const margemMatch2 = textoOriginal.match(/R\$\s*([\d.,]+)/);
+    if (margemMatch2) {
+      margemDisponivel = parseFloat(margemMatch2[1].replace('.', '').replace(',', '.'));
+    }
+  }
+
+  return {
+    codigo: cboBloq[1],
+    descricao: cboBloq[2].trim(),
+    margemDisponivel: margemDisponivel,
+    fonte: 'erro_cbo_bloqueado'
+  };
+};
+
+/**
+ * Extrai informações de CBO de um lead aprovado
+ * Usado para análise de CBOs que aprovam
+ */
+export const extrairCBOAprovado = (lead: LeadData): CBOBloqueadoInfo | null => {
+  const margemRaw = lead.retorno_margem;
+  if (!margemRaw) return null;
+
+  const textoOriginal = typeof margemRaw === 'string' ? margemRaw : JSON.stringify(margemRaw);
+  const texto = textoOriginal.replace(/\\n/g, ' ').replace(/\\t/g, ' ').replace(/\\"/g, '"');
+
+  // Padrão 1: "cbo": { "codigo": 123456, "descricao": "..."
+  const cboMatch = texto.match(/"cbo"\s*:\s*\{\s*"codigo"\s*:\s*(\d{6})\s*,\s*"descricao"\s*:\s*"([^"]+)"/);
+  
+  if (!cboMatch) return null;
+
+  // Extrair valor de margem disponível
+  let margemDisponivel: number | null = null;
+  const margemMatch = textoOriginal.match(/"valorMargemDisponivel"\s*:\s*([\d.,-]+)/);
+  if (margemMatch) {
+    margemDisponivel = parseFloat(margemMatch[1].replace(',', '.'));
+  }
+
+  return {
+    codigo: cboMatch[1],
+    descricao: cboMatch[2].trim(),
+    margemDisponivel: margemDisponivel,
+    fonte: 'result'
+  };
+};
+
+/**
+ * Verifica se um lead tem CBO bloqueado
+ */
+export const temCBOBloqueado = (lead: LeadData): boolean => {
+  return extrairCBOBloqueado(lead) !== null;
+};
+
+/**
+ * Verifica se um lead é aprovado (retorno_proposta.status === "success")
+ */
+export const isLeadAprovado = (lead: LeadData): boolean => {
+  const proposta = lead.retorno_proposta;
+  if (!proposta) return false;
+  
+  const texto = typeof proposta === 'string' ? proposta : JSON.stringify(proposta);
+  return texto.includes('"status":"success"') || texto.includes('"status": "success"');
 };
 
 /**

@@ -166,12 +166,13 @@ export interface CBOPorSetor {
   setor: string;
   setorNome: string;
   cor: string;
-  cbos: Array<{ code: string; name: string; count: number }>;
+  cbos: Array<{ code: string; name: string; count: number; margemPerdida?: number }>;
   totalLeads: number;
+  margemTotalPerdida: number;
 }
 
 export function agruparCBOsPorSetor(
-  cbos: Array<{ code: string; name: string; count: number }>
+  cbos: Array<{ code: string; name: string; count: number; margemPerdida?: number }>
 ): CBOPorSetor[] {
   const setorMap: Record<string, CBOPorSetor> = {};
   
@@ -186,11 +187,63 @@ export function agruparCBOsPorSetor(
         cor: setorInfo.cor,
         cbos: [],
         totalLeads: 0,
+        margemTotalPerdida: 0,
       };
     }
     
     setorMap[setorKey].cbos.push(cbo);
     setorMap[setorKey].totalLeads += cbo.count;
+    setorMap[setorKey].margemTotalPerdida += cbo.margemPerdida || 0;
+  });
+  
+  // Ordenar CBOs dentro de cada setor por quantidade
+  Object.values(setorMap).forEach(setor => {
+    setor.cbos.sort((a, b) => b.count - a.count);
+  });
+  
+  return Object.values(setorMap).sort((a, b) => b.totalLeads - a.totalLeads);
+}
+
+/**
+ * Agrupa CBOs aprovados por setor
+ */
+export interface CBOAprovadoPorSetor {
+  setor: string;
+  setorNome: string;
+  cor: string;
+  cbos: Array<{ code: string; name: string; count: number; margemAprovada?: number }>;
+  totalLeads: number;
+  margemTotalAprovada: number;
+}
+
+export function agruparCBOsAprovadosPorSetor(
+  cbos: Array<{ code: string; name: string; count: number; margemAprovada?: number }>
+): CBOAprovadoPorSetor[] {
+  const setorMap: Record<string, CBOAprovadoPorSetor> = {};
+  
+  cbos.forEach(cbo => {
+    const setorKey = mapearCBOParaSetor(cbo.code, cbo.name);
+    const setorInfo = SETORES[setorKey] || SETORES.outros;
+    
+    if (!setorMap[setorKey]) {
+      setorMap[setorKey] = {
+        setor: setorKey,
+        setorNome: setorInfo.nome,
+        cor: setorInfo.cor,
+        cbos: [],
+        totalLeads: 0,
+        margemTotalAprovada: 0,
+      };
+    }
+    
+    setorMap[setorKey].cbos.push(cbo);
+    setorMap[setorKey].totalLeads += cbo.count;
+    setorMap[setorKey].margemTotalAprovada += cbo.margemAprovada || 0;
+  });
+  
+  // Ordenar CBOs dentro de cada setor por quantidade
+  Object.values(setorMap).forEach(setor => {
+    setor.cbos.sort((a, b) => b.count - a.count);
   });
   
   return Object.values(setorMap).sort((a, b) => b.totalLeads - a.totalLeads);

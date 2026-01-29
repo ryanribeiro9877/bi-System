@@ -546,90 +546,16 @@ export const useLeadsData = (filters?: FilterState) => {
     ).size;
     const tiposReprovacaoUnicos = tiposReprovacao.length;
 
-    // Função para extrair CBO bloqueado do texto
-    // Padrão: "CBO bloqueado: 514320 - FAXINEIRO" ou "CBO bloqueado: 521110 - VENDEDOR DE COMERCIO VAREJISTA"
-    const extrairCBOBloqueadoFromText = (texto: string | undefined): { code: string | undefined; name: string | undefined } => {
-      if (!texto) return { code: undefined, name: undefined };
-      
-      // Regex principal: "CBO bloqueado: 123456 - DESCRICAO"
-      // Captura código de 6 dígitos e descrição até vírgula, ponto, quebra de linha, aspas ou barra
-      const cboBloqueadoMatch = texto.match(/CBO bloqueado[:\s]+(\d{6})\s*[-–]\s*([^,.\n"\\]+)/i);
-      
-      if (cboBloqueadoMatch) {
-        return { 
-          code: cboBloqueadoMatch[1].trim(), 
-          name: cboBloqueadoMatch[2]?.trim() || undefined 
-        };
-      }
-      
-      // Fallback: apenas código sem descrição
-      const codigoMatch = texto.match(/CBO bloqueado[:\s]+(\d{6})/i);
-      if (codigoMatch) {
-        return { code: codigoMatch[1].trim(), name: undefined };
-      }
-      
-      return { code: undefined, name: undefined };
-    };
-
-    // Função para extrair CBO bloqueado de um lead reprovado
-    const extrairCBOBloqueadoDoLead = (lead: Lead): { code: string | undefined; name: string | undefined } => {
-      // 1. Primeiro tenta usar o campo já extraído
-      if (lead.cbo_block_code) {
-        return { code: lead.cbo_block_code, name: lead.cbo_block_name || undefined };
-      }
-      
-      // 2. Buscar em tipo_reprovacao
-      if (lead.tipo_reprovacao) {
-        const resultado = extrairCBOBloqueadoFromText(lead.tipo_reprovacao);
-        if (resultado.code) return resultado;
-      }
-      
-      // 3. Buscar em retorno_margem
-      const margem = lead.retorno_margem as Record<string, unknown> | null;
-      if (margem) {
-        const textos = [
-          margem.message as string,
-          margem.error as string,
-          (margem.details as Record<string, unknown>)?.reason as string,
-          JSON.stringify(margem),
-        ].filter(Boolean);
-        
-        for (const texto of textos) {
-          const resultado = extrairCBOBloqueadoFromText(texto);
-          if (resultado.code) return resultado;
-        }
-      }
-      
-      // 4. Buscar em retorno_simulacao
-      const simulacao = lead.retorno_simulacao as Record<string, unknown> | null;
-      if (simulacao) {
-        const textos = [
-          simulacao.message as string,
-          simulacao.error as string,
-          (simulacao.details as Record<string, unknown>)?.reason as string,
-        ].filter(Boolean);
-        
-        for (const texto of textos) {
-          const resultado = extrairCBOBloqueadoFromText(texto);
-          if (resultado.code) return resultado;
-        }
-      }
-      
-      return { code: undefined, name: undefined };
-    };
-
-    // Count by CBO bloqueado - busca em TODOS os leads que tenham CBO bloqueado
-    // (não apenas reprovados, pois alguns podem ter outros status)
+    // Count by CBO bloqueado
     const cboBlockCount: Record<string, { name: string | null; quantidade: number }> = {};
     leadsComStatusNormalizado.forEach(l => {
-      const cboBlock = extrairCBOBloqueadoDoLead(l);
-      if (cboBlock.code) {
-        if (!cboBlockCount[cboBlock.code]) {
-          cboBlockCount[cboBlock.code] = { name: cboBlock.name || null, quantidade: 0 };
+      if (l.cbo_block_code) {
+        if (!cboBlockCount[l.cbo_block_code]) {
+          cboBlockCount[l.cbo_block_code] = { name: l.cbo_block_name || null, quantidade: 0 };
         }
-        cboBlockCount[cboBlock.code].quantidade++;
-        if (cboBlock.name && !cboBlockCount[cboBlock.code].name) {
-          cboBlockCount[cboBlock.code].name = cboBlock.name;
+        cboBlockCount[l.cbo_block_code].quantidade++;
+        if (l.cbo_block_name && !cboBlockCount[l.cbo_block_code].name) {
+          cboBlockCount[l.cbo_block_code].name = l.cbo_block_name;
         }
       }
     });

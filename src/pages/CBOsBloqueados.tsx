@@ -135,10 +135,11 @@ const CBOsContent = () => {
 
         {/* Tabs */}
         <Tabs defaultValue="visao-geral" className="w-full">
-          <TabsList className="w-full grid grid-cols-4 bg-muted/50 border border-border rounded-lg p-1 h-auto gap-1">
+          <div className="overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0">
+          <TabsList className="inline-flex min-w-max lg:w-full lg:grid lg:grid-cols-4 bg-muted/50 border border-border rounded-lg p-1 h-auto gap-1">
             <TabsTrigger
               value="visao-geral"
-              className="flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
+              className="flex-1 min-w-[80px] flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
             >
               <LayoutGrid className="w-3 h-3 lg:w-4 lg:h-4" />
               <span className="hidden sm:inline">Visão Geral</span>
@@ -146,26 +147,27 @@ const CBOsContent = () => {
             </TabsTrigger>
             <TabsTrigger
               value="por-banco"
-              className="flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
+              className="flex-1 min-w-[80px] flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
             >
               <Zap className="w-3 h-3 lg:w-4 lg:h-4" />
               Banco
             </TabsTrigger>
             <TabsTrigger
               value="por-setor"
-              className="flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
+              className="flex-1 min-w-[80px] flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
             >
               <Factory className="w-3 h-3 lg:w-4 lg:h-4" />
               Setor
             </TabsTrigger>
             <TabsTrigger
               value="lista-completa"
-              className="flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
+              className="flex-1 min-w-[80px] flex items-center justify-center gap-1 lg:gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 lg:py-2.5 rounded-md text-xs lg:text-sm"
             >
               <List className="w-3 h-3 lg:w-4 lg:h-4" />
               Lista
             </TabsTrigger>
           </TabsList>
+          </div>
 
           <TabsContent value="visao-geral" className="mt-4 lg:mt-6">
             <VisaoGeralCBOsPanel />

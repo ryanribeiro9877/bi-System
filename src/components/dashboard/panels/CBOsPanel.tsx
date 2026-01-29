@@ -27,7 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import LeadDetailDialog from "@/components/leads/LeadDetailDialog";
 import { useLeadDetails } from "@/hooks/useLeadsPaginated";
 import type { Lead as LeadData } from "@/hooks/useLeadsData";
-import { extrairMotivoErro, extrairNomeTrabalhador, contarErrosLead } from "@/lib/leadStatusUtils";
+import { extrairMotivoErro } from "@/lib/leadStatusUtils";
 
 type AuthCategory = "EXISTING_AUTH" | "TOKEN" | "ERRO_400" | "ERRO_429" | "OUTROS" | "VAZIO";
 
@@ -41,7 +41,6 @@ type AuthLeadRow = {
   valor: number | null;
   created_at: string;
   retorno_autorizacao: unknown;
-  retorno_margem: unknown;
 };
 
 type AnnotatedAuthLead = AuthLeadRow & {
@@ -50,8 +49,6 @@ type AnnotatedAuthLead = AuthLeadRow & {
   authLabel: string;
   auth400Subtype: Auth400Subtype | null;
   auth429Subtype: Auth429Subtype | null;
-  nomeExtraido: string | null;
-  quantidadeErros: number;
 };
 
  type AuthChartDatum = {
@@ -357,7 +354,7 @@ const CBOsPanel = () => {
       const buildBaseQuery = () => {
         let query = supabase
           .from("leads")
-          .select("id, cpf, nome, banco, status, tipo_reprovacao, valor, created_at, retorno_autorizacao, retorno_margem, import_batch_id")
+          .select("id, cpf, nome, banco, status, tipo_reprovacao, valor, created_at, retorno_autorizacao, import_batch_id")
           .order("created_at", { ascending: false });
 
         if (filters?.dataInicial) {
@@ -397,7 +394,6 @@ const CBOsPanel = () => {
           valor: typeof row.valor === "number" ? row.valor : row.valor === null || row.valor === undefined ? null : Number(row.valor),
           created_at: String(row.created_at ?? ""),
           retorno_autorizacao: row.retorno_autorizacao,
-          retorno_margem: row.retorno_margem,
         }));
 
         allRows = allRows.concat(mapped);
@@ -427,19 +423,10 @@ const CBOsPanel = () => {
   const annotated = useMemo<AnnotatedAuthLead[]>(() => {
     return authLeads.map((l) => {
       const c = classifyAuth(l.retorno_autorizacao);
-      const leadData = l as unknown as LeadData;
-      const motivo = extrairMotivoErro(leadData);
-      // Mostrar motivo para TODOS os tipos, não apenas erros
-      const motivoExterno = motivo ?? l.tipo_reprovacao ?? c.reason;
+      const motivo = extrairMotivoErro(l as unknown as LeadData);
+      const motivoExterno = c.category === "TOKEN" || c.category === "EXISTING_AUTH" ? null : motivo ?? l.tipo_reprovacao ?? c.reason;
       const auth400Subtype = c.category === "ERRO_400" ? classify400Subtype(l.retorno_autorizacao) : null;
       const auth429Subtype = c.category === "ERRO_429" ? classify429Subtype(l.retorno_autorizacao) : null;
-      
-      // Extrair nome do trabalhador (prioriza dados extraídos sobre campo nome)
-      const nomeExtraido = extrairNomeTrabalhador(leadData) || l.nome;
-      
-      // Contar quantidade de erros
-      const quantidadeErros = contarErrosLead(leadData);
-      
       return {
         ...l,
         authCategory: c.category,
@@ -447,8 +434,6 @@ const CBOsPanel = () => {
         authLabel: c.label,
         auth400Subtype,
         auth429Subtype,
-        nomeExtraido,
-        quantidadeErros,
       };
     });
   }, [authLeads]);
@@ -983,39 +968,27 @@ const CBOsPanel = () => {
                 <Table>
                   <TableHeader>
                     <TableRow className="border-border hover:bg-transparent">
-                      <TableHead className="text-muted-foreground text-center">CPF</TableHead>
-                      <TableHead className="text-muted-foreground text-center">Nome</TableHead>
-                      <TableHead className="text-muted-foreground text-center">Banco</TableHead>
-                      <TableHead className="text-muted-foreground text-center">Tipo</TableHead>
-                      <TableHead className="text-muted-foreground text-center">Motivo</TableHead>
-                      <TableHead className="text-muted-foreground text-center">Data</TableHead>
-                      <TableHead className="text-muted-foreground text-center">Ações</TableHead>
+                      <TableHead className="text-muted-foreground">CPF</TableHead>
+                      <TableHead className="text-muted-foreground">Nome</TableHead>
+                      <TableHead className="text-muted-foreground">Banco</TableHead>
+                      <TableHead className="text-muted-foreground">Tipo</TableHead>
+                      <TableHead className="text-muted-foreground">Motivo</TableHead>
+                      <TableHead className="text-muted-foreground">Data</TableHead>
+                      <TableHead className="text-muted-foreground text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {pagedLeads.map((l) => (
                       <TableRow key={l.id} className="border-border/50 hover:bg-muted/30">
-                        <TableCell className="font-mono text-foreground text-center">{formatCpf(l.cpf)}</TableCell>
-                        <TableCell className="text-muted-foreground truncate max-w-[220px] text-center">
-                          {l.nomeExtraido || "Não Informado"}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-center">{l.banco || "-"}</TableCell>
-                        <TableCell className="text-center">
+                        <TableCell className="font-mono text-foreground">{formatCpf(l.cpf)}</TableCell>
+                        <TableCell className="text-muted-foreground truncate max-w-[220px]">{l.nome || "-"}</TableCell>
+                        <TableCell className="text-muted-foreground">{l.banco || "-"}</TableCell>
+                        <TableCell>
                           <Badge variant="secondary">{l.authLabel}</Badge>
                         </TableCell>
-                        <TableCell className="text-center">
-                          {l.quantidadeErros > 0 ? (
-                            <Badge variant="destructive" className="text-xs">
-                              {l.quantidadeErros} {l.quantidadeErros === 1 ? 'erro' : 'erros'}
-                            </Badge>
-                          ) : l.authReason ? (
-                            <span className="text-muted-foreground text-sm">{l.authReason.substring(0, 50)}{l.authReason.length > 50 ? '...' : ''}</span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground whitespace-nowrap text-center">{formatDateTime(l.created_at)}</TableCell>
-                        <TableCell className="text-center">
+                        <TableCell className="text-muted-foreground">{l.authReason || "-"}</TableCell>
+                        <TableCell className="text-muted-foreground whitespace-nowrap">{formatDateTime(l.created_at)}</TableCell>
+                        <TableCell className="text-right">
                           <Button
                             variant="ghost"
                             size="icon"

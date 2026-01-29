@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Lead } from "@/hooks/useLeadsData";
 import { FileText, CheckCircle, Clock, User, CreditCard, FileJson, AlertTriangle, Building2 } from "lucide-react";
-import { normalizarStatusLead, extrairMotivoErro, extrairMotivoReprovacaoTecnica, extrairDadosTrabalhador, extrairCBOCompleto, extrairEmpregador, extrairCNAECompleto, extrairTodosErrosLead, extrairNomeTrabalhador } from "@/lib/leadStatusUtils";
+import { normalizarStatusLead, extrairMotivoErro, extrairMotivoReprovacaoTecnica, extrairDadosTrabalhador, extrairCBOCompleto, extrairEmpregador, extrairCNAECompleto } from "@/lib/leadStatusUtils";
 
 interface LeadDetailDialogProps {
   lead: Lead | null;
@@ -67,34 +67,23 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
     const leadAny = l as unknown as Record<string, unknown>;
     const manualStatus = leadAny.pagamento_status as string | null;
 
+    // Se tem descrição manual, usar ela
     if (manualStatus === "aguardando") {
       const motivoManual = leadAny.pagamento_descricao as string | null;
-      const sanitizedManual = sanitizeMotivo(motivoManual);
-      if (sanitizedManual) {
-        const normalized = sanitizedManual
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .toLowerCase()
-          .trim();
-        if (normalized.includes("assinatura")) return "Assinatura pendente";
+      if (motivoManual && motivoManual.trim()) {
+        return motivoManual.trim();
       }
     }
 
+    // Usar statusDescription do retorno_get_proposta
     const obj = l.retorno_get_proposta as unknown;
-    const statusRaw =
-      obj && typeof obj === "object" && typeof (obj as Record<string, unknown>).status === "string"
-        ? ((obj as Record<string, unknown>).status as string)
-        : null;
+    if (obj && typeof obj === "object") {
+      const statusDescription = (obj as Record<string, unknown>).statusDescription;
+      if (typeof statusDescription === "string" && statusDescription.trim()) {
+        return statusDescription.trim();
+      }
+    }
 
-    if (!statusRaw) return "Pendente";
-
-    const normalized = statusRaw
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .trim();
-
-    if (normalized.includes("assinatura")) return "Assinatura pendente";
     return "Pendente";
   };
 
@@ -183,14 +172,9 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
 
   const margem = lead.retorno_margem as Record<string, unknown> | null;
   const nomeFromMargem = (margem?.registroEmpregaticio as Record<string, unknown>)?.nomeEmpregado as string | undefined;
-  // Prioriza nome extraído sobre campo nome
-  const nomeExtraido = extrairNomeTrabalhador(lead);
-  const nome = nomeExtraido || lead.nome || nomeFromMargem || (margem?.nomeEmpregado as string) || "Não Informado";
+  const nome = lead.nome || nomeFromMargem || (margem?.nomeEmpregado as string) || "-";
   const sim = lead.retorno_simulacao as Record<string, unknown> | null;
   const valor = lead.valor || (sim?.requestedAmount as number) || (sim?.liquidValue as number) || 0;
-  
-  // Extrair todos os erros do lead
-  const errosLead = extrairTodosErrosLead(lead);
 
   const consultaSections = [
     { key: "retorno_autorizacao", label: "Autorização", icon: CheckCircle, data: lead.retorno_autorizacao },
@@ -271,27 +255,7 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
                 {getPagamentoBadge(pagamentoInfo)}
               </div>
               {/* Motivo do erro/pendência - não mostrar para reprovacao_tecnica pois já está no campo Motivo */}
-              {errosLead.length > 0 && lead.status !== "reprovacao_tecnica" && statusNormalizado !== "reprovacao_tecnica" && (
-                <div className="col-span-2 md:col-span-3">
-                  <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    Motivos da Reprovação ({errosLead.length} {errosLead.length === 1 ? 'erro' : 'erros'})
-                  </p>
-                  <div className="space-y-2">
-                    {errosLead.map((erro, idx) => (
-                      <div key={idx} className="p-2 bg-red-500/10 rounded border border-red-500/20">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Badge variant="destructive" className="text-xs">{erro.tipo}</Badge>
-                          <span className="text-xs text-muted-foreground">({erro.etapa})</span>
-                        </div>
-                        <p className="text-red-400 text-sm">{erro.descricao}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
               {motivoExibido &&
-                errosLead.length === 0 &&
                 !hideMotivoForCancelado &&
                 lead.status !== "reprovacao_tecnica" &&
                 statusNormalizado !== "reprovacao_tecnica" && (

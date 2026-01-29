@@ -125,7 +125,7 @@ const ListaCompletaCBOsPanel = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((c) => (
+                {filtered.slice(0, 50).map((c) => (
                   <TableRow key={c.code}>
                     <TableCell className="text-foreground font-mono">{c.code}</TableCell>
                     <TableCell className="text-foreground">{c.name || "-"}</TableCell>

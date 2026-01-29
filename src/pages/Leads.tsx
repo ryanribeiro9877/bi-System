@@ -82,7 +82,7 @@ const LeadsContent = () => {
   const [searchCpf, setSearchCpf] = useState("");
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [listStatus, setListStatus] = useState("aprovado");
+  const [listSituacaoPagamento, setListSituacaoPagamento] = useState("todos");
   const [tab, setTab] = useState("lista");
   
   // Estados para edição de pagamento
@@ -217,43 +217,13 @@ const LeadsContent = () => {
 
   // Aplica filtros via contexto
   const handleSearch = () => {
-    if (listStatus === "todos") {
-      // KPIs: manter status "aprovado" (RPC de stats usa apenas filters.status)
-      // Lista: buscar aprovados + reprovacao_tecnica
-      setFilters({
-        ...filters,
-        cpf: searchCpf,
-        status: "aprovado",
-        statuses: ["aprovado", "approved", "reprovacao_tecnica"],
-      });
-      return;
-    }
-
-    if (listStatus === "aprovado") {
-      // Lista: aprovado + reprovacao_tecnica (reprovacao_tecnica é tratado como aprovado na UI)
-      // KPIs: manter status "aprovado" para não alterar stats da RPC
-      setFilters({
-        ...filters,
-        cpf: searchCpf,
-        status: "aprovado",
-        statuses: ["aprovado", "approved", "reprovacao_tecnica"],
-      });
-      return;
-    }
-
-    if (listStatus === "reprovacao_tecnica") {
-      // Lista: apenas reprovacao_tecnica (mas na UI o status aparecerá como aprovado)
-      // KPIs: manter status "aprovado" para não alterar stats da RPC
-      setFilters({
-        ...filters,
-        cpf: searchCpf,
-        status: "aprovado",
-        statuses: ["reprovacao_tecnica"],
-      });
-      return;
-    }
-
-    setFilters({ ...filters, cpf: searchCpf, status: listStatus, statuses: undefined });
+    // Sempre buscar leads aprovados + reprovacao_tecnica
+    setFilters({
+      ...filters,
+      cpf: searchCpf,
+      status: "aprovado",
+      statuses: ["aprovado", "approved", "reprovacao_tecnica"],
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -263,44 +233,44 @@ const LeadsContent = () => {
   };
 
   // Aplica filtro local e limpa ao sair da página
-  // "Todos" agora significa apenas aprovados + reprovação técnica
+  // Sempre busca aprovados + reprovacao_tecnica, filtro de situação de pagamento é local
   useEffect(() => {
-    if (listStatus === "todos") {
-      // KPIs: manter status "aprovado" (RPC de stats usa apenas filters.status)
-      // Lista: buscar aprovados + reprovacao_tecnica
-      setFilters({ 
-        ...filters, 
-        status: "aprovado",
-        statuses: ["aprovado", "approved", "reprovacao_tecnica"],
-        tiposReprovacaoMultiplos: [],
-      });
-    } else if (listStatus === "aprovado") {
-      setFilters({
-        ...filters,
-        status: "aprovado",
-        statuses: ["aprovado", "approved", "reprovacao_tecnica"],
-        tiposReprovacaoMultiplos: [],
-      });
-    } else if (listStatus === "reprovacao_tecnica") {
-      setFilters({
-        ...filters,
-        status: "aprovado",
-        statuses: ["reprovacao_tecnica"],
-        tiposReprovacaoMultiplos: [],
-      });
-    } else {
-      setFilters({ ...filters, status: listStatus, statuses: undefined, tiposReprovacaoMultiplos: [] });
-    }
+    setFilters({ 
+      ...filters, 
+      status: "aprovado",
+      statuses: ["aprovado", "approved", "reprovacao_tecnica"],
+      tiposReprovacaoMultiplos: [],
+    });
     
     // Limpa o filtro de status ao desmontar (sair da página)
     return () => {
       setFilters({ ...filters, status: "", statuses: undefined, tiposReprovacaoMultiplos: [] });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listStatus]);
+  }, []);
 
-  // A lista já vem filtrada do backend (via filters.statuses quando necessário)
-  const leadsFiltrados = leads;
+  // Filtra leads pela situação de pagamento (filtro local)
+  const leadsFiltrados = useMemo(() => {
+    if (listSituacaoPagamento === "todos") {
+      return leads;
+    }
+    
+    return leads.filter(lead => {
+      const situacao = getStatusPagamento(lead);
+      
+      if (listSituacaoPagamento === "aguardando") {
+        return situacao === "aguardando";
+      }
+      if (listSituacaoPagamento === "reprovado_cancelado") {
+        return situacao === "reprovado_cancelado";
+      }
+      if (listSituacaoPagamento === "pago") {
+        return situacao === "pago";
+      }
+      
+      return true;
+    });
+  }, [leads, listSituacaoPagamento]);
 
   // Funções para edição de pagamento
   const openPaymentEdit = (lead: Lead) => {
@@ -872,14 +842,15 @@ const LeadsContent = () => {
                       className="pl-9 bg-background h-9 lg:h-10 text-sm" 
                     />
                   </div>
-                  <Select value={listStatus} onValueChange={setListStatus}>
-                    <SelectTrigger className="w-[140px] lg:w-[160px] h-9 lg:h-10 text-xs lg:text-sm">
-                      <SelectValue placeholder="Status" />
+                  <Select value={listSituacaoPagamento} onValueChange={setListSituacaoPagamento}>
+                    <SelectTrigger className="w-[160px] lg:w-[180px] h-9 lg:h-10 text-xs lg:text-sm">
+                      <SelectValue placeholder="Situação" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todos">Todos</SelectItem>
-                      <SelectItem value="aprovado">Aprovado</SelectItem>
-                      <SelectItem value="reprovacao_tecnica">Rep. Técnica</SelectItem>
+                      <SelectItem value="aguardando">Aguardando</SelectItem>
+                      <SelectItem value="reprovado_cancelado">Cancelado/Reprovado</SelectItem>
+                      <SelectItem value="pago">Pago</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button variant="outline" onClick={handleSearch} className="gap-2 h-9 lg:h-10 text-xs lg:text-sm">
