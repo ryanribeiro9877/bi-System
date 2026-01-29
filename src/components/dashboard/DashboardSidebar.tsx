@@ -72,7 +72,7 @@ const DashboardSidebar = () => {
             <Button
               key={item.path}
               variant="ghost"
-              className={`w-full justify-start gap-2 lg:gap-3 h-10 lg:h-11 text-sm ${
+              className={`w-full justify-start gap-2 lg:gap-3 h-10 lg:h-11 text-sm transition-all duration-200 ease-in-out ${
                 isActive
                   ? "bg-sidebar-accent text-sidebar-primary"
                   : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"

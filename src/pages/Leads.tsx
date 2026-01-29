@@ -726,7 +726,7 @@ const LeadsContent = () => {
 
   if (isLoading) {
     return (
-      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8">
+      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 animate-page-enter">
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
@@ -734,7 +734,7 @@ const LeadsContent = () => {
     );
   }
   return (
-    <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0">
+    <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0 animate-page-enter">
       <div className="max-w-7xl mx-auto space-y-4 lg:space-y-8">
         {/* Header */}
         <div className="flex flex-col gap-3 lg:gap-4">
@@ -895,9 +895,14 @@ const LeadsContent = () => {
                               <TableCell className="text-muted-foreground font-mono text-center" title={extrairCBOCompleto(lead as Lead) || undefined}>{extrairNumeroCBO(lead)}</TableCell>
                               <TableCell className="text-muted-foreground text-center">{lead.banco || "-"}</TableCell>
                               <TableCell className="text-foreground text-center">
-                                {lead.valor && lead.valor > 0 
-                                  ? `R$ ${lead.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
-                                  : "-"}
+                                {(() => {
+                                  const valorExibir = lead.valor && lead.valor > 0 
+                                    ? lead.valor 
+                                    : extrairValorMargemDisponivelLead(lead as Lead);
+                                  return valorExibir && valorExibir > 0
+                                    ? `R$ ${valorExibir.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                                    : "-";
+                                })()}
                               </TableCell>
                               <TableCell className="text-center">{getStatusBadge(lead.status)}</TableCell>
                               <TableCell className="text-center">{getPagamentoBadge(lead)}</TableCell>

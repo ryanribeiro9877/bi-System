@@ -146,7 +146,7 @@ const Alertas = () => {
     <div className="min-h-screen flex w-full bg-background">
       <DashboardSidebar />
       
-      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0">
+      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0 animate-page-enter">
         <div className="max-w-7xl mx-auto space-y-4 lg:space-y-8">
           {/* Header */}
           <div>

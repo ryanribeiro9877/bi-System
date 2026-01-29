@@ -11,7 +11,7 @@ const ConsultasInner = () => {
   return (
     <div className="flex min-h-screen bg-background">
       <DashboardSidebar />
-      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0">
+      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0 animate-page-enter">
         {/* Header */}
         <div className="mb-4 lg:mb-6">
           <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground mb-1 lg:mb-2">

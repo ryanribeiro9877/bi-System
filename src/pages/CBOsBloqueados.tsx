@@ -66,16 +66,6 @@ const CBOsContent = () => {
       iconColor: "text-orange-400",
     },
     {
-      title: "Margem Perdida",
-      value: formatCurrency(calculatedStats.margemPerdida),
-      subtitle: "Potencial não aproveitado",
-      icon: DollarSign,
-      bgGradient: "from-amber-950/50 to-amber-900/30",
-      borderColor: "border-l-amber-500",
-      textColor: "text-amber-400",
-      iconColor: "text-amber-400",
-    },
-    {
       title: "% Reprovação",
       value: `${calculatedStats.taxaReprovacao}%`,
       subtitle: "Taxa de reprovação geral",
@@ -89,7 +79,7 @@ const CBOsContent = () => {
 
   if (isLoading) {
     return (
-      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8">
+      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 animate-page-enter">
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
@@ -98,7 +88,7 @@ const CBOsContent = () => {
   }
 
   return (
-    <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0">
+    <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0 animate-page-enter">
       <div className="max-w-7xl mx-auto space-y-4 lg:space-y-8">
         {/* Header */}
         <div>
@@ -109,7 +99,7 @@ const CBOsContent = () => {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 lg:gap-4">
           {kpiCards.map((kpi) => (
             <Card
               key={kpi.title}

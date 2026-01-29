@@ -1514,40 +1514,6 @@ export const extrairCBOInfo = (lead: LeadData): CBOInfo | null => {
 };
 
 /**
- * Extrai valor da margem disponível do lead
- * Busca em múltiplos caminhos do retorno_margem
- */
-export const extrairValorMargemDisponivelLead = (lead: LeadData): number | null => {
-  const margemRaw = lead.retorno_margem;
-  if (!margemRaw) return null;
-
-  const texto = typeof margemRaw === 'string' ? margemRaw : JSON.stringify(margemRaw);
-  
-  // Padrão 1: "valorMargemDisponivel": 123.45
-  const match1 = texto.match(/"valorMargemDisponivel"\s*:\s*([\d.,-]+)/);
-  if (match1) {
-    const valor = parseFloat(match1[1].replace(',', '.'));
-    if (!isNaN(valor)) return valor;
-  }
-  
-  // Padrão 2: "margemDisponivel": 123.45
-  const match2 = texto.match(/"margemDisponivel"\s*:\s*([\d.,-]+)/);
-  if (match2) {
-    const valor = parseFloat(match2[1].replace(',', '.'));
-    if (!isNaN(valor)) return valor;
-  }
-  
-  // Padrão 3: R$ 0,00 em mensagens de erro
-  const match3 = texto.match(/R\$\s*([\d.,]+)/);
-  if (match3) {
-    const valor = parseFloat(match3[1].replace('.', '').replace(',', '.'));
-    if (!isNaN(valor)) return valor;
-  }
-  
-  return null;
-};
-
-/**
  * Extrai informações de CBO bloqueado com valor de margem perdida
  */
 export interface CBOBloqueadoInfo {
@@ -1787,10 +1753,10 @@ export const extrairCBOBloqueado = (lead: LeadData): CBOBloqueadoInfo | null => 
 };
 
 /**
- * Extrai informações de CBO de um lead aprovado
+ * Extrai informações de CBO da margem de um lead
  * Usado para análise de CBOs que aprovam
  */
-export const extrairCBOAprovado = (lead: LeadData): CBOBloqueadoInfo | null => {
+export const extrairCBODaMargem = (lead: LeadData): CBOBloqueadoInfo | null => {
   const margemRaw = lead.retorno_margem;
   if (!margemRaw) return null;
 

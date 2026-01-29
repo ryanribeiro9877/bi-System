@@ -583,6 +583,8 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
                       borderRadius: '8px',
                       color: 'hsl(var(--foreground))'
                     }}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    itemStyle={{ color: 'hsl(var(--foreground))' }}
                     formatter={(value: number) => [`${value} leads`, 'Quantidade']}
                   />
                   <Bar dataKey="quantidade" fill="#10b981" radius={[0, 4, 4, 0]} onClick={(data) => handleMargemClick(data)} style={{ cursor: 'pointer' }} />
@@ -620,6 +622,8 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
                       borderRadius: '8px',
                       color: 'hsl(var(--foreground))'
                     }}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    itemStyle={{ color: 'hsl(var(--foreground))' }}
                     formatter={(value: number) => [`${value} leads`, 'Quantidade']}
                   />
                   <Bar dataKey="quantidade" fill="#3b82f6" radius={[0, 4, 4, 0]} onClick={(data) => handleVinculoClick(data)} style={{ cursor: 'pointer' }} />
@@ -660,6 +664,8 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
                     borderRadius: '8px',
                     color: 'hsl(var(--foreground))'
                   }}
+                  labelStyle={{ color: 'hsl(var(--foreground))' }}
+                  itemStyle={{ color: 'hsl(var(--foreground))' }}
                   formatter={(value: number) => [`${value} leads aprovados`, 'Quantidade']}
                 />
                 <Bar 
@@ -725,6 +731,8 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
                         borderRadius: '8px',
                         color: 'hsl(var(--foreground))'
                       }}
+                      labelStyle={{ color: 'hsl(var(--foreground))' }}
+                      itemStyle={{ color: 'hsl(var(--foreground))' }}
                       formatter={(value: number) => [`${value} leads`, 'Quantidade']}
                     />
                     <Bar 
@@ -781,6 +789,8 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
                         borderRadius: '8px',
                         color: 'hsl(var(--foreground))'
                       }}
+                      labelStyle={{ color: 'hsl(var(--foreground))' }}
+                      itemStyle={{ color: 'hsl(var(--foreground))' }}
                       formatter={(value: number) => [`${value} leads`, 'Quantidade']}
                     />
                     <Bar 
@@ -1146,21 +1156,21 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>CPF</TableHead>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Banco</TableHead>
-                    <TableHead>Motivo</TableHead>
-                    <TableHead>Status de Pagamento</TableHead>
+                    <TableHead className="text-center">CPF</TableHead>
+                    <TableHead className="text-center">Nome</TableHead>
+                    <TableHead className="text-center">Banco</TableHead>
+                    <TableHead className="text-center">Motivo</TableHead>
+                    <TableHead className="text-center">Status de Pagamento</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {leadsSemParcelamento.map((lead, index) => (
                     <TableRow key={index}>
-                      <TableCell className="font-mono text-sm">{formatCpf(lead.cpf)}</TableCell>
-                      <TableCell className="max-w-[150px] truncate">{lead.nome}</TableCell>
-                      <TableCell>{lead.banco}</TableCell>
-                      <TableCell className="max-w-[200px] text-amber-400 text-xs">{lead.motivo}</TableCell>
-                      <TableCell className="max-w-[150px] text-xs">{lead.statusDescription}</TableCell>
+                      <TableCell className="font-mono text-sm text-center">{formatCpf(lead.cpf)}</TableCell>
+                      <TableCell className="max-w-[150px] truncate text-center">{lead.nome}</TableCell>
+                      <TableCell className="text-center">{lead.banco}</TableCell>
+                      <TableCell className="max-w-[200px] text-amber-400 text-xs text-center">{lead.motivo}</TableCell>
+                      <TableCell className="max-w-[150px] text-xs text-center">{lead.statusDescription}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -1196,21 +1206,21 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>CPF</TableHead>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Banco</TableHead>
-                    <TableHead>Empresa</TableHead>
-                    <TableHead>Porte</TableHead>
+                    <TableHead className="text-center">CPF</TableHead>
+                    <TableHead className="text-center">Nome</TableHead>
+                    <TableHead className="text-center">Banco</TableHead>
+                    <TableHead className="text-center">Empresa</TableHead>
+                    <TableHead className="text-center">Porte</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {dialogData.leads.map((item, index) => (
                     <TableRow key={index}>
-                      <TableCell className="font-mono text-sm">{formatCpf(item.cpf)}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">{item.nome || "-"}</TableCell>
-                      <TableCell>{item.banco}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">{item.empresa}</TableCell>
-                      <TableCell>{item.porte}</TableCell>
+                      <TableCell className="font-mono text-sm text-center">{formatCpf(item.cpf)}</TableCell>
+                      <TableCell className="max-w-[200px] truncate text-center">{item.nome || "-"}</TableCell>
+                      <TableCell className="text-center">{item.banco}</TableCell>
+                      <TableCell className="max-w-[200px] truncate text-center">{item.empresa}</TableCell>
+                      <TableCell className="text-center">{item.porte}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

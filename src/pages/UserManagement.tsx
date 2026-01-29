@@ -167,7 +167,7 @@ const UserManagement = () => {
     <div className="flex min-h-screen bg-background">
       <DashboardSidebar />
 
-      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0">
+      <main className="flex-1 p-4 pt-20 lg:pt-4 lg:p-8 overflow-auto w-full min-w-0 animate-page-enter">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 lg:mb-8">
           <div>
