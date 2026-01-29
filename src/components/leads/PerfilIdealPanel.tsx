@@ -558,9 +558,13 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
                     backgroundColor: 'hsl(var(--popover))', 
                     border: '1px solid hsl(var(--border))', 
                     borderRadius: '8px',
-                    color: 'hsl(var(--foreground))'
+                    color: '#ffffff'
                   }}
-                  formatter={(value: number) => [`${value} leads aprovados`, 'Quantidade']}
+                  labelStyle={{ color: '#ffffff' }}
+                  formatter={(value: number) => [
+                    <span key="value" style={{ color: '#ffffff' }}>{value} leads aprovados</span>,
+                    <span key="label" style={{ color: '#ffffff' }}>Quantidade</span>
+                  ]}
                 />
                 <Bar 
                   dataKey="quantidade" 
@@ -933,11 +937,11 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
 
       {/* Dialog para visualizar proposta */}
       <Dialog open={propostaDialogOpen} onOpenChange={setPropostaDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogContent className="max-w-md max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="w-5 h-5 text-primary" />
-              Detalhes da Proposta
+              Status de Pagamento
             </DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-auto">
@@ -949,9 +953,46 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
                 </div>
               </div>
             ) : propostaData ? (
-              <pre className="bg-muted/50 rounded-lg p-4 text-xs overflow-x-auto whitespace-pre-wrap break-words font-mono text-foreground">
-                {JSON.stringify(propostaData, null, 2)}
-              </pre>
+              <div className="space-y-4">
+                <div className="bg-muted/50 rounded-lg p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Status</p>
+                  <p className="text-lg font-semibold text-foreground">
+                    {(propostaData.statusDescription as string) || 'Não informado'}
+                  </p>
+                </div>
+                {propostaData.statusReason && (
+                  <div className="bg-muted/50 rounded-lg p-4">
+                    <p className="text-sm text-muted-foreground mb-1">Motivo</p>
+                    <p className="text-foreground">
+                      {propostaData.statusReason as string}
+                    </p>
+                  </div>
+                )}
+                {propostaData.message && (
+                  <div className="bg-muted/50 rounded-lg p-4">
+                    <p className="text-sm text-muted-foreground mb-1">Mensagem</p>
+                    <p className="text-foreground">
+                      {propostaData.message as string}
+                    </p>
+                  </div>
+                )}
+                {propostaData.disbursementDate && (
+                  <div className="bg-muted/50 rounded-lg p-4">
+                    <p className="text-sm text-muted-foreground mb-1">Data de Pagamento</p>
+                    <p className="text-foreground">
+                      {new Date(propostaData.disbursementDate as string).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                )}
+                {(propostaData.disbursedIssueAmount || propostaData.paidAmount) && (
+                  <div className="bg-muted/50 rounded-lg p-4">
+                    <p className="text-sm text-muted-foreground mb-1">Valor Solicitado</p>
+                    <p className="text-foreground">
+                      {Number(propostaData.disbursedIssueAmount || propostaData.paidAmount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </p>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="py-8 text-center text-muted-foreground">
                 Nenhum dado de proposta disponível.

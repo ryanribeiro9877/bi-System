@@ -577,32 +577,101 @@ const ConsultaMargemReprovadaPanel = () => {
                   const margem = selectedLead.retorno_margem as Record<string, unknown> | null;
                   const simulacao = selectedLead.retorno_simulacao as Record<string, unknown> | null;
                   
+                  // Helper para extrair mensagem limpa de erro (sem JSON bruto)
+                  const extrairMensagemLimpa = (valor: unknown): string | null => {
+                    if (!valor) return null;
+                    
+                    // Se for string, tentar extrair apenas a parte legível
+                    if (typeof valor === 'string') {
+                      // Se contém JSON, extrair apenas a mensagem inicial
+                      const jsonIndex = valor.indexOf('Response completo:');
+                      if (jsonIndex > 0) {
+                        return valor.substring(0, jsonIndex).trim();
+                      }
+                      const codeIndex = valor.indexOf('(Code:');
+                      if (codeIndex > 0) {
+                        return valor.substring(0, codeIndex).trim();
+                      }
+                      // Se a string é muito longa e parece JSON, ignorar
+                      if (valor.length > 500 && (valor.includes('{') || valor.includes('['))) {
+                        // Tentar extrair apenas a primeira frase
+                        const primeiraFrase = valor.split('.')[0];
+                        if (primeiraFrase && primeiraFrase.length < 200) {
+                          return primeiraFrase + '.';
+                        }
+                        return null;
+                      }
+                      return valor;
+                    }
+                    
+                    // Se for objeto, tentar extrair message ou description
+                    if (typeof valor === 'object' && valor !== null) {
+                      const obj = valor as Record<string, unknown>;
+                      if (obj.message && typeof obj.message === 'string') return obj.message;
+                      if (obj.description && typeof obj.description === 'string') return obj.description;
+                      if (obj.error && typeof obj.error === 'string') return obj.error;
+                    }
+                    
+                    return null;
+                  };
+                  
                   // Extrair motivos de erro dos dados reais
                   const motivos: { campo: string; valor: string }[] = [];
                   
-                  // Verificar retorno_margem
+                  // Verificar retorno_margem - extrair valores de margem primeiro (mais importantes)
                   if (margem) {
-                    if (margem.error) motivos.push({ campo: 'Erro de Margem', valor: String(margem.error) });
-                    if (margem.motivo) motivos.push({ campo: 'Motivo', valor: String(margem.motivo) });
-                    if (margem.message) motivos.push({ campo: 'Mensagem', valor: String(margem.message) });
-                    if (margem.statusDescription) motivos.push({ campo: 'Descrição do Status', valor: String(margem.statusDescription) });
-                    if (margem.descricao) motivos.push({ campo: 'Descrição', valor: String(margem.descricao) });
+                    // Valores de margem são a informação mais importante
                     if (typeof margem.valorMargemDisponivel !== 'undefined') {
-                      motivos.push({ campo: 'Margem Disponível', valor: formatCurrency(Number(margem.valorMargemDisponivel)) });
+                      const valorMargem = Number(margem.valorMargemDisponivel);
+                      motivos.push({ 
+                        campo: 'Margem Disponível', 
+                        valor: `${formatCurrency(valorMargem)}${valorMargem === 0 ? ' (zerada)' : valorMargem < 100 ? ' (menor que o mínimo)' : ''}`
+                      });
                     }
                     if (typeof margem.valorMargemBase !== 'undefined') {
                       motivos.push({ campo: 'Margem Base', valor: formatCurrency(Number(margem.valorMargemBase)) });
+                    }
+                    
+                    // Extrair mensagens de erro de forma limpa
+                    const mensagemErro = extrairMensagemLimpa(margem.error);
+                    if (mensagemErro) motivos.push({ campo: 'Erro', valor: mensagemErro });
+                    
+                    const mensagemMotivo = extrairMensagemLimpa(margem.motivo);
+                    if (mensagemMotivo) motivos.push({ campo: 'Motivo', valor: mensagemMotivo });
+                    
+                    const mensagemMessage = extrairMensagemLimpa(margem.message);
+                    if (mensagemMessage) motivos.push({ campo: 'Mensagem', valor: mensagemMessage });
+                    
+                    if (margem.statusDescription && typeof margem.statusDescription === 'string' && margem.statusDescription.length < 200) {
+                      motivos.push({ campo: 'Status', valor: margem.statusDescription });
+                    }
+                    
+                    // Extrair motivo de inelegibilidade se existir
+                    const motivoInelegibilidade = margem.motivoInelegibilidade as Record<string, unknown> | undefined;
+                    if (motivoInelegibilidade?.descricao) {
+                      motivos.push({ campo: 'Motivo Inelegibilidade', valor: String(motivoInelegibilidade.descricao) });
                     }
                   }
                   
                   // Verificar retorno_simulacao
                   if (simulacao) {
-                    if (simulacao.error) motivos.push({ campo: 'Erro de Simulação', valor: String(simulacao.error) });
-                    if (simulacao.motivo) motivos.push({ campo: 'Motivo Simulação', valor: String(simulacao.motivo) });
-                    if (simulacao.message) motivos.push({ campo: 'Mensagem Simulação', valor: String(simulacao.message) });
+                    const mensagemErroSim = extrairMensagemLimpa(simulacao.error);
+                    if (mensagemErroSim) motivos.push({ campo: 'Erro Simulação', valor: mensagemErroSim });
+                    
+                    const mensagemMotivoSim = extrairMensagemLimpa(simulacao.motivo);
+                    if (mensagemMotivoSim) motivos.push({ campo: 'Motivo Simulação', valor: mensagemMotivoSim });
+                    
+                    const mensagemMessageSim = extrairMensagemLimpa(simulacao.message);
+                    if (mensagemMessageSim) motivos.push({ campo: 'Mensagem Simulação', valor: mensagemMessageSim });
+                    
                     const details = simulacao.details as Record<string, unknown> | undefined;
-                    if (details?.error) motivos.push({ campo: 'Detalhe do Erro', valor: String(details.error) });
-                    if (details?.description) motivos.push({ campo: 'Descrição do Erro', valor: String(details.description) });
+                    if (details) {
+                      const detailError = extrairMensagemLimpa(details.error);
+                      if (detailError) motivos.push({ campo: 'Detalhe', valor: detailError });
+                      
+                      const detailDesc = extrairMensagemLimpa(details.description);
+                      if (detailDesc) motivos.push({ campo: 'Descrição', valor: detailDesc });
+                    }
                   }
                   
                   if (motivos.length > 0) {
