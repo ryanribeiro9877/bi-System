@@ -41,6 +41,10 @@ type AuthLeadRow = {
   valor: number | null;
   created_at: string;
   retorno_autorizacao: unknown;
+  retorno_margem?: unknown;
+  retorno_simulacao?: unknown;
+  retorno_proposta?: unknown;
+  retorno_get_proposta?: unknown;
 };
 
 type AnnotatedAuthLead = AuthLeadRow & {
@@ -103,6 +107,87 @@ const stringifyAuth = (v: unknown): string => {
   } catch {
     return String(v);
   }
+};
+
+const contarErrosLead = (lead: AuthLeadRow): number => {
+  let totalErros = 0;
+
+  const parseJsonString = (str: string): unknown => {
+    try {
+      const cleanStr = str.replace(/\\n/g, '').replace(/\\"/g, '"');
+      const jsonMatch = cleanStr.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return JSON.parse(str);
+    } catch {
+      return null;
+    }
+  };
+
+  const contarErrosDeRetorno = (retorno: unknown): number => {
+    if (!retorno) return 0;
+    
+    let obj: Record<string, unknown> | null = null;
+    
+    if (typeof retorno === 'string') {
+      const parsed = parseJsonString(retorno);
+      if (parsed && typeof parsed === 'object') {
+        obj = parsed as Record<string, unknown>;
+      }
+    } else if (typeof retorno === 'object') {
+      obj = retorno as Record<string, unknown>;
+    }
+
+    if (!obj) return 0;
+
+    // Extrair erros do campo 'error' que pode conter JSON embutido
+    if (typeof obj.error === 'string') {
+      const errorStr = obj.error;
+      const innerParsed = parseJsonString(errorStr);
+      if (innerParsed && typeof innerParsed === 'object') {
+        const innerObj = innerParsed as Record<string, unknown>;
+        if (innerObj.details && typeof innerObj.details === 'object') {
+          obj = { ...obj, details: innerObj.details };
+        }
+      }
+    }
+
+    // Contar erros do details.dataprevValidationResponses[].reasonForIneligibility[]
+    let count = 0;
+    const details = obj.details as Record<string, unknown> | undefined;
+    if (details && typeof details === 'object') {
+      const dataprevResponses = details.dataprevValidationResponses as Array<Record<string, unknown>> | undefined;
+      if (Array.isArray(dataprevResponses)) {
+        dataprevResponses.forEach((response) => {
+          const reasonForIneligibility = response.reasonForIneligibility as Array<Record<string, unknown>> | undefined;
+          if (Array.isArray(reasonForIneligibility)) {
+            count += reasonForIneligibility.length;
+          }
+        });
+      }
+    }
+
+    // Se não encontrou erros estruturados mas tem indicação de erro, contar como 1
+    if (count === 0) {
+      const str = JSON.stringify(obj).toLowerCase();
+      if (str.includes('error') || str.includes('erro') || 
+          str.includes('400') || str.includes('429') ||
+          str.includes('failed') || str.includes('ineligibility')) {
+        count = 1;
+      }
+    }
+
+    return count;
+  };
+
+  totalErros += contarErrosDeRetorno(lead.retorno_autorizacao);
+  totalErros += contarErrosDeRetorno(lead.retorno_margem);
+  totalErros += contarErrosDeRetorno(lead.retorno_simulacao);
+  totalErros += contarErrosDeRetorno(lead.retorno_proposta);
+  totalErros += contarErrosDeRetorno(lead.retorno_get_proposta);
+
+  return totalErros || 1;
 };
 
 const hasHttpStatus = (text: string, status: number): boolean => {
@@ -354,7 +439,7 @@ const CBOsPanel = () => {
       const buildBaseQuery = () => {
         let query = supabase
           .from("leads")
-          .select("id, cpf, nome, banco, status, tipo_reprovacao, valor, created_at, retorno_autorizacao, import_batch_id")
+          .select("id, cpf, nome, banco, status, tipo_reprovacao, valor, created_at, retorno_autorizacao, retorno_margem, retorno_simulacao, retorno_proposta, retorno_get_proposta, import_batch_id")
           .order("created_at", { ascending: false });
 
         if (filters?.dataInicial) {
@@ -394,6 +479,10 @@ const CBOsPanel = () => {
           valor: typeof row.valor === "number" ? row.valor : row.valor === null || row.valor === undefined ? null : Number(row.valor),
           created_at: String(row.created_at ?? ""),
           retorno_autorizacao: row.retorno_autorizacao,
+          retorno_margem: row.retorno_margem,
+          retorno_simulacao: row.retorno_simulacao,
+          retorno_proposta: row.retorno_proposta,
+          retorno_get_proposta: row.retorno_get_proposta,
         }));
 
         allRows = allRows.concat(mapped);
@@ -968,41 +1057,50 @@ const CBOsPanel = () => {
                 <Table>
                   <TableHeader>
                     <TableRow className="border-border hover:bg-transparent">
-                      <TableHead className="text-muted-foreground">CPF</TableHead>
-                      <TableHead className="text-muted-foreground">Nome</TableHead>
-                      <TableHead className="text-muted-foreground">Banco</TableHead>
-                      <TableHead className="text-muted-foreground">Tipo</TableHead>
-                      <TableHead className="text-muted-foreground">Motivo</TableHead>
-                      <TableHead className="text-muted-foreground">Data</TableHead>
-                      <TableHead className="text-muted-foreground text-right">Ações</TableHead>
+                      <TableHead className="text-muted-foreground text-center">CPF</TableHead>
+                      <TableHead className="text-muted-foreground text-center">Nome</TableHead>
+                      <TableHead className="text-muted-foreground text-center">Banco</TableHead>
+                      <TableHead className="text-muted-foreground text-center">Tipo</TableHead>
+                      <TableHead className="text-muted-foreground text-center">Motivo</TableHead>
+                      <TableHead className="text-muted-foreground text-center">Erros</TableHead>
+                      <TableHead className="text-muted-foreground text-center">Data</TableHead>
+                      <TableHead className="text-muted-foreground text-center">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pagedLeads.map((l) => (
-                      <TableRow key={l.id} className="border-border/50 hover:bg-muted/30">
-                        <TableCell className="font-mono text-foreground">{formatCpf(l.cpf)}</TableCell>
-                        <TableCell className="text-muted-foreground truncate max-w-[220px]">{l.nome || "-"}</TableCell>
-                        <TableCell className="text-muted-foreground">{l.banco || "-"}</TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{l.authLabel}</Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{l.authReason || "-"}</TableCell>
-                        <TableCell className="text-muted-foreground whitespace-nowrap">{formatDateTime(l.created_at)}</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                            onClick={() => {
-                              setSelectedLeadId(l.id);
-                              setDetailOpen(true);
-                            }}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {pagedLeads.map((l) => {
+                      const numErros = contarErrosLead(l);
+                      return (
+                        <TableRow key={l.id} className="border-border/50 hover:bg-muted/30">
+                          <TableCell className="font-mono text-foreground text-center">{formatCpf(l.cpf)}</TableCell>
+                          <TableCell className="text-muted-foreground truncate max-w-[180px] text-center">{l.nome || "-"}</TableCell>
+                          <TableCell className="text-muted-foreground text-center">{l.banco || "-"}</TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="secondary">{l.authLabel}</Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-center max-w-[200px] truncate">{l.authReason || "-"}</TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant={numErros > 1 ? "destructive" : "secondary"}>
+                              {numErros} {numErros === 1 ? 'erro' : 'erros'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground whitespace-nowrap text-center">{formatDateTime(l.created_at)}</TableCell>
+                          <TableCell className="text-center">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                              onClick={() => {
+                                setSelectedLeadId(l.id);
+                                setDetailOpen(true);
+                              }}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>

@@ -159,6 +159,131 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
 
   const hasData = (data: unknown) => data && typeof data === "object" && Object.keys(data as object).length > 0;
 
+  const checkError = (retorno: unknown): boolean => {
+    if (!retorno) return false;
+    const str = typeof retorno === 'string' ? retorno : JSON.stringify(retorno);
+    const lower = str.toLowerCase();
+    return lower.includes('error') || lower.includes('erro') || 
+           lower.includes('400') || lower.includes('429') ||
+           lower.includes('failed') || lower.includes('invalid') ||
+           lower.includes('ineligibility') || lower.includes('inelegibilidade') ||
+           lower.includes('elegivel') && lower.includes('false');
+  };
+
+  type ErroDetalhado = {
+    etapa: string;
+    campo: string;
+    mensagem: string;
+  };
+
+  const extrairErrosDetalhados = (retorno: unknown, etapa: string): ErroDetalhado[] => {
+    const erros: ErroDetalhado[] = [];
+    if (!retorno) return erros;
+
+    const parseJsonString = (str: string): unknown => {
+      try {
+        const cleanStr = str.replace(/\\n/g, '').replace(/\\"/g, '"');
+        const jsonMatch = cleanStr.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
+        }
+        return JSON.parse(str);
+      } catch {
+        return null;
+      }
+    };
+
+    let obj: Record<string, unknown> | null = null;
+    
+    if (typeof retorno === 'string') {
+      const parsed = parseJsonString(retorno);
+      if (parsed && typeof parsed === 'object') {
+        obj = parsed as Record<string, unknown>;
+      }
+    } else if (typeof retorno === 'object') {
+      obj = retorno as Record<string, unknown>;
+    }
+
+    if (!obj) return erros;
+
+    // Extrair erros do campo 'error' que pode conter JSON embutido
+    if (typeof obj.error === 'string') {
+      const errorStr = obj.error;
+      const innerParsed = parseJsonString(errorStr);
+      if (innerParsed && typeof innerParsed === 'object') {
+        const innerObj = innerParsed as Record<string, unknown>;
+        if (innerObj.details && typeof innerObj.details === 'object') {
+          obj = { ...obj, details: innerObj.details };
+        }
+      }
+    }
+
+    // Extrair do details.dataprevValidationResponses[].reasonForIneligibility[]
+    const details = obj.details as Record<string, unknown> | undefined;
+    if (details && typeof details === 'object') {
+      const dataprevResponses = details.dataprevValidationResponses as Array<Record<string, unknown>> | undefined;
+      if (Array.isArray(dataprevResponses)) {
+        dataprevResponses.forEach((response, idx) => {
+          const reasonForIneligibility = response.reasonForIneligibility as Array<Record<string, unknown>> | undefined;
+          if (Array.isArray(reasonForIneligibility)) {
+            reasonForIneligibility.forEach((reason) => {
+              const campo = (reason.errorField as string) || 'Erro';
+              const mensagem = (reason.messageError as string) || 'Erro não especificado';
+              erros.push({
+                etapa: `${etapa} (Vínculo ${idx + 1})`,
+                campo,
+                mensagem
+              });
+            });
+          }
+          
+          // Também verificar motivoInelegibilidade no employeeRelationShip
+          const employeeRelationShip = response.employeeRelationShip as Record<string, unknown> | undefined;
+          if (employeeRelationShip) {
+            const motivoInelegibilidade = employeeRelationShip.motivoInelegibilidade as Record<string, unknown> | undefined;
+            if (motivoInelegibilidade && motivoInelegibilidade.descricao) {
+              const jaExiste = erros.some(e => e.mensagem === motivoInelegibilidade.descricao);
+              if (!jaExiste) {
+                erros.push({
+                  etapa: `${etapa} (Vínculo ${idx + 1})`,
+                  campo: 'Elegibilidade',
+                  mensagem: motivoInelegibilidade.descricao as string
+                });
+              }
+            }
+          }
+        });
+      }
+    }
+
+    // Se não encontrou erros estruturados, tentar extrair do message ou error
+    if (erros.length === 0) {
+      const errorFields = ['error', 'message', 'mensagem', 'statusDescription'];
+      for (const field of errorFields) {
+        if (obj[field] && typeof obj[field] === 'string') {
+          const val = obj[field] as string;
+          if (val.toLowerCase().includes('erro') || val.toLowerCase().includes('error') || 
+              val.toLowerCase().includes('400') || val.toLowerCase().includes('429') ||
+              val.toLowerCase().includes('failed')) {
+            erros.push({
+              etapa,
+              campo: 'Erro',
+              mensagem: val.length > 200 ? val.substring(0, 200) + '...' : val
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    return erros;
+  };
+
+  const contarErrosTotal = (retorno: unknown): number => {
+    const erros = extrairErrosDetalhados(retorno, '');
+    return erros.length;
+  };
+
   // Early return if no lead
   if (!lead) return null;
 
@@ -183,6 +308,24 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
     { key: "retorno_proposta", label: "Proposta", icon: FileText, data: lead.retorno_proposta },
     { key: "retorno_get_proposta", label: "Get Proposta", icon: FileText, data: lead.retorno_get_proposta },
   ];
+
+  // Extrair todos os erros detalhados de cada seção
+  const todosErrosDetalhados: ErroDetalhado[] = [];
+  consultaSections.forEach(section => {
+    const errosDaSecao = extrairErrosDetalhados(section.data, section.label);
+    todosErrosDetalhados.push(...errosDaSecao);
+  });
+  
+  // Adicionar tipo_reprovacao se existir e não houver erros detalhados
+  if (todosErrosDetalhados.length === 0 && lead.tipo_reprovacao) {
+    todosErrosDetalhados.push({
+      etapa: 'Reprovação',
+      campo: 'Motivo',
+      mensagem: lead.tipo_reprovacao
+    });
+  }
+  
+  const totalErros = todosErrosDetalhados.length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -278,6 +421,26 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
               )}
             </div>
 
+            {/* Resumo de Erros */}
+            {totalErros > 0 && (
+              <div className="p-4 bg-red-500/10 rounded-lg border border-red-500/30">
+                <h3 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-400" />
+                  Resumo de Erros
+                  <Badge variant="destructive" className="ml-2">
+                    {totalErros} {totalErros === 1 ? 'erro' : 'erros'}
+                  </Badge>
+                </h3>
+                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                  {todosErrosDetalhados.map((erro, index) => (
+                    <div key={index} className="p-3 bg-background/50 rounded border border-border">
+                      <p className="text-sm text-red-400 break-words">{erro.mensagem}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Consultas */}
             <div>
               <h3 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
@@ -294,9 +457,13 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
                   >
                     <AccordionTrigger className="hover:no-underline py-3">
                       <div className="flex items-center gap-3">
-                        <section.icon className={`w-4 h-4 ${hasData(section.data) ? "text-emerald-400" : "text-muted-foreground"}`} />
+                        <section.icon className={`w-4 h-4 ${checkError(section.data) ? "text-red-400" : hasData(section.data) ? "text-emerald-400" : "text-muted-foreground"}`} />
                         <span className="text-sm font-medium">{section.label}</span>
-                        {hasData(section.data) ? (
+                        {checkError(section.data) ? (
+                          <Badge variant="outline" className="text-xs bg-red-500/10 text-red-400 border-red-500/30">
+                            Erro
+                          </Badge>
+                        ) : hasData(section.data) ? (
                           <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
                             Com dados
                           </Badge>

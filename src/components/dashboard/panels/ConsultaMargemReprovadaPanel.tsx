@@ -72,21 +72,84 @@ const ConsultaMargemReprovadaPanel = () => {
   };
 
   const contarErrosLead = (lead: LeadMargemReprovada): number => {
-    let count = 0;
-    const checkError = (retorno: unknown): boolean => {
-      if (!retorno) return false;
-      const str = typeof retorno === 'string' ? retorno : JSON.stringify(retorno);
-      const lower = str.toLowerCase();
-      return lower.includes('error') || lower.includes('erro') || 
-             lower.includes('400') || lower.includes('429') ||
-             lower.includes('failed') || lower.includes('invalid');
+    let totalErros = 0;
+
+    const parseJsonString = (str: string): unknown => {
+      try {
+        const cleanStr = str.replace(/\\n/g, '').replace(/\\"/g, '"');
+        const jsonMatch = cleanStr.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
+        }
+        return JSON.parse(str);
+      } catch {
+        return null;
+      }
     };
-    if (checkError(lead.retorno_autorizacao)) count++;
-    if (checkError(lead.retorno_margem)) count++;
-    if (checkError(lead.retorno_simulacao)) count++;
-    if (checkError(lead.retorno_proposta)) count++;
-    if (checkError(lead.retorno_get_proposta)) count++;
-    return count || 1; // Mínimo 1 erro (o tipo_reprovacao)
+
+    const contarErrosDeRetorno = (retorno: unknown): number => {
+      if (!retorno) return 0;
+      
+      let obj: Record<string, unknown> | null = null;
+      
+      if (typeof retorno === 'string') {
+        const parsed = parseJsonString(retorno);
+        if (parsed && typeof parsed === 'object') {
+          obj = parsed as Record<string, unknown>;
+        }
+      } else if (typeof retorno === 'object') {
+        obj = retorno as Record<string, unknown>;
+      }
+
+      if (!obj) return 0;
+
+      // Extrair erros do campo 'error' que pode conter JSON embutido
+      if (typeof obj.error === 'string') {
+        const errorStr = obj.error;
+        const innerParsed = parseJsonString(errorStr);
+        if (innerParsed && typeof innerParsed === 'object') {
+          const innerObj = innerParsed as Record<string, unknown>;
+          if (innerObj.details && typeof innerObj.details === 'object') {
+            obj = { ...obj, details: innerObj.details };
+          }
+        }
+      }
+
+      // Contar erros do details.dataprevValidationResponses[].reasonForIneligibility[]
+      let count = 0;
+      const details = obj.details as Record<string, unknown> | undefined;
+      if (details && typeof details === 'object') {
+        const dataprevResponses = details.dataprevValidationResponses as Array<Record<string, unknown>> | undefined;
+        if (Array.isArray(dataprevResponses)) {
+          dataprevResponses.forEach((response) => {
+            const reasonForIneligibility = response.reasonForIneligibility as Array<Record<string, unknown>> | undefined;
+            if (Array.isArray(reasonForIneligibility)) {
+              count += reasonForIneligibility.length;
+            }
+          });
+        }
+      }
+
+      // Se não encontrou erros estruturados mas tem indicação de erro, contar como 1
+      if (count === 0) {
+        const str = JSON.stringify(obj).toLowerCase();
+        if (str.includes('error') || str.includes('erro') || 
+            str.includes('400') || str.includes('429') ||
+            str.includes('failed') || str.includes('ineligibility')) {
+          count = 1;
+        }
+      }
+
+      return count;
+    };
+
+    totalErros += contarErrosDeRetorno(lead.retorno_autorizacao);
+    totalErros += contarErrosDeRetorno(lead.retorno_margem);
+    totalErros += contarErrosDeRetorno(lead.retorno_simulacao);
+    totalErros += contarErrosDeRetorno(lead.retorno_proposta);
+    totalErros += contarErrosDeRetorno(lead.retorno_get_proposta);
+
+    return totalErros || 1;
   };
 
   const handleBarClick = (motivo: string, banco: string) => {
