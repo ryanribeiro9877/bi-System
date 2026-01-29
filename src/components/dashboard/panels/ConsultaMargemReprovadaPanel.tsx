@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useDashboard } from "@/contexts/DashboardContext";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from "recharts";
@@ -23,6 +24,7 @@ interface LeadMargemReprovada {
   retorno_autorizacao?: unknown;
   retorno_proposta?: unknown;
   retorno_get_proposta?: unknown;
+  created_at?: string;
 }
 
 const COLORS = [
@@ -51,6 +53,40 @@ const ConsultaMargemReprovadaPanel = () => {
     const cleaned = cpf.replace(/\D/g, "");
     if (cleaned.length !== 11) return cpf;
     return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  };
+
+  const formatDateTime = (dateString: string | null | undefined): string => {
+    if (!dateString) return "-";
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return "-";
+      const day = date.getDate().toString().padStart(2, "0");
+      const month = (date.getMonth() + 1).toString().padStart(2, "0");
+      const year = date.getFullYear();
+      const hours = date.getHours().toString().padStart(2, "0");
+      const minutes = date.getMinutes().toString().padStart(2, "0");
+      return `${day}/${month}/${year} - ${hours}:${minutes}`;
+    } catch {
+      return "-";
+    }
+  };
+
+  const contarErrosLead = (lead: LeadMargemReprovada): number => {
+    let count = 0;
+    const checkError = (retorno: unknown): boolean => {
+      if (!retorno) return false;
+      const str = typeof retorno === 'string' ? retorno : JSON.stringify(retorno);
+      const lower = str.toLowerCase();
+      return lower.includes('error') || lower.includes('erro') || 
+             lower.includes('400') || lower.includes('429') ||
+             lower.includes('failed') || lower.includes('invalid');
+    };
+    if (checkError(lead.retorno_autorizacao)) count++;
+    if (checkError(lead.retorno_margem)) count++;
+    if (checkError(lead.retorno_simulacao)) count++;
+    if (checkError(lead.retorno_proposta)) count++;
+    if (checkError(lead.retorno_get_proposta)) count++;
+    return count || 1; // Mínimo 1 erro (o tipo_reprovacao)
   };
 
   const handleBarClick = (motivo: string, banco: string) => {
@@ -88,7 +124,7 @@ const ConsultaMargemReprovadaPanel = () => {
         while (allLeads.length < maxRecords) {
           let query = supabase
             .from('leads')
-            .select('id, cpf, nome, banco, tipo_reprovacao, retorno_autorizacao, retorno_margem, retorno_simulacao, retorno_proposta, retorno_get_proposta, valor')
+            .select('id, cpf, nome, banco, tipo_reprovacao, retorno_autorizacao, retorno_margem, retorno_simulacao, retorno_proposta, retorno_get_proposta, valor, created_at')
             .order('id', { ascending: true })
             .limit(pageSize);
 
@@ -568,31 +604,50 @@ const ConsultaMargemReprovadaPanel = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>CPF</TableHead>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Banco</TableHead>
+                    <TableHead className="text-center">CPF</TableHead>
+                    <TableHead className="text-center">Nome</TableHead>
+                    <TableHead className="text-center">Banco</TableHead>
+                    <TableHead className="text-center">Motivo</TableHead>
+                    <TableHead className="text-center">Erros</TableHead>
+                    <TableHead className="text-center">Data</TableHead>
                     <TableHead className="text-center">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {dialogData.leads.slice(0, 100).map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-mono text-sm">{formatCpf(item.cpf)}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">{item.nome || "-"}</TableCell>
-                      <TableCell>{item.banco}</TableCell>
-                      <TableCell className="text-center">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewDetail(item)}
-                          className="gap-1"
-                        >
-                          <Eye className="w-4 h-4" />
-                          Ver Proposta
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {dialogData.leads.slice(0, 100).map((item, index) => {
+                    const numErros = contarErrosLead(item);
+                    return (
+                      <TableRow key={index}>
+                        <TableCell className="font-mono text-sm text-center">{formatCpf(item.cpf)}</TableCell>
+                        <TableCell className="max-w-[180px] truncate text-center">{item.nome || "-"}</TableCell>
+                        <TableCell className="text-center">{item.banco}</TableCell>
+                        <TableCell className="max-w-[200px] text-center">
+                          <span className="text-sm text-amber-400">
+                            {motivoLabelMap[item.tipo_reprovacao_classificado] || item.tipo_reprovacao_classificado || "-"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant={numErros > 1 ? "destructive" : "secondary"}>
+                            {numErros} {numErros === 1 ? 'erro' : 'erros'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground whitespace-nowrap text-center text-sm">
+                          {formatDateTime(item.created_at)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleViewDetail(item)}
+                            className="gap-1"
+                          >
+                            <Eye className="w-4 h-4" />
+                            Detalhes
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             ) : (
