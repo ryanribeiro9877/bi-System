@@ -39,10 +39,9 @@ import CBOsQueAprovamPanel from "@/components/leads/CBOsQueAprovamPanel";
 import EmpresasPanel from "@/components/leads/EmpresasPanel";
 import PorBancoPanel from "@/components/leads/PorBancoPanel";
 import { useDashboard } from "@/contexts/DashboardContext";
-import { extrairValorMargemDisponivelLead } from "@/lib/leadStatusUtils";
+import { extrairValorMargemDisponivelLead, extrairCBOCodigo, extrairCBOCompleto, extrairDadosTrabalhador, normalizarStatusLead, extrairMotivoReprovacaoTecnica } from "@/lib/leadStatusUtils";
 import { parseJsonSafe } from "@/types/lead";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { normalizarStatusLead, extrairMotivoReprovacaoTecnica } from "@/lib/leadStatusUtils";
 import { fetchLeadDetails } from "@/hooks/useLeadsQuery";
 
 // Formata data como dd/mm/aaaa - hh:nn:ss
@@ -83,7 +82,7 @@ const LeadsContent = () => {
   const [searchCpf, setSearchCpf] = useState("");
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [listStatus, setListStatus] = useState("aprovado");
+  const [listSituacaoPagamento, setListSituacaoPagamento] = useState("todos");
   const [tab, setTab] = useState("lista");
   
   // Estados para edição de pagamento
@@ -127,31 +126,29 @@ const LeadsContent = () => {
   };
 
   // Calcula estatísticas com nova lógica:
-  // - Total Aprovados = total de leads exibidos no filtro atual (aprovado/reprovacao_tecnica)
-  // - Taxa de Aprovação = (leads aprovados com pagamento pago/aguardando) // KPIs: usar allLeads (sem paginação) para cálculos corretos
+  // - Total Aprovados = total de leads com status aprovado ou reprovacao_tecnica
+  // - Margem Média = soma das margens / quantidade de aprovados
+  // - Taxa de Aprovação = (leads aprovados com pagamento pago/aguardando)
   const statsFiltradas = useMemo(() => {
     const totalLeads = stats.totalLeads;
 
-    // Total Aprovados deve considerar todos os aprovados (verde) independente do pagamento.
-    const leadsAprovados = allLeads.filter((l) => {
-      const status = (l.status || "").toLowerCase();
-      return status === "aprovado" || status === "approved" || status === "reprovacao_tecnica";
-    }).length;
-
-    // Margem Média: usar leads com status aprovado + reprovacao_tecnica (foram aprovados para proposta)
-    // Fórmula: somaMargens / totalAprovados (mesmo que alguns não tenham margem)
+    // Total Aprovados: considera todos os aprovados (verde) + reprovação técnica
     const aprovadosParaMargem = allLeads.filter((l) => {
       const status = (l.status || "").toLowerCase();
       return status === "aprovado" || status === "approved" || status === "reprovacao_tecnica";
     });
+    
+    const leadsAprovados = aprovadosParaMargem.length;
 
+    // Margem Média: soma das margens / quantidade de aprovados (TODOS aprovados, não apenas os com margem)
+    // Fórmula: totalValorMargemDisponivel / quantidadeLeadsAprovados
     const margens = aprovadosParaMargem
       .map((l) => extrairValorMargemDisponivelLead(l))
       .filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
 
     const somaMargens = margens.reduce((acc, v) => acc + v, 0);
-    const totalAprovados = aprovadosParaMargem.length;
-    const margemMedia = totalAprovados > 0 ? somaMargens / totalAprovados : 0;
+    // Dividir pela quantidade de leads aprovados (todos), não pela quantidade que tem margem
+    const margemMedia = leadsAprovados > 0 ? somaMargens / leadsAprovados : 0;
 
     // Taxa de Aprovação = (aprovados com pagamento pago/aguardando) / (total de aprovados)
     const leadsAprovadosComPagamentoPositivo = allLeads.filter(l => {
@@ -220,43 +217,13 @@ const LeadsContent = () => {
 
   // Aplica filtros via contexto
   const handleSearch = () => {
-    if (listStatus === "todos") {
-      // KPIs: manter status "aprovado" (RPC de stats usa apenas filters.status)
-      // Lista: buscar aprovados + reprovacao_tecnica
-      setFilters({
-        ...filters,
-        cpf: searchCpf,
-        status: "aprovado",
-        statuses: ["aprovado", "approved", "reprovacao_tecnica"],
-      });
-      return;
-    }
-
-    if (listStatus === "aprovado") {
-      // Lista: aprovado + reprovacao_tecnica (reprovacao_tecnica é tratado como aprovado na UI)
-      // KPIs: manter status "aprovado" para não alterar stats da RPC
-      setFilters({
-        ...filters,
-        cpf: searchCpf,
-        status: "aprovado",
-        statuses: ["aprovado", "approved", "reprovacao_tecnica"],
-      });
-      return;
-    }
-
-    if (listStatus === "reprovacao_tecnica") {
-      // Lista: apenas reprovacao_tecnica (mas na UI o status aparecerá como aprovado)
-      // KPIs: manter status "aprovado" para não alterar stats da RPC
-      setFilters({
-        ...filters,
-        cpf: searchCpf,
-        status: "aprovado",
-        statuses: ["reprovacao_tecnica"],
-      });
-      return;
-    }
-
-    setFilters({ ...filters, cpf: searchCpf, status: listStatus, statuses: undefined });
+    // Sempre buscar leads aprovados + reprovacao_tecnica
+    setFilters({
+      ...filters,
+      cpf: searchCpf,
+      status: "aprovado",
+      statuses: ["aprovado", "approved", "reprovacao_tecnica"],
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -266,44 +233,44 @@ const LeadsContent = () => {
   };
 
   // Aplica filtro local e limpa ao sair da página
-  // "Todos" agora significa apenas aprovados + reprovação técnica
+  // Sempre busca aprovados + reprovacao_tecnica, filtro de situação de pagamento é local
   useEffect(() => {
-    if (listStatus === "todos") {
-      // KPIs: manter status "aprovado" (RPC de stats usa apenas filters.status)
-      // Lista: buscar aprovados + reprovacao_tecnica
-      setFilters({ 
-        ...filters, 
-        status: "aprovado",
-        statuses: ["aprovado", "approved", "reprovacao_tecnica"],
-        tiposReprovacaoMultiplos: [],
-      });
-    } else if (listStatus === "aprovado") {
-      setFilters({
-        ...filters,
-        status: "aprovado",
-        statuses: ["aprovado", "approved", "reprovacao_tecnica"],
-        tiposReprovacaoMultiplos: [],
-      });
-    } else if (listStatus === "reprovacao_tecnica") {
-      setFilters({
-        ...filters,
-        status: "aprovado",
-        statuses: ["reprovacao_tecnica"],
-        tiposReprovacaoMultiplos: [],
-      });
-    } else {
-      setFilters({ ...filters, status: listStatus, statuses: undefined, tiposReprovacaoMultiplos: [] });
-    }
+    setFilters({ 
+      ...filters, 
+      status: "aprovado",
+      statuses: ["aprovado", "approved", "reprovacao_tecnica"],
+      tiposReprovacaoMultiplos: [],
+    });
     
     // Limpa o filtro de status ao desmontar (sair da página)
     return () => {
       setFilters({ ...filters, status: "", statuses: undefined, tiposReprovacaoMultiplos: [] });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listStatus]);
+  }, []);
 
-  // A lista já vem filtrada do backend (via filters.statuses quando necessário)
-  const leadsFiltrados = leads;
+  // Filtra leads pela situação de pagamento (filtro local)
+  const leadsFiltrados = useMemo(() => {
+    if (listSituacaoPagamento === "todos") {
+      return leads;
+    }
+    
+    return leads.filter(lead => {
+      const situacao = getStatusPagamento(lead);
+      
+      if (listSituacaoPagamento === "aguardando") {
+        return situacao === "aguardando";
+      }
+      if (listSituacaoPagamento === "reprovado_cancelado") {
+        return situacao === "reprovado_cancelado";
+      }
+      if (listSituacaoPagamento === "pago") {
+        return situacao === "pago";
+      }
+      
+      return true;
+    });
+  }, [leads, listSituacaoPagamento]);
 
   // Funções para edição de pagamento
   const openPaymentEdit = (lead: Lead) => {
@@ -680,8 +647,13 @@ const LeadsContent = () => {
     return `R$ ${(value || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // Função para extrair apenas o número do CBO
+  // Função para extrair apenas o número do CBO (usando a nova função de extração)
   const extrairNumeroCBO = (lead: Record<string, unknown>): string => {
+    // Primeiro tenta extrair do retorno_margem usando a nova função
+    const cboExtraido = extrairCBOCodigo(lead as Lead);
+    if (cboExtraido) return cboExtraido;
+    
+    // Fallback: tentar do campo cbo do lead
     if (!lead.cbo) return "-";
     
     const cbo = lead.cbo;
@@ -870,14 +842,15 @@ const LeadsContent = () => {
                       className="pl-9 bg-background h-9 lg:h-10 text-sm" 
                     />
                   </div>
-                  <Select value={listStatus} onValueChange={setListStatus}>
-                    <SelectTrigger className="w-[140px] lg:w-[160px] h-9 lg:h-10 text-xs lg:text-sm">
-                      <SelectValue placeholder="Status" />
+                  <Select value={listSituacaoPagamento} onValueChange={setListSituacaoPagamento}>
+                    <SelectTrigger className="w-[160px] lg:w-[180px] h-9 lg:h-10 text-xs lg:text-sm">
+                      <SelectValue placeholder="Situação" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todos">Todos</SelectItem>
-                      <SelectItem value="aprovado">Aprovado</SelectItem>
-                      <SelectItem value="reprovacao_tecnica">Rep. Técnica</SelectItem>
+                      <SelectItem value="aguardando">Aguardando</SelectItem>
+                      <SelectItem value="reprovado_cancelado">Cancelado/Reprovado</SelectItem>
+                      <SelectItem value="pago">Pago</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button variant="outline" onClick={handleSearch} className="gap-2 h-9 lg:h-10 text-xs lg:text-sm">
@@ -911,15 +884,15 @@ const LeadsContent = () => {
                             <TableHead className="text-muted-foreground text-center">Status</TableHead>
                             <TableHead className="text-muted-foreground text-center">Pagamento</TableHead>
                             <TableHead className="text-muted-foreground text-center">Data</TableHead>
-                            <TableHead className="text-muted-foreground text-right">Ações</TableHead>
+                            <TableHead className="text-muted-foreground text-center">Ações</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {leadsFiltrados.map((lead: Lead) => (
                             <TableRow key={lead.id} className="border-border/50 hover:bg-muted/30">
                               <TableCell className="font-mono text-foreground text-center">{formatCpf(lead.cpf)}</TableCell>
-                              <TableCell className="text-muted-foreground truncate max-w-[160px] text-center">{lead.nome || "-"}</TableCell>
-                              <TableCell className="text-muted-foreground font-mono text-center">{extrairNumeroCBO(lead)}</TableCell>
+                              <TableCell className="text-muted-foreground truncate max-w-[160px] text-center" title={lead.nome || undefined}>{lead.nome || "-"}</TableCell>
+                              <TableCell className="text-muted-foreground font-mono text-center" title={extrairCBOCompleto(lead as Lead) || undefined}>{extrairNumeroCBO(lead)}</TableCell>
                               <TableCell className="text-muted-foreground text-center">{lead.banco || "-"}</TableCell>
                               <TableCell className="text-foreground text-center">
                                 {lead.valor && lead.valor > 0 
@@ -929,8 +902,8 @@ const LeadsContent = () => {
                               <TableCell className="text-center">{getStatusBadge(lead.status)}</TableCell>
                               <TableCell className="text-center">{getPagamentoBadge(lead)}</TableCell>
                               <TableCell className="text-muted-foreground whitespace-nowrap text-center">{formatDateTime(lead.created_at)}</TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex items-center justify-end gap-1">
+                              <TableCell className="text-center">
+                                <div className="flex items-center justify-center gap-1">
                                   <Button
                                     variant="ghost"
                                     size="icon"

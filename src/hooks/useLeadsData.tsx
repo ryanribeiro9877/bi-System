@@ -10,7 +10,7 @@ import {
   RetornoGetProposta,
   parseJsonSafe 
 } from "@/types/lead";
-import { normalizarStatusLead } from "@/lib/leadStatusUtils";
+import { normalizarStatusLead, StatusNormalizado } from "@/lib/leadStatusUtils";
 import { extrairCBOUniversal } from "@/lib/cboUtils";
 
 export interface Lead {
@@ -47,11 +47,11 @@ export interface FilterState {
   dataFinal: Date | undefined;
   banco: string;
   tipoReprovacao: string;
-  tiposReprovacaoMultiplos: string[]; // Novo: suporte a múltiplos tipos
+  tiposReprovacaoMultiplos: string[];
   status: string;
-  statuses?: string[]; // Opcional: suporte a múltiplos status (ex.: aprovado + reprovacao_tecnica)
+  statuses?: string[];
   cpf: string;
-  importBatchId: string; // Filtro por arquivo importado
+  importBatchId: string;
 }
 
 export interface DashboardStats {
@@ -59,6 +59,7 @@ export interface DashboardStats {
   leadsAprovados: number;
   leadsReprovados: number;
   leadsPendentes: number;
+  leadsReprovacaoTecnica: number;
   taxaReprovacao: number;
   taxaAprovacao: number;
   valorTotal: number;
@@ -73,15 +74,13 @@ export interface DashboardStats {
   reprovacoesPorCBO: { cbo: string; quantidade: number }[];
   reprovacoesPorTipo: { tipo: string; tipoCompleto: string; quantidade: number }[];
   leadsPorStatus: { status: string; quantidade: number }[];
-  // CBOs bloqueados extraídos
   cbosBloqueados: { code: string; name: string | null; quantidade: number }[];
   totalCBOsBloqueados: number;
-  // Novos campos extraídos
   margemMedia: number;
   valorSimulacaoTotal: number;
 }
 
-// Helper para extrair nome do lead - busca em TODAS as colunas
+// Helper para extrair nome do lead
 const extrairNome = (lead: Lead): string => {
   if (lead.nome) return lead.nome;
 
@@ -91,27 +90,21 @@ const extrairNome = (lead: Lead): string => {
   const proposta = lead.retorno_proposta as Record<string, unknown>;
   const autorizacao = lead.retorno_autorizacao as Record<string, unknown>;
 
-  // Busca em todas as fontes possíveis
   const fontes = [
-    // retorno_get_proposta
     (getProposta as Record<string, unknown>)?.name,
-    // retorno_margem
     (margem as Record<string, unknown>)?.registroEmpregaticio && 
       typeof (margem as Record<string, unknown>).registroEmpregaticio === 'object' &&
       ((margem as Record<string, unknown>).registroEmpregaticio as Record<string, unknown>)?.nomeEmpregado,
     (margem as Record<string, unknown>)?.nomeEmpregado,
     (margem as Record<string, unknown>)?.nome,
-    // retorno_simulacao
     (simulacao as Record<string, unknown>)?.details && 
       typeof (simulacao as Record<string, unknown>).details === 'object' &&
       ((simulacao as Record<string, unknown>).details as Record<string, unknown>)?.nome,
     (simulacao as Record<string, unknown>)?.name,
     (simulacao as Record<string, unknown>)?.nomeCliente,
-    // retorno_proposta
     (proposta as Record<string, unknown>)?.name,
     (proposta as Record<string, unknown>)?.nomeCliente,
     (proposta as Record<string, unknown>)?.nome,
-    // retorno_autorizacao
     (autorizacao as Record<string, unknown>)?.name,
     (autorizacao as Record<string, unknown>)?.nomeCliente,
   ];
@@ -120,8 +113,7 @@ const extrairNome = (lead: Lead): string => {
   return found || "";
 };
 
-// Helper para extrair CBO - busca em TODAS as colunas incluindo estruturas aninhadas
-// Helper para extrair CBO - busca em TODAS as colunas incluindo estruturas aninhadas
+// Helper para extrair CBO
 const extrairCBO = (lead: Lead): string => {
   if (lead.cbo) return lead.cbo;
 
@@ -131,13 +123,11 @@ const extrairCBO = (lead: Lead): string => {
   const proposta = lead.retorno_proposta as any;
   const autorizacao = lead.retorno_autorizacao as any;
 
-  // Prioridade: margem -> simulação -> get_proposta -> proposta -> autorização
   for (const c of [margem, simulacao, getProposta, proposta, autorizacao]) {
     const cbo = extrairCBOUniversal(c);
     if (cbo) return cbo;
   }
 
-  // Fallbacks (caso algum retorno venha com chaves diferentes)
   const fontes = [
     margem?.registroEmpregaticio?.cbo,
     margem?.cbo,
@@ -157,28 +147,34 @@ const extrairCBO = (lead: Lead): string => {
   return found ? String(found).trim() : "";
 };
 
-// Helper para extrair banco - agora usa o campo banco que vem do nome do arquivo importado
+// Helper para extrair banco
 const extrairBanco = (lead: Lead): string => {
-  // O banco é definido pelo nome do arquivo na importação
-  // Se não tiver, retorna "Não Informado"
   if (lead.banco && lead.banco.trim()) return lead.banco.trim();
   return "Não Informado";
 };
 
-// Helper para normalizar status - RESPEITA o status salvo no banco de dados
-// O status é definido corretamente durante a importação, não precisa recalcular
-const normalizarStatus = (status: string | null, _lead?: Lead): string => {
-  const s = (status || "").toLowerCase().trim();
-  
-  // Status do banco de dados sempre respeitado
-  if (s === "aprovado" || s === "approved") return "aprovado";
-  if (s === "reprovado" || s === "rejected" || s === "recusado") return "reprovado";
-  if (s === "pendente" || s === "pending") return "pendente";
-  // CPF não encontrado agora é considerado REPROVADO
-  if (s === "cpf não encontrado" || s === "cpf_nao_encontrado" || s === "nao encontrado") return "reprovado";
-  
-  // Status desconhecido = reprovado
-  return "reprovado";
+/**
+ * IMPORTANTE: Esta função usa normalizarStatusLead para calcular o status
+ * baseado nos campos JSON do lead.
+ * 
+ * REGRA DE APROVAÇÃO:
+ * - APROVADO = retorno_proposta.status === "success" (ÚNICO critério)
+ * - retorno_get_proposta NÃO indica aprovação
+ */
+const calcularStatusNormalizado = (lead: Lead): StatusNormalizado => {
+  // Usa a função do leadStatusUtils que analisa os JSONs
+  return normalizarStatusLead({
+    id: lead.id,
+    cpf: lead.cpf,
+    nome: lead.nome || undefined,
+    banco: lead.banco,
+    status: lead.status,
+    retorno_margem: lead.retorno_margem,
+    retorno_simulacao: lead.retorno_simulacao,
+    retorno_proposta: lead.retorno_proposta,
+    retorno_get_proposta: lead.retorno_get_proposta,
+    retorno_autorizacao: lead.retorno_autorizacao,
+  });
 };
 
 export const useLeadsData = (filters?: FilterState) => {
@@ -230,7 +226,6 @@ export const useLeadsData = (filters?: FilterState) => {
         return query;
       };
 
-      // Carregar todos os leads em páginas sequenciais
       while (true) {
         const { data, error: fetchError } = await buildBaseQuery().range(from, from + pageSize - 1);
 
@@ -243,7 +238,6 @@ export const useLeadsData = (filters?: FilterState) => {
         from += pageSize;
       }
 
-      // Parse JSONB fields
       const parsedLeads: Lead[] = allRows.map((row: any) => ({
         ...row,
         retorno_autorizacao: parseJsonSafe<RetornoAutorizacao>(row.retorno_autorizacao),
@@ -266,7 +260,6 @@ export const useLeadsData = (filters?: FilterState) => {
     fetchLeads();
   }, [fetchLeads]);
 
-  // Sincronização global: refetch quando houver nova importação ou exclusão
   useEffect(() => {
     const unsubscribe = importEvents.subscribe(() => {
       console.log('[useLeadsData] Recebido evento de importação/exclusão, atualizando dados...');
@@ -283,6 +276,7 @@ export const useLeadsData = (filters?: FilterState) => {
         leadsAprovados: 0,
         leadsReprovados: 0,
         leadsPendentes: 0,
+        leadsReprovacaoTecnica: 0,
         taxaReprovacao: 0,
         taxaAprovacao: 0,
         valorTotal: 0,
@@ -306,30 +300,41 @@ export const useLeadsData = (filters?: FilterState) => {
 
     const totalLeads = leads.length;
     
-    // Normalizar status para contagem
+    // =====================================================
+    // CONTAGEM CORRIGIDA DE STATUS
+    // Usa normalizarStatusLead que verifica retorno_proposta.status === "success"
+    // =====================================================
     const leadsComStatusNormalizado = leads.map(l => ({
       ...l,
-      statusNormalizado: normalizarStatus(l.status, l)
+      statusNormalizado: calcularStatusNormalizado(l)
     }));
     
-    const leadsAprovadosStatus = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "aprovado").length;
+    // Contagem por status calculado
+    const leadsAprovados = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "aprovado").length;
     const leadsReprovados = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovado").length;
     const leadsPendentes = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "pendente").length;
-    // leadsCpfNaoEncontrado não existe mais - todos são: aprovado, reprovado ou pendente
+    const leadsReprovacaoTecnica = leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovacao_tecnica").length;
     
-    // Helper para determinar status de pagamento de um lead
+    // Log para debug
+    console.log('[useLeadsData] Contagem de status:', {
+      total: totalLeads,
+      aprovados: leadsAprovados,
+      reprovados: leadsReprovados,
+      pendentes: leadsPendentes,
+      reprovacaoTecnica: leadsReprovacaoTecnica
+    });
+    
+    // Helper para determinar status de pagamento
     const getStatusPagamento = (lead: Lead): "pago" | "aguardando" | "reprovado_cancelado" => {
       const leadAny = lead as unknown as Record<string, unknown>;
       const manualStatus = leadAny.pagamento_status as string | null;
       
-      // Se tem status manual, usa ele
       if (manualStatus) {
         if (manualStatus === "pago") return "pago";
         if (manualStatus === "reprovado_cancelado") return "reprovado_cancelado";
         if (manualStatus === "aguardando") return "aguardando";
       }
       
-      // Senão, usa o statusDescription do retorno_get_proposta
       const getProposta = lead.retorno_get_proposta as Record<string, unknown> | null;
       const statusDescription = getProposta?.statusDescription;
       if (typeof statusDescription !== "string") return "aguardando";
@@ -339,9 +344,7 @@ export const useLeadsData = (filters?: FilterState) => {
       
       const sd = normalize(statusDescription);
       
-      // Pagos: statusDescription IN (Encerrado, Liquidação, Liquidação Manual, Pago, Liquidado)
       const pagos = ["encerrado", "liquidacao", "liquidacao manual", "pago", "liquidado"];
-      // Reprovados/Cancelados: statusDescription IN (Cancelada, Cancelado, Reprovado)
       const reprovadosCancelados = ["cancelada", "cancelado", "reprovado"];
       
       if (pagos.includes(sd)) return "pago";
@@ -349,33 +352,21 @@ export const useLeadsData = (filters?: FilterState) => {
       return "aguardando";
     };
     
-    // Total Aprovados = todos os leads (inclusive reprovados técnicos)
-    const leadsAprovados = totalLeads;
-    
-    // Taxa de Aprovação = leads com pagamento pago ou aguardando / total de leads
-    // Considera apenas leads com status "aprovado" para verificar pagamento
-    const leadsAprovadosComPagamentoPositivo = leadsComStatusNormalizado.filter(l => {
-      if (l.statusNormalizado !== "aprovado") return false;
-      const statusPag = getStatusPagamento(l);
-      return statusPag === "pago" || statusPag === "aguardando";
-    }).length;
-    
+    // Taxa de aprovação baseada apenas nos leads realmente aprovados
+    const taxaAprovacao = totalLeads > 0 ? parseFloat(((leadsAprovados / totalLeads) * 100).toFixed(2)) : 0;
     const taxaReprovacao = totalLeads > 0 ? parseFloat(((leadsReprovados / totalLeads) * 100).toFixed(2)) : 0;
-    const taxaAprovacao = totalLeads > 0 ? parseFloat(((leadsAprovadosComPagamentoPositivo / totalLeads) * 100).toFixed(2)) : 0;
     
     // Calcular valores
     const valorTotal = leads.reduce((acc, l) => acc + (l.valor || 0), 0);
     
-    // Função auxiliar para extrair margem disponível (suporta múltiplos formatos)
+    // Função auxiliar para extrair margem disponível
     const extrairMargemDisponivel = (l: Lead): number => {
       const margem = l.retorno_margem as any;
       const simulacao = l.retorno_simulacao as any;
       
-      // Tenta do retorno_margem primeiro
       if (margem?.valorMargemDisponivel !== undefined && margem?.valorMargemDisponivel !== null) {
         return parseFloat(margem.valorMargemDisponivel) || 0;
       }
-      // Tenta do retorno_simulacao.details (novo formato)
       if (simulacao?.details?.availableMarginValue !== undefined && simulacao?.details?.availableMarginValue !== null) {
         return parseFloat(simulacao.details.availableMarginValue) || 0;
       }
@@ -405,11 +396,10 @@ export const useLeadsData = (filters?: FilterState) => {
       
       const motivoLower = motivo.toLowerCase();
       
-      // Mapeamento de padrões para resumos
       if (motivoLower.includes("timeout") || motivoLower.includes("curl error") || motivoLower.includes("timed out")) {
         return "Timeout";
       }
-      if (motivoLower.includes("rate limit")) {
+      if (motivoLower.includes("rate limit") || motivoLower.includes("429") || motivoLower.includes("too many")) {
         return "Limite de requisições";
       }
       if (motivoLower.includes("margem negativa") || motivoLower.includes("negative margin")) {
@@ -418,7 +408,7 @@ export const useLeadsData = (filters?: FilterState) => {
       if (motivoLower.includes("margem indispon") || motivoLower.includes("sem margem") || motivoLower.includes("unavailable margin")) {
         return "Margem indisponível";
       }
-      if (motivoLower.includes("cbo") || motivoLower.includes("ocupação") || motivoLower.includes("occupation")) {
+      if (motivoLower.includes("cbo") && (motivoLower.includes("bloqueado") || motivoLower.includes("blocked"))) {
         return "CBO bloqueado";
       }
       if (motivoLower.includes("cpf") && (motivoLower.includes("não encontrado") || motivoLower.includes("not found"))) {
@@ -446,7 +436,6 @@ export const useLeadsData = (filters?: FilterState) => {
         return "Documento inválido";
       }
       
-      // Se o motivo for muito longo, trunca
       if (motivo.length > 25) {
         return motivo.substring(0, 22) + "...";
       }
@@ -454,16 +443,15 @@ export const useLeadsData = (filters?: FilterState) => {
       return motivo;
     };
 
-    // Count by motivo de reprovação - extrair do JSON retorno_margem.error ou retorno_simulacao.details.error
+    // Count by motivo de reprovação
     const motivoReprovacaoCount: Record<string, number> = {};
-    const motivoOriginais: Record<string, string> = {}; // Mapeia motivo resumido -> primeiro motivo original encontrado
+    const motivoOriginais: Record<string, string> = {};
     
     leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovado").forEach(l => {
       const margem = l.retorno_margem as any;
       const simulacao = l.retorno_simulacao as any;
       let motivoOriginal = simulacao?.details?.error || simulacao?.error || margem?.error || l.tipo_reprovacao || "";
       
-      // Verifica se tem margem negativa ou zero quando não tem motivo
       if (!motivoOriginal || motivoOriginal === "Margem indisponível" || motivoOriginal.includes("sem margem")) {
         const valorMargem = margem?.valorMargemDisponivel || simulacao?.details?.availableMarginValue || 0;
         if (parseFloat(valorMargem) < 0) {
@@ -473,12 +461,10 @@ export const useLeadsData = (filters?: FilterState) => {
         }
       }
       
-      // Aplica o resumo do motivo
       const motivo = resumirMotivo(motivoOriginal);
       
       if (motivo) {
         motivoReprovacaoCount[motivo] = (motivoReprovacaoCount[motivo] || 0) + 1;
-        // Guarda o primeiro motivo original encontrado para este resumo
         if (!motivoOriginais[motivo]) {
           motivoOriginais[motivo] = motivoOriginal;
         }
@@ -495,7 +481,7 @@ export const useLeadsData = (filters?: FilterState) => {
       ? Math.round((tiposReprovacao[0].quantidade / leadsReprovados) * 100) 
       : 0;
 
-    // Count by banco - extrair de várias fontes
+    // Count by banco
     const bancoStats: Record<string, { aprovados: number; reprovados: number; pendentes: number; total: number }> = {};
     leadsComStatusNormalizado.forEach(l => {
       const banco = extrairBanco(l) || "Não informado";
@@ -523,7 +509,7 @@ export const useLeadsData = (filters?: FilterState) => {
     const bancoMaiorReprovacao = reprovacoesPorBanco[0]?.banco || "-";
     const bancoMaiorReprovacaoPercentual = reprovacoesPorBanco[0]?.taxaReprovacao || 0;
 
-    // Count by CBO - extrair de várias fontes
+    // Count by CBO
     const cboCount: Record<string, number> = {};
     leadsComStatusNormalizado.filter(l => l.statusNormalizado === "reprovado").forEach(l => {
       const cbo = extrairCBO(l);
@@ -536,14 +522,15 @@ export const useLeadsData = (filters?: FilterState) => {
       .map(([cbo, quantidade]) => ({ cbo, quantidade }))
       .sort((a, b) => b.quantidade - a.quantidade);
 
-    // Count by status (normalizado) - apenas 3 opções: Aprovado, Reprovado, Pendente
+    // Count by status normalizado
     const statusCount: Record<string, number> = {};
     leadsComStatusNormalizado.forEach(l => {
       const status = l.statusNormalizado;
-      let statusLabel = "Pendente"; // fallback é pendente
+      let statusLabel = "Reprovado";
       if (status === "aprovado") statusLabel = "Aprovado";
       else if (status === "reprovado") statusLabel = "Reprovado";
       else if (status === "pendente") statusLabel = "Pendente";
+      else if (status === "reprovacao_tecnica") statusLabel = "Reprovação Técnica";
       statusCount[statusLabel] = (statusCount[statusLabel] || 0) + 1;
     });
 
@@ -559,7 +546,7 @@ export const useLeadsData = (filters?: FilterState) => {
     ).size;
     const tiposReprovacaoUnicos = tiposReprovacao.length;
 
-    // Count by CBO bloqueado (extraído da mensagem de erro)
+    // Count by CBO bloqueado
     const cboBlockCount: Record<string, { name: string | null; quantidade: number }> = {};
     leadsComStatusNormalizado.forEach(l => {
       if (l.cbo_block_code) {
@@ -567,7 +554,6 @@ export const useLeadsData = (filters?: FilterState) => {
           cboBlockCount[l.cbo_block_code] = { name: l.cbo_block_name || null, quantidade: 0 };
         }
         cboBlockCount[l.cbo_block_code].quantidade++;
-        // Atualiza o nome se encontrar um preenchido
         if (l.cbo_block_name && !cboBlockCount[l.cbo_block_code].name) {
           cboBlockCount[l.cbo_block_code].name = l.cbo_block_name;
         }
@@ -585,6 +571,7 @@ export const useLeadsData = (filters?: FilterState) => {
       leadsAprovados,
       leadsReprovados,
       leadsPendentes,
+      leadsReprovacaoTecnica,
       taxaReprovacao,
       taxaAprovacao,
       valorTotal,
@@ -606,7 +593,7 @@ export const useLeadsData = (filters?: FilterState) => {
     };
   }, [leads]);
 
-  // Get unique values for filters - extrair de várias fontes
+  // Get unique values for filters
   const filterOptions = useMemo(() => {
     const bancos = [...new Set(leads.map(l => extrairBanco(l)).filter(Boolean))] as string[];
     const tiposReprovacao = [...new Set(leads.map(l => l.tipo_reprovacao).filter(Boolean))] as string[];

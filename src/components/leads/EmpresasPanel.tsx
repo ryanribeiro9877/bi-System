@@ -592,19 +592,19 @@ const EmpresasPanel = ({ bancoFilter = "todos", importBatchId }: EmpresasPanelPr
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>CPF</TableHead>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Banco</TableHead>
-                    <TableHead>Empresa</TableHead>
+                    <TableHead className="text-center">CPF</TableHead>
+                    <TableHead className="text-center">Nome</TableHead>
+                    <TableHead className="text-center">Banco</TableHead>
+                    <TableHead className="text-center">Empresa</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {dialogData.leads.map((item, index) => (
                     <TableRow key={index}>
-                      <TableCell className="font-mono text-sm">{formatCpf(item.cpf)}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">{item.nome || "-"}</TableCell>
-                      <TableCell>{item.banco}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">{item.empresa || "-"}</TableCell>
+                      <TableCell className="font-mono text-sm text-center">{formatCpf(item.cpf)}</TableCell>
+                      <TableCell className="max-w-[200px] truncate text-center">{item.nome || "-"}</TableCell>
+                      <TableCell className="text-center">{item.banco}</TableCell>
+                      <TableCell className="max-w-[200px] truncate text-center">{item.empresa || "-"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

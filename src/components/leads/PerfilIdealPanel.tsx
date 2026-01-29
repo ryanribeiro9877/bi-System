@@ -42,6 +42,106 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
   const [propostaDialogOpen, setPropostaDialogOpen] = useState(false);
   const [propostaData, setPropostaData] = useState<Record<string, unknown> | null>(null);
   const [loadingProposta, setLoadingProposta] = useState(false);
+  const [leadsSemParcelamento, setLeadsSemParcelamento] = useState<Array<{cpf: string; nome: string; banco: string; motivo: string; statusDescription: string}>>([]);
+  const [semParcelamentoDialogOpen, setSemParcelamentoDialogOpen] = useState(false);
+
+  // Investigar leads sem parcelamento - compara com a RPC para encontrar os faltantes
+  const investigarLeadsSemParcelamento = async () => {
+    try {
+      let query = supabase
+        .from('leads')
+        .select('id, cpf, nome, banco, retorno_simulacao, retorno_get_proposta, retorno_proposta, retorno_margem')
+        .eq('status', 'aprovado');
+      
+      if (importBatchId) {
+        query = query.eq('import_batch_id', importBatchId);
+      }
+      if (bancoFilter && bancoFilter !== 'todos') {
+        query = query.eq('banco', bancoFilter);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      // Obter CPFs que estão na distribuição de parcelas (da RPC)
+      const totalNaDistribuicao = (analysis.distribuicaoParcelas || []).reduce((sum, p) => sum + p.quantidade, 0);
+      const totalAprovados = data?.length || 0;
+      
+      // Se não há diferença, não há leads sem parcelamento
+      if (totalNaDistribuicao >= totalAprovados) {
+        setLeadsSemParcelamento([]);
+        setSemParcelamentoDialogOpen(true);
+        return;
+      }
+
+      // Função para extrair número de parcelas de um lead (campo: numberOfPayments)
+      const extrairParcelas = (lead: typeof data[0]): number | null => {
+        const sim = lead.retorno_simulacao as Record<string, unknown> | null;
+        const getProp = lead.retorno_get_proposta as Record<string, unknown> | null;
+        
+        // Verificar numberOfPayments no retorno_get_proposta
+        if (getProp?.numberOfPayments && Number(getProp.numberOfPayments) > 0) {
+          return Number(getProp.numberOfPayments);
+        }
+        
+        // Verificar numberOfPayments no retorno_simulacao
+        if (sim?.numberOfPayments && Number(sim.numberOfPayments) > 0) {
+          return Number(sim.numberOfPayments);
+        }
+        
+        return null;
+      };
+
+      // Função para extrair motivo da falta de dados de parcelamento
+      const extrairMotivo = (lead: typeof data[0]): string => {
+        const sim = lead.retorno_simulacao as Record<string, unknown> | null;
+        const getProp = lead.retorno_get_proposta as Record<string, unknown> | null;
+        
+        // Verificar se retorno_get_proposta existe
+        if (!getProp || Object.keys(getProp).length === 0) {
+          if (!sim || Object.keys(sim).length === 0) {
+            return 'Sem retorno de proposta e simulação';
+          }
+          return 'Sem retorno de proposta (numberOfPayments ausente)';
+        }
+        
+        // Verificar se numberOfPayments está ausente
+        if (!getProp.numberOfPayments) {
+          return 'Campo numberOfPayments não preenchido no retorno';
+        }
+        
+        return 'Dados incompletos';
+      };
+
+      // Função para extrair status de pagamento
+      const extrairStatusPagamento = (lead: typeof data[0]): string => {
+        const getProp = lead.retorno_get_proposta as Record<string, unknown> | null;
+        if (getProp?.statusDescription) {
+          return String(getProp.statusDescription);
+        }
+        return 'Status não disponível';
+      };
+
+      // Filtrar leads que não têm parcelas válidas (numberOfPayments)
+      const semParcelas = (data || []).filter(lead => {
+        const parcelas = extrairParcelas(lead);
+        return parcelas === null;
+      }).map(l => ({
+        cpf: l.cpf,
+        nome: l.nome || '-',
+        banco: l.banco || '-',
+        motivo: extrairMotivo(l),
+        statusDescription: extrairStatusPagamento(l)
+      }));
+
+      setLeadsSemParcelamento(semParcelas);
+      setSemParcelamentoDialogOpen(true);
+      
+      console.log('[DEBUG] Leads sem parcelamento:', semParcelas);
+    } catch (err) {
+      console.error('Erro ao investigar leads sem parcelamento:', err);
+    }
+  };
 
   const formatCpf = (cpf: string) => {
     const cleaned = cpf.replace(/\D/g, "");
@@ -589,6 +689,16 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
             </CardTitle>
             <p className="text-xs text-muted-foreground">
               Parcelamentos escolhidos pelos leads aprovados
+              {analysis.totalAprovados > 0 && (analysis.distribuicaoParcelas || []).reduce((sum, p) => sum + p.quantidade, 0) < analysis.totalAprovados && (
+                <Button 
+                  variant="link" 
+                  size="sm" 
+                  className="text-amber-400 p-0 h-auto ml-2"
+                  onClick={investigarLeadsSemParcelamento}
+                >
+                  ({analysis.totalAprovados - (analysis.distribuicaoParcelas || []).reduce((sum, p) => sum + p.quantidade, 0)} sem dados)
+                </Button>
+              )}
             </p>
           </CardHeader>
           <CardContent>
@@ -933,11 +1043,11 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
 
       {/* Dialog para visualizar proposta */}
       <Dialog open={propostaDialogOpen} onOpenChange={setPropostaDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="w-5 h-5 text-primary" />
-              Detalhes da Proposta
+              Situação do Pagamento
             </DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-auto">
@@ -949,12 +1059,115 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
                 </div>
               </div>
             ) : propostaData ? (
-              <pre className="bg-muted/50 rounded-lg p-4 text-xs overflow-x-auto whitespace-pre-wrap break-words font-mono text-foreground">
-                {JSON.stringify(propostaData, null, 2)}
-              </pre>
+              (() => {
+                const statusDescription = propostaData.statusDescription as string || '';
+                const normalizedStatus = statusDescription
+                  .normalize("NFD")
+                  .replace(/[\u0300-\u036f]/g, "")
+                  .toLowerCase()
+                  .trim();
+                
+                const statusPagos = ['encerrado', 'liquidacao', 'liquidacao manual', 'pago', 'liquidado'];
+                const statusCancelados = ['cancelada', 'cancelado', 'reprovado'];
+                
+                let situacao = 'Aguardando';
+                let situacaoClass = 'text-amber-400';
+                let badgeClass = 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+                
+                if (statusPagos.some(s => normalizedStatus.includes(s))) {
+                  situacao = 'Pago';
+                  situacaoClass = 'text-emerald-400';
+                  badgeClass = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+                } else if (statusCancelados.some(s => normalizedStatus.includes(s))) {
+                  situacao = 'Reprovado/Cancelado';
+                  situacaoClass = 'text-red-400';
+                  badgeClass = 'bg-red-500/20 text-red-400 border-red-500/30';
+                }
+                
+                return (
+                  <div className="space-y-4 p-4 bg-muted/30 rounded-lg border border-border">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Situação de Pagamento</p>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium border ${badgeClass}`}>
+                        {situacao === 'Pago' && '✓ '}
+                        {situacao === 'Reprovado/Cancelado' && '✕ '}
+                        {situacao === 'Aguardando' && '⏳ '}
+                        {situacao}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Motivo / Status</p>
+                      <p className={`${situacaoClass} font-medium`}>
+                        {statusDescription || 'Pendente'}
+                      </p>
+                    </div>
+                    {propostaData.disbursementDate && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Data de Pagamento</p>
+                        <p className="text-foreground">
+                          {new Date(String(propostaData.disbursementDate)).toLocaleDateString('pt-BR')}
+                        </p>
+                      </div>
+                    )}
+                    {(propostaData.disbursedIssueAmount || propostaData.requestedAmount) && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Valor</p>
+                        <p className="text-foreground">
+                          {formatCurrency(Number(propostaData.disbursedIssueAmount || propostaData.requestedAmount || 0))}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
             ) : (
               <div className="py-8 text-center text-muted-foreground">
                 Nenhum dado de proposta disponível.
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para exibir leads sem parcelamento */}
+      <Dialog open={semParcelamentoDialogOpen} onOpenChange={setSemParcelamentoDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-5 h-5 text-amber-400" />
+              Leads Aprovados Sem Dados de Parcelamento
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {leadsSemParcelamento.length} leads não possuem informação de parcelamento
+            </p>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto">
+            {leadsSemParcelamento.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>CPF</TableHead>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Banco</TableHead>
+                    <TableHead>Motivo</TableHead>
+                    <TableHead>Status de Pagamento</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {leadsSemParcelamento.map((lead, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-mono text-sm">{formatCpf(lead.cpf)}</TableCell>
+                      <TableCell className="max-w-[150px] truncate">{lead.nome}</TableCell>
+                      <TableCell>{lead.banco}</TableCell>
+                      <TableCell className="max-w-[200px] text-amber-400 text-xs">{lead.motivo}</TableCell>
+                      <TableCell className="max-w-[150px] text-xs">{lead.statusDescription}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                Todos os leads aprovados possuem dados de parcelamento.
               </div>
             )}
           </div>

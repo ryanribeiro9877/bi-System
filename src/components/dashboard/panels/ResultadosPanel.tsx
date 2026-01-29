@@ -288,6 +288,7 @@ type AnnotatedResultsLead = ResultsLeadRow & {
   resultadoNegocio: ResultadoNegocio;
   resultadoNegocioLabel: string;
   propostaErro: PropostaErroInfo | null;
+  numErros: number;
 };
 
 type ResultsChartDatum = {
@@ -860,6 +861,15 @@ const ResultadosPanel = () => {
         return p.status;
       })();
 
+      // Contar erros em cada etapa
+      const contarErros = (): number => {
+        let count = 0;
+        if (a.status === "ERRO_400" || a.status === "ERRO_429" || a.status === "OUTROS") count++;
+        if (m.status === "ERRO_400" || m.status === "ERRO_429" || m.status === "ERRO_OUTRO") count++;
+        if (propostaStatus === "ERRO_400" || propostaStatus === "ERRO_429" || propostaStatus === "OUTRO") count++;
+        return count || (propostaErroBase ? 1 : 0);
+      };
+
       return {
         ...l,
         statusAutorizacao: a.status,
@@ -871,6 +881,7 @@ const ResultadosPanel = () => {
         resultadoNegocio: n.resultado,
         resultadoNegocioLabel: n.label,
         propostaErro: propostaErroBase,
+        numErros: contarErros(),
       };
     });
   }, [resultsLeads]);
@@ -1383,6 +1394,7 @@ const ResultadosPanel = () => {
                       <TableHead className="text-muted-foreground">Autorização</TableHead>
                       <TableHead className="text-muted-foreground">Margem</TableHead>
                       <TableHead className="text-muted-foreground">Proposta</TableHead>
+                      <TableHead className="text-muted-foreground text-center">Erros</TableHead>
                       <TableHead className="text-muted-foreground">Data</TableHead>
                       <TableHead className="text-muted-foreground text-right">Ações</TableHead>
                     </TableRow>
@@ -1419,6 +1431,15 @@ const ResultadosPanel = () => {
                             </div>
                           ) : (
                             <Badge variant="secondary">{l.statusPropostaLabel}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {l.numErros > 0 ? (
+                            <Badge variant={l.numErros > 1 ? "destructive" : "secondary"}>
+                              {l.numErros} {l.numErros === 1 ? 'erro' : 'erros'}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-muted-foreground whitespace-nowrap">{formatDateTime(l.created_at)}</TableCell>

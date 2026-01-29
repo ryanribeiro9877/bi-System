@@ -1153,21 +1153,21 @@ const Importacoes = () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>CPF</TableHead>
-                        <TableHead>Nome</TableHead>
-                        <TableHead>Banco</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Valor Margem</TableHead>
-                        <TableHead>Valor Simulação</TableHead>
+                        <TableHead className="text-center">CPF</TableHead>
+                        <TableHead className="text-center">Nome</TableHead>
+                        <TableHead className="text-center">Banco</TableHead>
+                        <TableHead className="text-center">Status</TableHead>
+                        <TableHead className="text-center">Valor Margem</TableHead>
+                        <TableHead className="text-center">Valor Simulação</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {previewData.map((lead, index) => (
                         <TableRow key={index}>
-                          <TableCell className="font-mono">{formatCpf(lead.cpf)}</TableCell>
-                          <TableCell>{lead.nome || "-"}</TableCell>
-                          <TableCell>{lead.banco || "-"}</TableCell>
-                          <TableCell>
+                          <TableCell className="font-mono text-center">{formatCpf(lead.cpf)}</TableCell>
+                          <TableCell className="text-center">{lead.nome || "-"}</TableCell>
+                          <TableCell className="text-center">{lead.banco || "-"}</TableCell>
+                          <TableCell className="text-center">
                             <Badge 
                               className={
                                 lead.status === "aprovado" 
@@ -1180,12 +1180,12 @@ const Importacoes = () => {
                               {lead.status || "Pendente"}
                             </Badge>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-center">
                             {lead.retorno_margem?.valorMargemDisponivel 
                               ? `R$ ${Number(lead.retorno_margem.valorMargemDisponivel).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
                               : "-"}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-center">
                             {lead.retorno_simulacao?.requestedAmount || lead.retorno_simulacao?.liquidValue
                               ? `R$ ${Number(lead.retorno_simulacao.requestedAmount || lead.retorno_simulacao.liquidValue).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` 
                               : "-"}
@@ -1216,25 +1216,25 @@ const Importacoes = () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[80px]">Linha</TableHead>
-                        <TableHead className="w-[140px]">CPF Original</TableHead>
-                        <TableHead className="w-[140px]">CPF Limpo</TableHead>
-                        <TableHead>Motivo do Erro</TableHead>
+                        <TableHead className="w-[80px] text-center">Linha</TableHead>
+                        <TableHead className="w-[140px] text-center">CPF Original</TableHead>
+                        <TableHead className="w-[140px] text-center">CPF Limpo</TableHead>
+                        <TableHead className="text-center">Motivo do Erro</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {validationErrors.map((err, index) => (
                         <TableRow key={index} className="border-red-500/20">
-                          <TableCell className="font-mono font-bold text-red-400">
+                          <TableCell className="font-mono font-bold text-red-400 text-center">
                             {err.linha}
                           </TableCell>
-                          <TableCell className="font-mono text-muted-foreground">
+                          <TableCell className="font-mono text-muted-foreground text-center">
                             {err.cpfOriginal || "-"}
                           </TableCell>
-                          <TableCell className="font-mono">
+                          <TableCell className="font-mono text-center">
                             {err.cpf || "-"}
                           </TableCell>
-                          <TableCell className="text-red-300">
+                          <TableCell className="text-red-300 text-center">
                             {err.motivo}
                           </TableCell>
                         </TableRow>
@@ -1273,33 +1273,33 @@ const Importacoes = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Arquivo</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead>Importados</TableHead>
-                      <TableHead>Original</TableHead>
-                      <TableHead>Falhas</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Data</TableHead>
-                      <TableHead className="w-[80px]">Ações</TableHead>
+                      <TableHead className="text-center">Arquivo</TableHead>
+                      <TableHead className="text-center">Tipo</TableHead>
+                      <TableHead className="text-center">Importados</TableHead>
+                      <TableHead className="text-center">Original</TableHead>
+                      <TableHead className="text-center">Falhas</TableHead>
+                      <TableHead className="text-center">Status</TableHead>
+                      <TableHead className="text-center">Data</TableHead>
+                      <TableHead className="w-[80px] text-center">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {imports.map((imp) => (
                       <TableRow key={imp.id}>
-                        <TableCell className="font-medium">{imp.file_name}</TableCell>
-                        <TableCell>
+                        <TableCell className="font-medium text-center">{imp.file_name}</TableCell>
+                        <TableCell className="text-center">
                           <Badge variant="outline" className="uppercase">
                             {imp.file_type}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-emerald-400 font-medium">{imp.successful_records}</TableCell>
-                        <TableCell className="text-muted-foreground">{imp.total_records}</TableCell>
-                        <TableCell className="text-red-400">{imp.failed_records}</TableCell>
-                        <TableCell>{getStatusBadge(imp.status)}</TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="text-emerald-400 font-medium text-center">{imp.successful_records}</TableCell>
+                        <TableCell className="text-muted-foreground text-center">{imp.total_records}</TableCell>
+                        <TableCell className="text-red-400 text-center">{imp.failed_records}</TableCell>
+                        <TableCell className="text-center">{getStatusBadge(imp.status)}</TableCell>
+                        <TableCell className="text-muted-foreground text-center">
                           {new Date(imp.created_at).toLocaleString("pt-BR")}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button

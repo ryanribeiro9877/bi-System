@@ -5,21 +5,24 @@
  * REGRA MESTRE DE CLASSIFICAÇÃO (Todos os Bancos)
  * =====================================================
  * 
- * APROVADO: Apenas quando AMBOS os critérios são atendidos:
- *   1. Status da API = "success" (ou equivalente)
- *   2. Valores financeiros positivos (margem > 0, valor_parcela > 0, etc.)
+ * APROVADO: APENAS quando:
+ *   - retorno_proposta.status === "success" (ÚNICO critério)
+ *   - SEM erros técnicos no processo
+ * 
+ * REPROVACAO_TECNICA:
+ *   - retorno_proposta.status === "success" MAS com erros em etapas anteriores
  * 
  * REPROVADO: Quando qualquer uma das condições:
- *   - Status "success" mas valores financeiros = 0 ou "sem margem"
+ *   - retorno_proposta.status !== "success"
+ *   - Sem retorno_proposta
  *   - Erro de negócio (CBO bloqueado, margem indisponível, etc.)
- *   - Sem dados financeiros válidos
  * 
  * PENDENTE: Apenas para erros de sistema:
  *   - Limite de consultas excedido
- *   - Timeout / Rate limit
- *   - Erro de conexão
+ *   - Rate limit (429)
  * 
- * NOTA: Status "success" SEM valores financeiros = REPROVADO (não erro)
+ * NOTA IMPORTANTE: retorno_get_proposta NÃO indica aprovação!
+ * Apenas retorno_proposta.status === "success" indica aprovação.
  */
 
 import { parseJsonSafe } from "@/types/lead";
@@ -110,13 +113,10 @@ const parseValorNumericoStrict = (valor: unknown): number => {
   let normalized = cleaned;
 
   if (hasComma && hasDot) {
-    // Ex: 1.514,26 -> 1514.26
     normalized = cleaned.replace(/\./g, "").replace(/,/g, ".");
   } else if (hasComma) {
-    // Ex: 151,13 -> 151.13
     normalized = cleaned.replace(/,/g, ".");
   } else if (hasDot) {
-    // Ex: 1.514 -> 1514 (milhar) / 1514.26 -> decimal
     const looksLikeThousands = /^-?\d{1,3}(?:\.\d{3})+$/.test(cleaned);
     if (looksLikeThousands) normalized = cleaned.replace(/\./g, "");
   }
@@ -143,7 +143,6 @@ const isSemMargem = (texto: string): boolean => {
 
 /**
  * Verifica se texto contém indicadores de bloqueio de negócio
- * Aplicável a todos os bancos, incluindo PRESENÇA
  */
 const isBloqueioNegocio = (texto: string): boolean => {
   const lower = texto.toLowerCase();
@@ -166,9 +165,6 @@ const isBloqueioNegocio = (texto: string): boolean => {
 
 /**
  * Verifica se é erro de conexão que deve ser tratado como PENDENTE
- * 
- * NOTA: error 28 (Operation timed out) é tratado como REPROVADO, não PENDENTE
- * Apenas erros de limite excedido são considerados pendentes
  */
 const isErroConexao = (erro: string): boolean => {
   const lower = erro.toLowerCase();
@@ -178,216 +174,21 @@ const isErroConexao = (erro: string): boolean => {
     return false;
   }
   
-  // Apenas limite excedido é considerado pendente
-  return (lower.includes("limite") && lower.includes("excedido"));
-};
-
-/**
- * Verifica se um retorno contém indicadores de erro técnico
- * Usado para detectar REPROVAÇÃO TÉCNICA em leads com status success
- * ERROS TÉCNICOS: timeout, limite, conexão, erro HTTP
- * NÃO SÃO TÉCNICOS: CBO bloqueado, margem indisponível, CPF não encontrado, etc.
- */
-const hasErroTecnico = (retorno: unknown): boolean => {
-  if (!retorno) return false;
-  
-  // Verificar se é string e contém erro técnico
-  if (typeof retorno === 'string') {
-    const lower = retorno.toLowerCase();
-    // Apenas erros técnicos (sistema, infra)
-    return lower.includes("timeout") || 
-           lower.includes("limite") || 
-           lower.includes("conexão") || 
-           lower.includes("conexao") ||
-           lower.includes("connection") ||
-           lower.includes("network") ||
-           lower.includes("500") ||
-           lower.includes("502") ||
-           lower.includes("503") ||
-           lower.includes("504") ||
-           lower.includes("erro interno") ||
-           lower.includes("internal error");
-  }
-  
-  const obj = retorno as Record<string, unknown>;
-  
-  // Verificar campo "error" direto
-  if (obj.error !== undefined && obj.error !== null && obj.error !== "") {
-    const errorStr = String(obj.error).toLowerCase();
-    
-    // Ignorar erros de negócio
-    if (errorStr.includes("cbo bloqueado") ||
-        errorStr.includes("cbo inválido") ||
-        errorStr.includes("margem indisponível") ||
-        errorStr.includes("cpf não encontrado") ||
-        errorStr.includes("cliente não encontrado") ||
-        errorStr.includes("sem margem") ||
-        errorStr.includes("sem consulta") ||
-        errorStr.includes("bloqueado") ||
-        errorStr.includes("negado") ||
-        errorStr.includes("reprovado")) {
-      return false;
-    }
-    
-    // Considerar apenas erros técnicos
-    return errorStr.includes("timeout") || 
-           errorStr.includes("limite") || 
-           errorStr.includes("conexão") || 
-           errorStr.includes("conexao") ||
-           errorStr.includes("connection") ||
-           errorStr.includes("network") ||
-           errorStr.includes("500") ||
-           errorStr.includes("502") ||
-           errorStr.includes("503") ||
-           errorStr.includes("504") ||
-           errorStr.includes("erro interno") ||
-           errorStr.includes("internal error");
-  }
-  
-  // Verificar campo "erro" direto
-  if (obj.erro !== undefined && obj.erro !== null && obj.erro !== "") {
-    const erroStr = String(obj.erro).toLowerCase();
-    
-    // Ignorar erros de negócio
-    if (erroStr.includes("cbo bloqueado") ||
-        erroStr.includes("cbo inválido") ||
-        erroStr.includes("margem indisponível") ||
-        erroStr.includes("cpf não encontrado") ||
-        erroStr.includes("cliente não encontrado") ||
-        erroStr.includes("sem margem") ||
-        erroStr.includes("sem consulta") ||
-        erroStr.includes("bloqueado") ||
-        erroStr.includes("negado") ||
-        erroStr.includes("reprovado")) {
-      return false;
-    }
-    
-    // Considerar apenas erros técnicos
-    return erroStr.includes("timeout") || 
-           erroStr.includes("limite") || 
-           erroStr.includes("conexão") || 
-           erroStr.includes("conexao") ||
-           erroStr.includes("connection") ||
-           erroStr.includes("network") ||
-           erroStr.includes("500") ||
-           erroStr.includes("502") ||
-           erroStr.includes("503") ||
-           erroStr.includes("504") ||
-           erroStr.includes("erro interno") ||
-           erroStr.includes("internal error");
-  }
-  
-  // Verificar status:"error" - apenas se não for erro de negócio
-  if (obj.status === "error") {
-    // Verificar contexto para decidir se é erro técnico
-    const context = String(obj.message || obj.description || '').toLowerCase();
-    
-    // Se há contexto de erro de negócio, não é erro técnico
-    if (context.includes("cbo bloqueado") ||
-        context.includes("margem indisponível") ||
-        context.includes("cpf não encontrado") ||
-        context.includes("sem margem") ||
-        context.includes("bloqueado") ||
-        context.includes("negado")) {
-      return false;
-    }
-    
-    // Sem contexto ou contexto técnico = erro técnico
-    return true;
-  }
-  
-  // Verificar code de erro (geralmente números negativos ou strings de erro)
-  if (obj.code !== undefined && obj.code !== null) {
-    const code = String(obj.code).toLowerCase();
-    const codeNum = Number(obj.code);
-    
-    // Códigos de erro técnico (HTTP 5xx, números negativos)
-    if (code.includes("error") || code.includes("erro") || 
-        codeNum < 0 || 
-        codeNum === 500 || codeNum === 502 || codeNum === 503 || codeNum === 504) {
-      // Verificar se não é erro de negócio com código
-      const context = String(obj.message || obj.description || '').toLowerCase();
-      if (!context.includes("cbo bloqueado") &&
-          !context.includes("margem indisponível") &&
-          !context.includes("cpf não encontrado") &&
-          !context.includes("sem margem") &&
-          !context.includes("bloqueado")) {
-        return true;
-      }
-    }
-  }
-  
-  // Verificar em details
-  if (obj.details && typeof obj.details === "object") {
-    const details = obj.details as Record<string, unknown>;
-    if (details.error || details.erro || details.status === "error") {
-      const errorMsg = String(details.error || details.erro || details.message || '').toLowerCase();
-      
-      // Ignorar erros de negócio
-      if (errorMsg.includes("cbo bloqueado") ||
-          errorMsg.includes("margem indisponível") ||
-          errorMsg.includes("cpf não encontrado") ||
-          errorMsg.includes("sem margem") ||
-          errorMsg.includes("bloqueado") ||
-          errorMsg.includes("negado")) {
-        return false;
-      }
-      
-      // Considerar outros erros como técnicos
-      return true;
-    }
-  }
-  
-  // Verificar mensagens de erro técnicas comuns no texto
-  const textoCompleto = JSON.stringify(retorno).toLowerCase();
-  const indicadoresErroTecnico = [
-    "timeout",
-    "limite excedido",
-    "conexão",
-    "conexao",
-    "connection",
-    "network",
-    "erro interno",
-    "internal error",
-    "500",
-    "502",
-    "503",
-    "504"
-  ];
-  
-  // Verificar se algum indicador de erro técnico está presente
-  // mas não se há contexto de erro de negócio
-  if (indicadoresErroTecnico.some(indicador => textoCompleto.includes(indicador))) {
-    // Garantir que não é erro de negócio
-    if (!textoCompleto.includes("cbo bloqueado") &&
-        !textoCompleto.includes("margem indisponível") &&
-        !textoCompleto.includes("cpf não encontrado") &&
-        !textoCompleto.includes("sem margem") &&
-        !textoCompleto.includes("bloqueado")) {
-      return true;
-    }
-  }
-  
-  return false;
+  // Apenas limite excedido e rate limit são considerados pendentes
+  return (
+    (lower.includes("limite") && lower.includes("excedido")) ||
+    lower.includes("rate limit") ||
+    lower.includes("too many requests") ||
+    lower.includes("429")
+  );
 };
 
 /**
  * Verifica se o lead tem erros técnicos em qualquer etapa do processo
- * 
- * REPROVAÇÃO TÉCNICA = APENAS erros de infraestrutura:
- * - Timeout
- * - Erro de conexão
- * - Erro HTTP 5xx
- * - Limite de requisições excedido
- * 
- * NÃO É REPROVAÇÃO TÉCNICA:
- * - CBO bloqueado
- * - Margem indisponível
- * - CPF não encontrado
- * - Qualquer erro de negócio
+ * ERROS TÉCNICOS: timeout, limite, conexão, erro HTTP 5xx
+ * NÃO SÃO TÉCNICOS: CBO bloqueado, margem indisponível, CPF não encontrado
  */
 const hasErrosTecnicosNoProcesso = (lead: LeadData): boolean => {
-  // Lista de palavras-chave que indicam erro TÉCNICO real
   const errosTecnicos = [
     "timeout",
     "timed out",
@@ -405,19 +206,16 @@ const hasErrosTecnicosNoProcesso = (lead: LeadData): boolean => {
     "limite excedido"
   ];
   
-  // Função auxiliar para verificar se um texto contém erro técnico
   const contemErroTecnico = (texto: string | undefined | null): boolean => {
     if (!texto) return false;
     const lower = texto.toLowerCase();
     return errosTecnicos.some(erro => lower.includes(erro));
   };
   
-  // Verificar cada retorno por erros técnicos específicos
   const retornos = [
     lead.retorno_autorizacao,
     lead.retorno_margem,
-    lead.retorno_simulacao,
-    lead.retorno_proposta
+    lead.retorno_simulacao
   ];
   
   for (const retorno of retornos) {
@@ -425,17 +223,14 @@ const hasErrosTecnicosNoProcesso = (lead: LeadData): boolean => {
     
     const obj = retorno as Record<string, unknown>;
     
-    // Verificar campo error
     if (obj.error && contemErroTecnico(String(obj.error))) {
       return true;
     }
     
-    // Verificar campo erro
     if (obj.erro && contemErroTecnico(String(obj.erro))) {
       return true;
     }
     
-    // Verificar campo message
     if (obj.message && contemErroTecnico(String(obj.message))) {
       return true;
     }
@@ -449,9 +244,7 @@ const hasErrosTecnicosNoProcesso = (lead: LeadData): boolean => {
 // =====================================================
 
 /**
- * Extrai valor - busca liquidValue em retorno_simulacao
- * Suporta múltiplos formatos/estruturas do retorno_simulacao
- * IMPORTANTE: liquidValue vem em centavos (sem separadores), então divide por 100
+ * Extrai valor liquidValue de retorno_simulacao
  */
 const extrairValorMargem = (lead: LeadData): number => {
   const simulacao = lead.retorno_simulacao;
@@ -491,7 +284,6 @@ const extrairValorMargem = (lead: LeadData): number => {
   const valorBruto = fontes.find((v) => v !== undefined && v !== null && v !== 0);
   if (valorBruto === undefined) return 0;
   
-  // Converte para número e divide por 100 (valor vem em centavos)
   const valorNumerico = parseValorNumerico(valorBruto);
   return valorNumerico / 100;
 };
@@ -509,7 +301,6 @@ const hasValoresFinanceiros = (lead: LeadData): boolean => {
 
 /**
  * Verifica se há bloqueio de negócio nas mensagens de retorno
- * Se houver bloqueio, NÃO é considerado success mesmo com status success
  */
 const hasBloqueioNegocio = (lead: LeadData): boolean => {
   const margem = lead.retorno_margem;
@@ -519,7 +310,6 @@ const hasBloqueioNegocio = (lead: LeadData): boolean => {
   const simulacaoObj = isRecord(simulacao) ? simulacao : null;
   const propostaObj = isRecord(proposta) ? proposta : null;
   
-  // Verificar mensagens de erro
   const mensagens = [
     margemObj ? margemObj["error"] : null,
     margemObj ? margemObj["message"] : null,
@@ -558,13 +348,10 @@ const hasBloqueioNegocio = (lead: LeadData): boolean => {
 };
 
 /**
- * Verifica se a proposta foi aprovada
- * 
  * CRITÉRIO ÚNICO DE APROVAÇÃO:
- * - retorno_proposta.status === "success" (APENAS este valor)
+ * retorno_proposta.status === "success"
  * 
- * Suporta múltiplos padrões de estrutura do retorno_proposta
- * Qualquer outra mensagem ou status = REPROVADO
+ * IMPORTANTE: retorno_get_proposta NÃO indica aprovação!
  */
 const hasStatusSuccess = (lead: LeadData): boolean => {
   const proposta = lead.retorno_proposta;
@@ -629,11 +416,6 @@ const isPendente = (lead: LeadData): boolean => {
     return false;
   }
   
-  // Se tem valores financeiros, NUNCA é pendente
-  if (hasValoresFinanceiros(lead)) {
-    return false;
-  }
-  
   // Limite de consultas excedido
   if (autorizacaoObj) {
     const errors = autorizacaoObj["errors"];
@@ -668,655 +450,106 @@ const isPendente = (lead: LeadData): boolean => {
 // EXTRAÇÃO DE MOTIVO DE ERRO
 // =====================================================
 
-/**
- * Extrai o JSON interno do campo error
- * O campo error contém uma string com "Response completo: {JSON}"
- * Esta função extrai e parseia esse JSON interno
- */
-const extrairJsonInternoDoError = (errorString: string): Record<string, unknown> | null => {
-  if (!errorString) return null;
-  
-  // Procurar por "Response completo: " e extrair o JSON após isso
-  const responseMatch = errorString.match(/Response completo:\s*(\{[\s\S]*\})/);
-  if (responseMatch && responseMatch[1]) {
-    try {
-      // Limpar caracteres de escape (\n, \t, etc)
-      const jsonStr = responseMatch[1]
-        .replace(/\\n/g, '')
-        .replace(/\\t/g, '')
-        .replace(/\\"/g, '"');
-      return JSON.parse(jsonStr) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
+const UUID_ONLY_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const hasHttpStatusInText = (text: string): string | null => {
+  const match = text.match(/\b(4\d{2}|5\d{2})\b/);
+  return match ? match[1] : null;
+};
+
+const pickFirstString = (...values: unknown[]): string | null => {
+  for (const v of values) {
+    if (typeof v === "string" && v.trim()) return v.trim();
   }
-  
-  // Fallback: tentar parsear a string inteira como JSON
+  return null;
+};
+
+const extractResponseCompletoFromErrorString = (errorString: string | null): { code: string | null; message: string | null } => {
+  if (!errorString) return { code: null, message: null };
+  const match = errorString.match(/Response completo:\s*(\{[\s\S]*\})/);
+  if (!match) return { code: null, message: null };
   try {
-    return JSON.parse(errorString) as Record<string, unknown>;
+    const json = JSON.parse(match[1].replace(/\\n/g, '').replace(/\\t/g, '').replace(/\\"/g, '"'));
+    return {
+      code: json.code || json.statusCode || null,
+      message: json.message || json.error || null
+    };
   } catch {
-    return null;
+    return { code: null, message: null };
   }
 };
 
-/**
- * Extrai todos os messageError do array reasonForIneligibility
- * e transforma em um texto único separado por " | "
- */
-const extrairTodosMessageErrors = (jsonInterno: Record<string, unknown>): string | null => {
-  const messages: string[] = [];
-  
-  // Caminho: details.dataprevValidationResponses[0].reasonForIneligibility[].messageError
-  const details = jsonInterno.details as Record<string, unknown> | undefined;
+const extractFormErrorsMessage = (retorno: unknown): string | null => {
+  if (!isRecord(retorno)) return null;
+  const details = isRecord(retorno.details) ? retorno.details : null;
   if (!details) return null;
-  
-  const dataprevResponses = details.dataprevValidationResponses as Array<Record<string, unknown>> | undefined;
-  if (!Array.isArray(dataprevResponses) || dataprevResponses.length === 0) return null;
-  
-  // Iterar por todas as respostas
-  for (const response of dataprevResponses) {
-    const reasons = response.reasonForIneligibility as Array<Record<string, unknown>> | undefined;
-    if (!Array.isArray(reasons)) continue;
-    
-    // Iterar por todos os motivos de inelegibilidade
-    for (const reason of reasons) {
-      if (reason.messageError && typeof reason.messageError === 'string') {
-        messages.push(reason.messageError);
-      }
-    }
-  }
-  
-  if (messages.length === 0) return null;
-  
-  // Retornar todos os messageErrors unidos por " | "
-  return messages.join(' | ');
+  const formErrors = details.formErrors;
+  if (!Array.isArray(formErrors) || formErrors.length === 0) return null;
+  const messages = formErrors
+    .map((e: unknown) => (isRecord(e) ? e.message : null))
+    .filter((m): m is string => typeof m === "string");
+  return messages.length > 0 ? messages.join(" | ") : null;
 };
 
-/**
- * Extrai messageError de um retorno JSON
- * 1. Extrai o JSON interno do campo error
- * 2. Busca todos os messageError do array reasonForIneligibility
- * 3. Transforma em texto único
- */
 const extrairMessageError = (retorno: unknown): string | null => {
   if (!retorno) return null;
   
   const obj = retorno as Record<string, unknown>;
   
-  // Tentar extrair do campo error (string com JSON embutido)
   if (obj.error && typeof obj.error === 'string') {
-    const jsonInterno = extrairJsonInternoDoError(obj.error);
-    if (jsonInterno) {
-      const mensagens = extrairTodosMessageErrors(jsonInterno);
-      if (mensagens) return mensagens;
-    }
-  }
-  
-  // Fallback: tentar extrair diretamente do objeto details
-  if (obj.details && typeof obj.details === 'object') {
-    const mensagens = extrairTodosMessageErrors({ details: obj.details });
-    if (mensagens) return mensagens;
-  }
-  
-  return null;
-};
-
-/**
- * Classifica determinísticamente se um lead possui "margem reprovada".
- *
- * Regras obrigatórias:
- * - Só classifica como margem reprovada quando o PRIMEIRO erro do funil ocorreu em `retorno_margem`.
- * - Erros em outras etapas NÃO caracterizam margem reprovada.
- * - Prioriza evidência numérica (valorMargemDisponivel/valorMargem). Texto é fallback.
- * - Exclui INVALID_FORM, 429/rate limit, timeout/500 e erros técnicos.
- */
-export const classificarMargemReprovada = (lead: LeadData): MargemReprovacaoInfo => {
-  const funilErro = extrairErroFunil(lead);
-  const erro_etapa = funilErro?.erro_etapa ?? null;
-  const erro_code = funilErro?.erro_code ?? null;
-  const erro_motivo = funilErro?.erro_motivo ?? null;
-  const criterios: string[] = [];
-
-  if (erro_etapa !== "retorno_margem") {
-    criterios.push("erro_etapa_nao_e_retorno_margem");
-  }
-
-  const motivoNorm = normalizeText(erro_motivo ?? "");
-
-  if (erro_code === "429" || includesAny(motivoNorm, NAO_CLASSIFICAR_MARGEM_KEYWORDS)) {
-    return {
-      isMargemReprovada: false,
-      tipo_reprovacao: "nao_aplicavel",
-      erro_etapa,
-      erro_code,
-      erro_motivo,
-      valorMargemDisponivel: null,
-      valorMinimoProduto: null,
-      parcelaSolicitada: null,
-      limiar: null,
-      criterios: [...criterios, "excluido_por_erro_tecnico_ou_rate_limit"],
-    };
-  }
-
-  const numeric = extrairValorMargemDisponivelDoLead(lead);
-  criterios.push(...numeric.criterios);
-
-  const valorMargemDisponivel = numeric.valorMargemDisponivel;
-  const valorMinimoProduto = numeric.valorMinimoProduto;
-
-  // Detectar inelegibilidade (para usar depois, mas priorizar classificação por margem)
-  const messageErrorMargem = extrairMessageError(parseJsonSafe<unknown>(lead.retorno_margem) ?? lead.retorno_margem);
-  const inelegibilidadeText = normalizeText([erro_motivo ?? "", messageErrorMargem ?? ""].filter(Boolean).join(" | "));
-  const hasInelegibilidade = includesAny(inelegibilidadeText, CONVENIO_INELEGIVEL_KEYWORDS) || isBloqueioNegocio(inelegibilidadeText);
-
-  // PRIORIDADE: Classificar por margem PRIMEIRO (zerada/negativa/baixa)
-  // Mesmo que haja inelegibilidade, se a margem é zerada/negativa, classificar como margem
-  if (!(typeof valorMargemDisponivel === "number" && !Number.isNaN(valorMargemDisponivel))) {
-    // Sem margem numérica: verificar inelegibilidade
-    if (hasInelegibilidade) {
-      return {
-        isMargemReprovada: false,
-        tipo_reprovacao: "inelegibilidade_convenio",
-        erro_etapa,
-        erro_code,
-        erro_motivo,
-        valorMargemDisponivel: null,
-        valorMinimoProduto,
-        parcelaSolicitada: null,
-        limiar: null,
-        criterios: [...criterios, "inelegibilidade_convenio_detectada"],
-      };
-    }
-    return {
-      isMargemReprovada: false,
-      tipo_reprovacao: "nao_aplicavel",
-      erro_etapa,
-      erro_code,
-      erro_motivo,
-      valorMargemDisponivel: null,
-      valorMinimoProduto,
-      parcelaSolicitada: null,
-      limiar: null,
-      criterios: [...criterios, "valorMargemDisponivel_ausente"],
-    };
-  }
-
-  if (valorMargemDisponivel < 0) {
-    criterios.push("valorMargemDisponivel_lt_0");
-    return {
-      isMargemReprovada: true,
-      tipo_reprovacao: "margem_negativa",
-      erro_etapa,
-      erro_code,
-      erro_motivo,
-      valorMargemDisponivel,
-      valorMinimoProduto,
-      parcelaSolicitada: null,
-      limiar: null,
-      criterios,
-    };
-  }
-
-  if (valorMargemDisponivel === 0) {
-    criterios.push("valorMargemDisponivel_eq_0");
-    return {
-      isMargemReprovada: true,
-      tipo_reprovacao: "margem_zerada",
-      erro_etapa,
-      erro_code,
-      erro_motivo,
-      valorMargemDisponivel,
-      valorMinimoProduto,
-      parcelaSolicitada: null,
-      limiar: null,
-      criterios,
-    };
-  }
-
-  const parcelaInfo = extrairParcelaSolicitadaDoLead(lead);
-  criterios.push(...parcelaInfo.criterios);
-
-  const parcelaSolicitada = parcelaInfo.parcelaSolicitada;
-  const limiar = Math.max(100, parcelaSolicitada ?? 0, valorMinimoProduto ?? 0);
-  criterios.push("limiar_max_100_parcela_solicitada_valorMinimoProduto");
-  if (parcelaSolicitada === null) criterios.push("limiar_sem_parcela_solicitada");
-  if (valorMinimoProduto === null) criterios.push("limiar_sem_valorMinimoProduto");
-
-  if (valorMargemDisponivel > 0 && valorMargemDisponivel < limiar) {
-    criterios.push("valorMargemDisponivel_gt_0_lt_limiar");
-    return {
-      isMargemReprovada: true,
-      tipo_reprovacao: "margem_insuficiente",
-      erro_etapa,
-      erro_code,
-      erro_motivo,
-      valorMargemDisponivel,
-      valorMinimoProduto,
-      parcelaSolicitada,
-      limiar,
-      criterios,
-    };
-  }
-
-  return {
-    isMargemReprovada: false,
-    tipo_reprovacao: "nao_aplicavel",
-    erro_etapa,
-    erro_code,
-    erro_motivo,
-    valorMargemDisponivel,
-    valorMinimoProduto,
-    parcelaSolicitada,
-    limiar,
-    criterios: [...criterios, "sem_evidencia_suficiente"],
-  };
-};
-
-
-/**
- * Extrai o motivo da reprovação técnica
- * Busca messageError APENAS em RETORNO_MARGEM
- */
-export const extrairMotivoReprovacaoTecnica = (lead: LeadData): string | null => {
-  const messageError = extrairMessageError(lead.retorno_margem);
-  if (messageError) return messageError;
-
-  const funilErro = extrairErroFunil(lead);
-  if (funilErro?.erro_motivo) return funilErro.erro_motivo;
-  if (funilErro?.erro_code) return funilErro.erro_code;
-
-  const getProposta = lead.retorno_get_proposta;
-  const getPropostaHasData =
-    getProposta && typeof getProposta === "object" && Object.keys(getProposta as object).length > 0;
-
-  if (getPropostaHasData) {
-    const missing: string[] = [];
-    const isEmptyObj = (v: unknown) => typeof v === "object" && v !== null && Object.keys(v as object).length === 0;
-
-    if (!lead.retorno_autorizacao || isEmptyObj(lead.retorno_autorizacao)) missing.push("Autorização");
-    if (!lead.retorno_margem || isEmptyObj(lead.retorno_margem)) missing.push("Margem");
-    if (!lead.retorno_simulacao || isEmptyObj(lead.retorno_simulacao)) missing.push("Simulação");
-    if (!lead.retorno_proposta || isEmptyObj(lead.retorno_proposta)) missing.push("Proposta");
-
-    if (missing.length > 0) {
-      return `Processo incompleto (${missing.join(", ")})`;
-    }
-  }
-
-  return null;
-};
-
-/**
- * Extrai o motivo do erro/reprovação de um lead
- */
-export const extrairMotivoErro = (lead: LeadData): string | null => {
-  const funilErro = extrairErroFunil(lead);
-  if (funilErro?.erro_motivo) return funilErro.erro_motivo;
-  if (funilErro?.erro_code) return funilErro.erro_code;
-
-  // Verificar "sem margem" implícito
-  if (extrairValorMargem(lead) === 0 && hasStatusSuccess(lead)) {
-    return "Margem indisponível ou zerada";
-  }
-
-  return null;
-};
-
-const UUID_RE = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/;
-const UUID_ONLY_RE = new RegExp(`^${UUID_RE.source}$`);
-
-const hasHttpStatusInText = (text: string): string | null => {
-  if (!text) return null;
-  const m = text.match(/\b(?:status|http|erro|error)\D{0,15}(\d{3})\b/i);
-  if (m?.[1]) return m[1];
-  const start = text.match(/^\s*(\d{3})\b/);
-  return start?.[1] ?? null;
-};
-
-const pickFirstString = (...values: Array<unknown>): string | null => {
-  for (const value of values) {
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      if (trimmed) return trimmed;
-    }
-  }
-  return null;
-};
-
-const stringifyUnknown = (v: unknown): string => {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "string") return v;
-  try {
-    return JSON.stringify(v);
-  } catch {
-    return String(v);
-  }
-};
-
-const normalizeText = (v: string): string => {
-  return v
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-};
-
-/**
- * Palavras-chave para detecção textual (aplicadas SOMENTE quando o erro é em retorno_margem).
- *
- * Importante:
- * - A classificação prioriza evidência numérica (valorMargemDisponivel/valorMargem).
- * - Keywords são fallback para quando não há número ou quando o retorno vem apenas com mensagem.
- */
-const MARGEM_KEYWORDS = {
-  insuficiente: [
-    "margem insuficiente",
-    "margem insuf",
-    "insufficient margin",
-    "margem abaixo",
-    "abaixo do minimo",
-    "abaixo do mínimo",
-    "margem menor que",
-    "margem inferior",
-    "valor de margem insuficiente",
-  ],
-  zerada: [
-    "margem zerada",
-    "margem 0",
-    "margem disponivel r$ 0",
-    "margem disponivel 0",
-    "margem disponível r$ 0",
-    "margem disponível 0",
-    "sem margem",
-    "margem indisponivel",
-    "margem indisponível",
-    "margem nao retornada",
-    "margem não retornada",
-    "no margin returned",
-  ],
-  negativa: [
-    "margem negativa",
-    "negative margin",
-    "saldo negativo",
-    "valor negativo",
-  ],
-} as const;
-
-const CONVENIO_INELEGIVEL_KEYWORDS = [
-  "cbo bloqueado",
-  "ocupacao bloqueada",
-  "ocupação bloqueada",
-  "empresa nao atende",
-  "empresa não atende",
-  "requisitos minimos",
-  "requisitos mínimos",
-  "data minima de atividade",
-  "data mínima de atividade",
-  "tempo de atividade",
-  "porte nao atendido",
-  "porte não atendido",
-  "nao elegivel",
-  "não elegível",
-  "inelegivel",
-  "inelegível",
-] as const;
-
-const NAO_CLASSIFICAR_MARGEM_KEYWORDS = [
-  "invalid_form",
-  "invalid business rule",
-  "invalid_business_rule",
-  "too many requests",
-  "rate limit",
-  "limite excedido",
-  "timeout",
-  "timed out",
-  "internal server error",
-  "erro interno",
-  "janela de manutencao",
-  "janela de manutenção",
-] as const;
-
-const includesAny = (haystack: string, needles: readonly string[]): boolean => {
-  return needles.some((n) => haystack.includes(normalizeText(n)));
-};
-
-const pickFirstNumber = (...values: Array<unknown>): number | null => {
-  for (const v of values) {
-    if (v === null || v === undefined) continue;
-    if (typeof v === "number" && !Number.isNaN(v)) return v;
-    if (typeof v === "string") {
-      const trimmed = v.trim();
-      if (!/\d/.test(trimmed)) continue;
-      const parsed = parseValorNumericoStrict(trimmed);
-      if (!Number.isNaN(parsed)) return parsed;
-    }
-  }
-  return null;
-};
-
-/**
- * Extrai valorMargemDisponivel/valorMargem a partir de retorno_margem / retorno_simulacao.
- *
- * Edge cases:
- * - Alguns bancos retornam margem em `retorno_margem`.
- * - UY3 costuma retornar `valorMargemDisponivel` em `retorno_simulacao[0].result[0]`.
- * - PRESENÇA pode retornar `valorMargem` negativo em retorno_margem.
- */
-const extrairValorMargemDisponivelDoLead = (lead: LeadData): {
-  valorMargemDisponivel: number | null;
-  valorMinimoProduto: number | null;
-  criterios: string[];
-} => {
-  const criterios: string[] = [];
-
-  const margemRaw = parseJsonSafe<unknown>(lead.retorno_margem) ?? lead.retorno_margem;
-  const margem = Array.isArray(margemRaw) ? (margemRaw[0] as Record<string, unknown> | null) : (isRecord(margemRaw) ? (margemRaw as Record<string, unknown>) : null);
-
-  if (!margem || Object.keys(margem).length === 0) {
-    criterios.push("retorno_margem_ausente_ou_vazio");
-  }
-
-  const simulacaoRaw = parseJsonSafe<unknown>(lead.retorno_simulacao) ?? lead.retorno_simulacao;
-  const simulacao = Array.isArray(simulacaoRaw) ? (simulacaoRaw[0] as Record<string, unknown> | null) : (isRecord(simulacaoRaw) ? (simulacaoRaw as Record<string, unknown>) : null);
-
-  // Extrair valorMargemDisponivel de múltiplos caminhos possíveis
-  // Caminho principal: details.dataprevValidationResponses[].employeeRelationShip.valorMargemDisponivel
-  // O JSON pode estar embutido no campo "error" como string
-  const extrairMargemDeDataprev = (): number | null => {
-    if (!margem) return null;
-    
-    // Tentar extrair details de múltiplas fontes
-    let details: Record<string, unknown> | null = null;
-    
-    // 1. details direto como objeto
-    if (isRecord(margem["details"])) {
-      details = margem["details"] as Record<string, unknown>;
-    }
-    
-    // 2. Se details não tem dataprevValidationResponses, tentar parsear do campo error
-    if (!details || !details["dataprevValidationResponses"]) {
-      const errorStr = typeof margem["error"] === "string" ? margem["error"] : null;
-      if (errorStr) {
-        // Extrair JSON de "Response completo: {...}"
-        const match = errorStr.match(/Response completo:\s*(\{[\s\S]*\})/);
-        if (match?.[1]) {
-          try {
-            const cleanJson = match[1].replace(/\\n/g, "").replace(/\\t/g, "").replace(/\\"/g, '"');
-            const parsed = JSON.parse(cleanJson) as Record<string, unknown>;
-            if (isRecord(parsed["details"])) {
-              details = parsed["details"] as Record<string, unknown>;
+    const match = obj.error.match(/Response completo:\s*(\{[\s\S]*\})/);
+    if (match) {
+      try {
+        const jsonStr = match[1].replace(/\\n/g, '').replace(/\\t/g, '').replace(/\\"/g, '"');
+        const jsonInterno = JSON.parse(jsonStr) as Record<string, unknown>;
+        const details = jsonInterno.details as Record<string, unknown> | undefined;
+        if (details) {
+          const dataprevResponses = details.dataprevValidationResponses as Array<Record<string, unknown>> | undefined;
+          if (Array.isArray(dataprevResponses)) {
+            const messages: string[] = [];
+            for (const response of dataprevResponses) {
+              const reasons = response.reasonForIneligibility as Array<Record<string, unknown>> | undefined;
+              if (Array.isArray(reasons)) {
+                for (const reason of reasons) {
+                  if (reason.messageError && typeof reason.messageError === 'string') {
+                    messages.push(reason.messageError);
+                  }
+                }
+              }
             }
-          } catch {
-            // Ignorar erro de parse
+            if (messages.length > 0) return messages.join(' | ');
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+  
+  // Tentar direto do retorno
+  if (isRecord(obj.details)) {
+    const details = obj.details as Record<string, unknown>;
+    const dataprevResponses = details.dataprevValidationResponses as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(dataprevResponses)) {
+      const messages: string[] = [];
+      for (const response of dataprevResponses) {
+        const reasons = response.reasonForIneligibility as Array<Record<string, unknown>> | undefined;
+        if (Array.isArray(reasons)) {
+          for (const reason of reasons) {
+            if (reason.messageError && typeof reason.messageError === 'string') {
+              messages.push(reason.messageError);
+            }
           }
         }
       }
+      if (messages.length > 0) return messages.join(' | ');
     }
-    
-    if (!details) return null;
-    
-    const dataprevResponses = details["dataprevValidationResponses"];
-    if (!Array.isArray(dataprevResponses) || dataprevResponses.length === 0) return null;
-    
-    // Pegar o primeiro employeeRelationShip com valorMargemDisponivel
-    for (const response of dataprevResponses) {
-      if (!isRecord(response)) continue;
-      const employee = response["employeeRelationShip"];
-      if (!isRecord(employee)) continue;
-      const valor = pickFirstNumber(employee["valorMargemDisponivel"]);
-      if (valor !== null) return valor;
-    }
-    return null;
-  };
-
-  // Caminho 2: result[0].valorMargemDisponivel
-  const extrairMargemDeResult = (): number | null => {
-    if (!margem) return null;
-    const result = margem["result"];
-    if (!Array.isArray(result) || result.length === 0) return null;
-    const first = result[0];
-    if (!isRecord(first)) return null;
-    const valor = pickFirstNumber(first["valorMargemDisponivel"]);
-    return valor;
-  };
-
-  const margemDisponivel = margem
-    ? pickFirstNumber(
-        margem["valorMargemDisponivel"],
-        margem["valor_margem_disponivel"],
-        margem["margemDisponivel"],
-        margem["margem_disponivel"],
-        (isRecord(margem["registroEmpregaticio"]) ? (margem["registroEmpregaticio"] as Record<string, unknown>)["valorMargemDisponivel"] : null),
-        (isRecord(margem["details"]) ? (margem["details"] as Record<string, unknown>)["valorMargemDisponivel"] : null),
-        (isRecord(margem["result"]) ? (margem["result"] as Record<string, unknown>)["valorMargemDisponivel"] : null)
-      ) ?? extrairMargemDeDataprev() ?? extrairMargemDeResult()
-    : null;
-
-  const margemAlternativa = margem
-    ? pickFirstNumber(
-        margem["valorMargem"],
-        margem["valor_margem"],
-        (isRecord(margem["details"]) ? (margem["details"] as Record<string, unknown>)["valorMargem"] : null)
-      )
-    : null;
-
-  // Regra: margem deve vir de retorno_margem (não usar simulacao como fonte de margem disponível)
-  const valorMargemDisponivel = margemDisponivel ?? margemAlternativa;
-  if (margemDisponivel !== null) criterios.push("valorMargemDisponivel_extraido_retorno_margem");
-  if (margemDisponivel === null && margemAlternativa !== null) criterios.push("valorMargem_extraido_retorno_margem");
-
-  const valorMinimoProduto = margem
-    ? pickFirstNumber(
-        margem["valorMinimoProduto"],
-        margem["valor_minimo_produto"],
-        margem["minimoProduto"],
-        margem["minimumProductValue"],
-        margem["minValue"],
-        (isRecord(margem["details"]) ? (margem["details"] as Record<string, unknown>)["valorMinimoProduto"] : null)
-      )
-    : null;
-  if (valorMinimoProduto !== null) criterios.push("valorMinimoProduto_extraido");
-
-  return { valorMargemDisponivel, valorMinimoProduto, criterios };
-};
-
-export const extrairValorMargemDisponivelLead = (lead: LeadData): number | null => {
-  return extrairValorMargemDisponivelDoLead(lead).valorMargemDisponivel;
-};
-
-const extrairParcelaSolicitadaDoLead = (lead: LeadData): {
-  parcelaSolicitada: number | null;
-  criterios: string[];
-} => {
-  const criterios: string[] = [];
-
-  const simulacaoRaw = parseJsonSafe<unknown>(lead.retorno_simulacao) ?? lead.retorno_simulacao;
-  const simulacao = Array.isArray(simulacaoRaw) ? (simulacaoRaw[0] as Record<string, unknown> | null) : (isRecord(simulacaoRaw) ? (simulacaoRaw as Record<string, unknown>) : null);
-
-  const parcelaSimulacao = simulacao
-    ? pickFirstNumber(
-        simulacao["parcela_solicitada"],
-        simulacao["parcelaSolicitada"],
-        simulacao["valorParcelaSolicitada"],
-        simulacao["valor_parcela_solicitada"],
-        simulacao["installmentValue"],
-        simulacao["installmentAmount"],
-        simulacao["paymentValue"],
-        simulacao["valuePerInstallment"],
-        simulacao["valorPrestacao"],
-        simulacao["valor_prestacao"],
-        simulacao["valorParcela"],
-        simulacao["valor_parcela"]
-      )
-    : null;
-
-  if (parcelaSimulacao !== null) {
-    criterios.push("parcelaSolicitada_extraida_retorno_simulacao");
-    return { parcelaSolicitada: parcelaSimulacao, criterios };
   }
-
-  const resultParcela = (() => {
-    if (!simulacao) return null;
-    const result = simulacao["result"];
-    if (Array.isArray(result) && result.length > 0 && isRecord(result[0])) {
-      return pickFirstNumber(
-        (result[0] as Record<string, unknown>)["parcela_solicitada"],
-        (result[0] as Record<string, unknown>)["parcelaSolicitada"],
-        (result[0] as Record<string, unknown>)["installmentValue"],
-        (result[0] as Record<string, unknown>)["installmentAmount"],
-        (result[0] as Record<string, unknown>)["paymentValue"],
-        (result[0] as Record<string, unknown>)["valuePerInstallment"],
-        (result[0] as Record<string, unknown>)["valorPrestacao"],
-        (result[0] as Record<string, unknown>)["valorParcela"]
-      );
-    }
-    return null;
-  })();
-
-  if (resultParcela !== null) {
-    criterios.push("parcelaSolicitada_extraida_retorno_simulacao_result0");
-    return { parcelaSolicitada: resultParcela, criterios };
-  }
-
-  criterios.push("parcelaSolicitada_ausente");
-  return { parcelaSolicitada: null, criterios };
+  
+  return null;
 };
 
-const extractResponseCompletoFromErrorString = (
-  errorString: string | null
-): { code: string | null; message: string | null } => {
-  if (!errorString) return { code: null, message: null };
-  const jsonInterno = extrairJsonInternoDoError(errorString);
-  if (!jsonInterno) return { code: null, message: null };
-
-  const details = isRecord(jsonInterno.details) ? jsonInterno.details : null;
-  const codeCandidate =
-    typeof jsonInterno.code === "string" || typeof jsonInterno.code === "number"
-      ? String(jsonInterno.code)
-      : typeof (jsonInterno as Record<string, unknown>).statusCode === "string" ||
-        typeof (jsonInterno as Record<string, unknown>).statusCode === "number"
-      ? String((jsonInterno as Record<string, unknown>).statusCode)
-      : typeof (jsonInterno as Record<string, unknown>).httpStatus === "string" ||
-        typeof (jsonInterno as Record<string, unknown>).httpStatus === "number"
-      ? String((jsonInterno as Record<string, unknown>).httpStatus)
-      : null;
-
-  const message = pickFirstString(
-    jsonInterno.message,
-    (jsonInterno as Record<string, unknown>).detail,
-    (jsonInterno as Record<string, unknown>).title,
-    (jsonInterno as Record<string, unknown>).error,
-    (jsonInterno as Record<string, unknown>).error_description,
-    details?.message,
-    details?.detail,
-    details?.title,
-    details?.error
-  );
-
-  const code = codeCandidate;
-  return { code, message };
-};
-
-const buildLegibleMotivo = (payload: {
+const buildLegibleMotivo = (params: {
   statusCode: string | null;
   retorno: unknown;
   errorString: string | null;
@@ -1324,73 +557,16 @@ const buildLegibleMotivo = (payload: {
   recordMessage: string | null;
   recordError: string | null;
 }): string | null => {
-  const { statusCode, errorString, responseCompletoMessage, recordMessage, recordError, retorno } = payload;
-  const code = statusCode?.trim() ?? null;
-  if (code === "429") {
-    const source = pickFirstString(responseCompletoMessage, recordMessage, recordError, errorString) ?? "";
-    const lower = source.toLowerCase();
-    if (lower.includes("too many requests")) return "Too Many Requests";
-    if (lower.includes("rate limit") || lower.includes("ratelimit")) return "Rate limit";
-    if (lower.includes("limite") && lower.includes("exced")) return "Limite excedido";
-    return "Limite de requisições excedido";
+  const { statusCode, responseCompletoMessage, recordMessage, recordError } = params;
+  
+  if (statusCode === "429") {
+    return "Limite de requisições excedido (rate limit)";
   }
-
-  const fallback = pickFirstString(recordError, errorString);
-  if (fallback) {
-    const responseCompleto = extractResponseCompletoFromErrorString(fallback);
-    if (responseCompleto.message) return responseCompleto.message;
-    const statusFromText = hasHttpStatusInText(fallback);
-    if (statusFromText === "429") return "Too Many Requests";
-  }
-
-  const maybeJson = pickFirstString(errorString);
-  if (maybeJson && maybeJson.trim().startsWith("{")) {
-    const parsed = extrairJsonInternoDoError(maybeJson);
-    if (parsed) {
-      const details = isRecord(parsed.details) ? parsed.details : null;
-      const msg = pickFirstString(
-        parsed.message,
-        (parsed as Record<string, unknown>).detail,
-        (parsed as Record<string, unknown>).title,
-        (parsed as Record<string, unknown>).error,
-        details?.message,
-        details?.detail,
-        details?.title,
-        details?.error
-      );
-      if (msg) return msg;
-    }
-  }
-
-  return (errorString ? stringifyUnknown(errorString) : stringifyUnknown(retorno)).trim() || null;
-};
-
-const extractFormErrorsMessage = (retorno: unknown): string | null => {
-  if (!retorno || !isRecord(retorno)) return null;
-
-  const details = isRecord(retorno.details) ? retorno.details : null;
-  const formErrors = Array.isArray(details?.formErrors)
-    ? details?.formErrors
-    : Array.isArray((retorno as Record<string, unknown>).formErrors)
-    ? (retorno as Record<string, unknown>).formErrors
-    : null;
-
-  if (!Array.isArray(formErrors) || formErrors.length === 0) return null;
-
-  const messages = formErrors
-    .map((item) => {
-      if (typeof item === "string") return item;
-      if (isRecord(item)) return pickFirstString(item.message);
-      return null;
-    })
-    .filter(Boolean)
-    .map(String);
-
-  return messages.length ? messages.join("; ") : null;
+  
+  return responseCompletoMessage || recordMessage || recordError || null;
 };
 
 const extractRetornoErrorString = (retorno: unknown): string | null => {
-  if (!retorno) return null;
   if (typeof retorno === "string") return retorno;
   if (!isRecord(retorno)) return null;
 
@@ -1538,22 +714,20 @@ export const extrairErroFunil = (lead: LeadData): FunilErroInfo | null => {
 /**
  * REGRA MESTRE: Normaliza o status do lead
  * 
- * APROVADO = retorno_proposta.status === "success" E SEM erros técnicos no processo
- * REPROVACAO_TECNICA = status success MAS com erros em alguma etapa anterior
- * PENDENTE = erros de sistema (timeout, limite, conexão)
+ * APROVADO = APENAS retorno_proposta.status === "success" E SEM erros técnicos
+ * REPROVACAO_TECNICA = retorno_proposta.status === "success" MAS com erros em alguma etapa anterior
+ * PENDENTE = erros de sistema (rate limit, limite excedido)
  * REPROVADO = qualquer outro caso
  * 
- * Aplicável a todos os bancos: V8, UY3, PRESENÇA
+ * IMPORTANTE: retorno_get_proposta NÃO indica aprovação!
  */
 export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
   // =====================================================
   // 1. VERIFICAR SE TEM STATUS SUCCESS NA PROPOSTA
+  // ÚNICO critério para aprovação
   // =====================================================
   if (hasStatusSuccess(lead)) {
-    // =====================================================
-    // 1.1 VERIFICAR ERROS TÉCNICOS NO PROCESSO
-    // Se tem success mas teve erros no caminho = REPROVAÇÃO TÉCNICA
-    // =====================================================
+    // Verificar erros técnicos no processo
     if (hasErrosTecnicosNoProcesso(lead)) {
       return "reprovacao_tecnica";
     }
@@ -1563,19 +737,10 @@ export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
   }
   
   // =====================================================
-  // 1.2 VERIFICAR SE TEM GET_PROPOSTA COM DADOS
-  // (indica sucesso mesmo sem retorno_proposta.status)
+  // REMOVIDO: Fallback de retorno_get_proposta
+  // retorno_get_proposta NÃO indica aprovação!
+  // Apenas retorno_proposta.status === "success" aprova
   // =====================================================
-  const getProposta = lead.retorno_get_proposta as Record<string, unknown> | null;
-  if (getProposta && Object.keys(getProposta).length > 0) {
-    // Tem get_proposta com dados = foi processado
-    // Verificar se tem erros técnicos no processo
-    if (hasErrosTecnicosNoProcesso(lead)) {
-      return "reprovacao_tecnica";
-    }
-    // Se não tem erros técnicos, é aprovado
-    return "aprovado";
-  }
   
   // =====================================================
   // 2. VERIFICAR SE É PENDENTE (erros de sistema)
@@ -1585,7 +750,7 @@ export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
   }
   
   // =====================================================
-  // 3. REPROVADO: Tudo mais (qualquer outra mensagem)
+  // 3. REPROVADO: Tudo mais
   // =====================================================
   return "reprovado";
 };
@@ -1609,6 +774,709 @@ export const normalizarStatus = (status: string | null, lead?: LeadData): Status
   if (s === "cpf não encontrado" || s === "cpf_nao_encontrado") return "reprovado";
   
   return "reprovado";
+};
+
+// =====================================================
+// CLASSIFICAÇÃO DE MARGEM REPROVADA
+// =====================================================
+
+/**
+ * Keywords para NÃO classificar como margem reprovada
+ * (erros técnicos, rate limit, etc)
+ */
+const NAO_CLASSIFICAR_MARGEM_KEYWORDS = [
+  "invalid_form",
+  "invalid business rule",
+  "invalid_business_rule",
+  "too many requests",
+  "rate limit",
+  "limite excedido",
+  "timeout",
+  "timed out",
+  "internal server error",
+  "erro interno",
+  "janela de manutencao",
+  "janela de manutenção",
+] as const;
+
+/**
+ * Keywords para inelegibilidade do convênio
+ */
+const CONVENIO_INELEGIVEL_KEYWORDS = [
+  "cbo bloqueado",
+  "ocupacao bloqueada",
+  "ocupação bloqueada",
+  "empresa nao atende",
+  "empresa não atende",
+  "requisitos minimos",
+  "requisitos mínimos",
+  "data minima de atividade",
+  "data mínima de atividade",
+  "tempo de atividade",
+  "porte nao atendido",
+  "porte não atendido",
+  "nao elegivel",
+  "não elegível",
+  "inelegivel",
+  "inelegível",
+] as const;
+
+const normalizeText = (v: string): string => {
+  return v
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+};
+
+const includesAny = (haystack: string, needles: readonly string[]): boolean => {
+  return needles.some((n) => haystack.includes(normalizeText(n)));
+};
+
+const pickFirstNumber = (...values: Array<unknown>): number | null => {
+  for (const v of values) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === "number" && !Number.isNaN(v)) return v;
+    if (typeof v === "string") {
+      const trimmed = v.trim();
+      if (!/\d/.test(trimmed)) continue;
+      const cleaned = trimmed.replace(/[^\d.,-]/g, "").replace(",", ".");
+      const parsed = parseFloat(cleaned);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+  }
+  return null;
+};
+
+/**
+ * Extrai valorMargemDisponivel do retorno_margem
+ * 
+ * IMPORTANTE: Só extrai do retorno_margem, não de outros campos.
+ * A classificação de margem reprovada só faz sentido quando o erro
+ * ocorre na etapa de margem.
+ */
+const extrairValorMargemDisponivelDoLead = (lead: LeadData): {
+  valorMargemDisponivel: number | null;
+  valorMinimoProduto: number | null;
+  criterios: string[];
+} => {
+  const criterios: string[] = [];
+  
+  const margemRaw = lead.retorno_margem;
+  if (!margemRaw) {
+    criterios.push("retorno_margem_ausente");
+    return { valorMargemDisponivel: null, valorMinimoProduto: null, criterios };
+  }
+  
+  const margem = Array.isArray(margemRaw) 
+    ? (margemRaw[0] as Record<string, unknown> | null) 
+    : (isRecord(margemRaw) ? (margemRaw as Record<string, unknown>) : null);
+  
+  if (!margem || Object.keys(margem).length === 0) {
+    criterios.push("retorno_margem_vazio");
+    return { valorMargemDisponivel: null, valorMinimoProduto: null, criterios };
+  }
+  
+  // Tentar extrair valorMargemDisponivel de múltiplos caminhos
+  
+  // Caminho 1: Campo direto
+  let valorMargemDisponivel = pickFirstNumber(
+    margem["valorMargemDisponivel"],
+    margem["valor_margem_disponivel"],
+    margem["margemDisponivel"],
+    margem["margem_disponivel"],
+    margem["valorMargem"],
+    margem["valor_margem"]
+  );
+  
+  // Caminho 2: Em registroEmpregaticio
+  if (valorMargemDisponivel === null && isRecord(margem["registroEmpregaticio"])) {
+    const reg = margem["registroEmpregaticio"] as Record<string, unknown>;
+    valorMargemDisponivel = pickFirstNumber(reg["valorMargemDisponivel"]);
+    if (valorMargemDisponivel !== null) criterios.push("margem_de_registroEmpregaticio");
+  }
+  
+  // Caminho 3: Em details
+  if (valorMargemDisponivel === null && isRecord(margem["details"])) {
+    const details = margem["details"] as Record<string, unknown>;
+    valorMargemDisponivel = pickFirstNumber(
+      details["valorMargemDisponivel"],
+      details["valorMargem"]
+    );
+    if (valorMargemDisponivel !== null) criterios.push("margem_de_details");
+  }
+  
+  // Caminho 4: Em details.dataprevValidationResponses[].employeeRelationShip.valorMargemDisponivel
+  if (valorMargemDisponivel === null && isRecord(margem["details"])) {
+    const details = margem["details"] as Record<string, unknown>;
+    const dataprevResponses = details["dataprevValidationResponses"];
+    if (Array.isArray(dataprevResponses)) {
+      for (const response of dataprevResponses) {
+        if (!isRecord(response)) continue;
+        const employee = (response as Record<string, unknown>)["employeeRelationShip"];
+        if (!isRecord(employee)) continue;
+        const valor = pickFirstNumber((employee as Record<string, unknown>)["valorMargemDisponivel"]);
+        if (valor !== null) {
+          valorMargemDisponivel = valor;
+          criterios.push("margem_de_dataprevValidationResponses");
+          break;
+        }
+      }
+    }
+  }
+  
+  // Caminho 5: Em result[0]
+  if (valorMargemDisponivel === null && Array.isArray(margem["result"]) && margem["result"].length > 0) {
+    const first = margem["result"][0];
+    if (isRecord(first)) {
+      valorMargemDisponivel = pickFirstNumber((first as Record<string, unknown>)["valorMargemDisponivel"]);
+      if (valorMargemDisponivel !== null) criterios.push("margem_de_result");
+    }
+  }
+  
+  // Caminho 6: Extrair do campo error se contém JSON embutido
+  if (valorMargemDisponivel === null && typeof margem["error"] === "string") {
+    const errorStr = margem["error"] as string;
+    const match = errorStr.match(/Response completo:\s*(\{[\s\S]*\})/);
+    if (match?.[1]) {
+      try {
+        const cleanJson = match[1].replace(/\\n/g, "").replace(/\\t/g, "").replace(/\\"/g, '"');
+        const parsed = JSON.parse(cleanJson) as Record<string, unknown>;
+        if (isRecord(parsed["details"])) {
+          const details = parsed["details"] as Record<string, unknown>;
+          const dataprevResponses = details["dataprevValidationResponses"];
+          if (Array.isArray(dataprevResponses)) {
+            for (const response of dataprevResponses) {
+              if (!isRecord(response)) continue;
+              const employee = (response as Record<string, unknown>)["employeeRelationShip"];
+              if (!isRecord(employee)) continue;
+              const valor = pickFirstNumber((employee as Record<string, unknown>)["valorMargemDisponivel"]);
+              if (valor !== null) {
+                valorMargemDisponivel = valor;
+                criterios.push("margem_de_error_json_dataprev");
+                break;
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignorar erro de parse
+      }
+    }
+  }
+  
+  if (valorMargemDisponivel !== null) {
+    criterios.push("valorMargemDisponivel_encontrado");
+  } else {
+    criterios.push("valorMargemDisponivel_nao_encontrado");
+  }
+  
+  // Extrair valor mínimo do produto
+  const valorMinimoProduto = pickFirstNumber(
+    margem["valorMinimoProduto"],
+    margem["valor_minimo_produto"],
+    margem["minimoProduto"],
+    margem["minimumProductValue"],
+    margem["minValue"],
+    isRecord(margem["details"]) ? (margem["details"] as Record<string, unknown>)["valorMinimoProduto"] : null
+  );
+  
+  return { valorMargemDisponivel, valorMinimoProduto, criterios };
+};
+
+/**
+ * Extrai parcela solicitada do retorno_simulacao
+ */
+const extrairParcelaSolicitadaDoLead = (lead: LeadData): {
+  parcelaSolicitada: number | null;
+  criterios: string[];
+} => {
+  const criterios: string[] = [];
+  
+  const simulacaoRaw = lead.retorno_simulacao;
+  if (!simulacaoRaw) {
+    criterios.push("retorno_simulacao_ausente");
+    return { parcelaSolicitada: null, criterios };
+  }
+  
+  const simulacao = Array.isArray(simulacaoRaw) 
+    ? (simulacaoRaw[0] as Record<string, unknown> | null) 
+    : (isRecord(simulacaoRaw) ? (simulacaoRaw as Record<string, unknown>) : null);
+  
+  if (!simulacao) {
+    criterios.push("retorno_simulacao_invalido");
+    return { parcelaSolicitada: null, criterios };
+  }
+  
+  const parcelaSolicitada = pickFirstNumber(
+    simulacao["parcela_solicitada"],
+    simulacao["parcelaSolicitada"],
+    simulacao["valorParcelaSolicitada"],
+    simulacao["valor_parcela_solicitada"],
+    simulacao["installmentValue"],
+    simulacao["installmentAmount"],
+    simulacao["paymentValue"],
+    simulacao["valuePerInstallment"],
+    simulacao["valorPrestacao"],
+    simulacao["valor_prestacao"],
+    simulacao["valorParcela"],
+    simulacao["valor_parcela"]
+  );
+  
+  if (parcelaSolicitada !== null) {
+    criterios.push("parcelaSolicitada_encontrada");
+  } else {
+    criterios.push("parcelaSolicitada_nao_encontrada");
+  }
+  
+  return { parcelaSolicitada, criterios };
+};
+
+/**
+ * FUNÇÃO PRINCIPAL: Classifica se um lead foi reprovado por margem
+ * 
+ * REGRA CORRIGIDA E RIGOROSA:
+ * Um lead é classificado como "margem reprovada" APENAS quando:
+ * 1. O retorno_margem indica ERRO/FALHA (não sucesso)
+ * 2. E o erro é devido a margem zerada, negativa ou insuficiente
+ * 
+ * NÃO classificar como margem reprovada quando:
+ * - Não há retorno_margem preenchido
+ * - O retorno_margem indica SUCESSO (status = success/ok/approved)
+ * - O erro é técnico (timeout, rate limit, etc)
+ * - O erro é de inelegibilidade do convênio (CBO bloqueado, etc)
+ * - A margem está OK (valor positivo e suficiente)
+ * - A reprovação ocorreu em outra etapa (simulação, proposta, etc)
+ */
+export const classificarMargemReprovada = (lead: LeadData): MargemReprovacaoInfo => {
+  const criterios: string[] = [];
+  
+  // 1. Verificar se o lead tem retorno_margem
+  const margemRaw = lead.retorno_margem;
+  if (!margemRaw) {
+    criterios.push("sem_retorno_margem");
+    return {
+      isMargemReprovada: false,
+      tipo_reprovacao: "nao_aplicavel",
+      erro_etapa: null,
+      erro_code: null,
+      erro_motivo: null,
+      valorMargemDisponivel: null,
+      valorMinimoProduto: null,
+      parcelaSolicitada: null,
+      limiar: null,
+      criterios,
+    };
+  }
+  
+  // 2. Parsear o retorno_margem
+  const margem = Array.isArray(margemRaw) 
+    ? (margemRaw[0] as Record<string, unknown> | null) 
+    : (isRecord(margemRaw) ? (margemRaw as Record<string, unknown>) : null);
+  
+  if (!margem || Object.keys(margem).length === 0) {
+    criterios.push("retorno_margem_vazio");
+    return {
+      isMargemReprovada: false,
+      tipo_reprovacao: "nao_aplicavel",
+      erro_etapa: null,
+      erro_code: null,
+      erro_motivo: null,
+      valorMargemDisponivel: null,
+      valorMinimoProduto: null,
+      parcelaSolicitada: null,
+      limiar: null,
+      criterios,
+    };
+  }
+  
+  // 3. VERIFICAR SE O RETORNO_MARGEM INDICA SUCESSO
+  // Se o status é success/ok/approved, a consulta de margem foi bem sucedida
+  // e a reprovação do lead deve ter ocorrido em outra etapa
+  const statusMargem = typeof margem["status"] === "string" ? margem["status"].toLowerCase().trim() : null;
+  const isMargemSucesso = statusMargem && ["success", "ok", "approved", "existing_authorization"].includes(statusMargem);
+  
+  if (isMargemSucesso) {
+    // Margem foi consultada com sucesso - a reprovação não foi por margem
+    criterios.push("retorno_margem_sucesso");
+    
+    // Extrair valor da margem para referência
+    const numeric = extrairValorMargemDisponivelDoLead(lead);
+    
+    return {
+      isMargemReprovada: false,
+      tipo_reprovacao: "nao_aplicavel",
+      erro_etapa: null,
+      erro_code: null,
+      erro_motivo: null,
+      valorMargemDisponivel: numeric.valorMargemDisponivel,
+      valorMinimoProduto: numeric.valorMinimoProduto,
+      parcelaSolicitada: null,
+      limiar: null,
+      criterios,
+    };
+  }
+  
+  // 4. Verificar se há erro explícito no retorno_margem
+  const erroMargem = typeof margem["error"] === "string" ? margem["error"] : 
+                     typeof margem["erro"] === "string" ? margem["erro"] :
+                     typeof margem["message"] === "string" && !isMargemSucesso ? margem["message"] : null;
+  const motivoNorm = normalizeText((erroMargem as string) ?? "");
+  
+  // Se não tem status de sucesso E não tem erro explícito, verificar se há algum indicador de falha
+  const hasError = erroMargem !== null || 
+                   margem["error"] !== undefined || 
+                   margem["erro"] !== undefined ||
+                   (statusMargem && !isMargemSucesso);
+  
+  if (!hasError) {
+    // Retorno_margem existe mas não indica erro explícito - pode ser sucesso implícito
+    criterios.push("retorno_margem_sem_erro_explicito");
+    
+    // Extrair valor da margem
+    const numeric = extrairValorMargemDisponivelDoLead(lead);
+    
+    // Se tem valor de margem positivo, provavelmente foi sucesso
+    if (numeric.valorMargemDisponivel !== null && numeric.valorMargemDisponivel > 0) {
+      criterios.push("margem_positiva_sem_erro");
+      return {
+        isMargemReprovada: false,
+        tipo_reprovacao: "nao_aplicavel",
+        erro_etapa: null,
+        erro_code: null,
+        erro_motivo: null,
+        valorMargemDisponivel: numeric.valorMargemDisponivel,
+        valorMinimoProduto: numeric.valorMinimoProduto,
+        parcelaSolicitada: null,
+        limiar: null,
+        criterios,
+      };
+    }
+  }
+  
+  // 5. Verificar se é erro técnico (não classificar como margem)
+  if (erroMargem && includesAny(motivoNorm, NAO_CLASSIFICAR_MARGEM_KEYWORDS)) {
+    criterios.push("erro_tecnico_no_retorno_margem");
+    return {
+      isMargemReprovada: false,
+      tipo_reprovacao: "nao_aplicavel",
+      erro_etapa: "retorno_margem",
+      erro_code: null,
+      erro_motivo: erroMargem as string,
+      valorMargemDisponivel: null,
+      valorMinimoProduto: null,
+      parcelaSolicitada: null,
+      limiar: null,
+      criterios,
+    };
+  }
+  
+  // 6. Verificar se é inelegibilidade do convênio (CBO bloqueado, etc)
+  if (erroMargem && (includesAny(motivoNorm, CONVENIO_INELEGIVEL_KEYWORDS) || isBloqueioNegocio(motivoNorm))) {
+    criterios.push("inelegibilidade_convenio_no_retorno_margem");
+    return {
+      isMargemReprovada: false,
+      tipo_reprovacao: "inelegibilidade_convenio",
+      erro_etapa: "retorno_margem",
+      erro_code: null,
+      erro_motivo: erroMargem as string,
+      valorMargemDisponivel: null,
+      valorMinimoProduto: null,
+      parcelaSolicitada: null,
+      limiar: null,
+      criterios,
+    };
+  }
+  
+  // 7. Extrair valor da margem disponível
+  const numeric = extrairValorMargemDisponivelDoLead(lead);
+  criterios.push(...numeric.criterios);
+  
+  const valorMargemDisponivel = numeric.valorMargemDisponivel;
+  const valorMinimoProduto = numeric.valorMinimoProduto;
+  
+  // 8. Classificar por valor da margem APENAS se há indicação de erro
+  
+  // Margem negativa
+  if (valorMargemDisponivel !== null && valorMargemDisponivel < 0) {
+    criterios.push("margem_negativa");
+    return {
+      isMargemReprovada: true,
+      tipo_reprovacao: "margem_negativa",
+      erro_etapa: "retorno_margem",
+      erro_code: null,
+      erro_motivo: erroMargem as string | null,
+      valorMargemDisponivel,
+      valorMinimoProduto,
+      parcelaSolicitada: null,
+      limiar: null,
+      criterios,
+    };
+  }
+  
+  // Margem zerada
+  if (valorMargemDisponivel !== null && valorMargemDisponivel === 0) {
+    criterios.push("margem_zerada");
+    return {
+      isMargemReprovada: true,
+      tipo_reprovacao: "margem_zerada",
+      erro_etapa: "retorno_margem",
+      erro_code: null,
+      erro_motivo: erroMargem as string | null,
+      valorMargemDisponivel,
+      valorMinimoProduto,
+      parcelaSolicitada: null,
+      limiar: null,
+      criterios,
+    };
+  }
+  
+  // 9. Verificar margem insuficiente (abaixo do limiar)
+  const parcelaInfo = extrairParcelaSolicitadaDoLead(lead);
+  criterios.push(...parcelaInfo.criterios);
+  
+  const parcelaSolicitada = parcelaInfo.parcelaSolicitada;
+  const limiar = Math.max(100, parcelaSolicitada ?? 0, valorMinimoProduto ?? 0);
+  
+  if (valorMargemDisponivel !== null && valorMargemDisponivel > 0 && valorMargemDisponivel < limiar) {
+    criterios.push("margem_insuficiente");
+    return {
+      isMargemReprovada: true,
+      tipo_reprovacao: "margem_insuficiente",
+      erro_etapa: "retorno_margem",
+      erro_code: null,
+      erro_motivo: erroMargem as string | null,
+      valorMargemDisponivel,
+      valorMinimoProduto,
+      parcelaSolicitada,
+      limiar,
+      criterios,
+    };
+  }
+  
+  // 10. Se o erro menciona margem explicitamente mas não conseguiu extrair valor
+  if (erroMargem && (
+    motivoNorm.includes("margem") ||
+    motivoNorm.includes("margin") ||
+    motivoNorm.includes("sem margem") ||
+    motivoNorm.includes("margem indisponivel") ||
+    motivoNorm.includes("margem zerada")
+  )) {
+    criterios.push("erro_explicito_de_margem_sem_valor");
+    return {
+      isMargemReprovada: true,
+      tipo_reprovacao: "margem_zerada",
+      erro_etapa: "retorno_margem",
+      erro_code: null,
+      erro_motivo: erroMargem as string,
+      valorMargemDisponivel: 0,
+      valorMinimoProduto,
+      parcelaSolicitada: null,
+      limiar: null,
+      criterios,
+    };
+  }
+  
+  // 11. Margem OK ou não é reprovação por margem
+  criterios.push("nao_e_reprovacao_por_margem");
+  return {
+    isMargemReprovada: false,
+    tipo_reprovacao: "nao_aplicavel",
+    erro_etapa: null,
+    erro_code: null,
+    erro_motivo: null,
+    valorMargemDisponivel,
+    valorMinimoProduto,
+    parcelaSolicitada,
+    limiar,
+    criterios,
+  };
+};
+
+/**
+ * Extrai o valor da margem disponível de um lead
+ */
+export const extrairValorMargemDisponivelLead = (lead: LeadData): number | null => {
+  return extrairValorMargemDisponivelDoLead(lead).valorMargemDisponivel;
+};
+
+/**
+ * Extrai o motivo da reprovação técnica
+ */
+export const extrairMotivoReprovacaoTecnica = (lead: LeadData): string | null => {
+  const messageError = extrairMessageError(lead.retorno_margem);
+  if (messageError) return messageError;
+
+  const funilErro = extrairErroFunil(lead);
+  if (funilErro?.erro_motivo) return funilErro.erro_motivo;
+  if (funilErro?.erro_code) return funilErro.erro_code;
+
+  return null;
+};
+
+/**
+ * Extrai o motivo do erro/reprovação de um lead
+ */
+export const extrairMotivoErro = (lead: LeadData): string | null => {
+  const funilErro = extrairErroFunil(lead);
+  if (funilErro?.erro_motivo) return funilErro.erro_motivo;
+  if (funilErro?.erro_code) return funilErro.erro_code;
+
+  if (extrairValorMargem(lead) === 0 && hasStatusSuccess(lead)) {
+    return "Margem indisponível ou zerada";
+  }
+
+  return null;
+};
+
+/**
+ * =====================================================
+ * EXTRAÇÃO DE DADOS DO TRABALHADOR DO RETORNO_MARGEM
+ * =====================================================
+ * Extrai CBO, CNAE, Nome e Empregador de múltiplas fontes:
+ * 1. result[0] - quando consulta retorna OK
+ * 2. dataprevValidationResponses[].employeeRelationShip - dentro de erros
+ * 3. Mensagens de erro (CBO bloqueado: XXXXXX - DESCRICAO)
+ */
+
+
+
+/**
+ * Interface para dados do trabalhador extraídos do retorno_margem
+ */
+export interface DadosTrabalhador {
+  nome: string | null;
+  cboCodigo: string | null;
+  cboDescricao: string | null;
+  cnaeCodigo: string | null;
+  cnaeDescricao: string | null;
+  empregador: string | null;
+  fonte: 'result' | 'employeeRelationShip' | 'erro_cbo_bloqueado' | null;
+}
+
+/**
+ * Extrai dados do trabalhador (CBO, CNAE, Nome, Empregador) do retorno_margem
+ * Busca em múltiplos caminhos:
+ * 1. result[0] (quando consulta ok)
+ * 2. dataprevValidationResponses[0].employeeRelationShip (dentro de erros)
+ * 3. Mensagem de erro "CBO bloqueado: XXXXXX - DESCRICAO"
+ */
+export const extrairDadosTrabalhador = (lead: LeadData): DadosTrabalhador => {
+  const resultado: DadosTrabalhador = {
+    nome: null,
+    cboCodigo: null,
+    cboDescricao: null,
+    cnaeCodigo: null,
+    cnaeDescricao: null,
+    empregador: null,
+    fonte: null
+  };
+
+  const margemRaw = lead.retorno_margem;
+  if (!margemRaw) return resultado;
+
+  // Converter para string para busca com regex
+  const textoOriginal = typeof margemRaw === 'string' ? margemRaw : JSON.stringify(margemRaw);
+  
+  // Limpar escapes para facilitar busca
+  const texto = textoOriginal.replace(/\\n/g, ' ').replace(/\\t/g, ' ').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+
+  // ============================================
+  // EXTRAIR CBO (código de 6 dígitos)
+  // ============================================
+  
+  // Padrão 1: "cbo": { "codigo": 123456, "descricao": "..."
+  const cboMatch = texto.match(/"cbo"\s*:\s*\{\s*"codigo"\s*:\s*(\d{6})\s*,\s*"descricao"\s*:\s*"([^"]+)"/);
+  if (cboMatch) {
+    resultado.cboCodigo = cboMatch[1];
+    resultado.cboDescricao = cboMatch[2];
+    resultado.fonte = 'result';
+  }
+  
+  // Padrão 2: CBO bloqueado: 123456 - DESCRICAO (em mensagens de erro)
+  if (!resultado.cboCodigo) {
+    const cboBloq = textoOriginal.match(/CBO bloqueado[:\s]+(\d{6})\s*[-–]\s*([^,\.\n"\\]+)/i);
+    if (cboBloq) {
+      resultado.cboCodigo = cboBloq[1];
+      resultado.cboDescricao = cboBloq[2].trim();
+      resultado.fonte = 'erro_cbo_bloqueado';
+    }
+  }
+
+  // ============================================
+  // EXTRAIR CNAE (código de 7 dígitos)
+  // ============================================
+  
+  const cnaeMatch = texto.match(/"cnae"\s*:\s*\{\s*"codigo"\s*:\s*(\d{7})\s*,\s*"descricao"\s*:\s*"([^"]+)"/);
+  if (cnaeMatch) {
+    resultado.cnaeCodigo = cnaeMatch[1];
+    resultado.cnaeDescricao = cnaeMatch[2];
+  }
+
+  // ============================================
+  // EXTRAIR NOME DO EMPREGADOR
+  // ============================================
+  
+  const empMatch = texto.match(/"nomeEmpregador"\s*:\s*"([^"]+)"/);
+  if (empMatch) {
+    resultado.empregador = empMatch[1];
+  }
+
+  // ============================================
+  // EXTRAIR NOME DO CLIENTE
+  // ============================================
+  
+  // O nome do cliente vem em "nome": "..." (em maiúsculas, com espaços)
+  const nomeMatch = texto.match(/"nome"\s*:\s*"([A-Z][A-Z\s]+)"/);
+  if (nomeMatch) {
+    const nome = nomeMatch[1];
+    // Verificar se é um nome válido (mais de uma palavra)
+    if (nome.length > 5 && nome.includes(' ')) {
+      resultado.nome = nome;
+    }
+  }
+
+  // Se encontrou dados do employeeRelationShip, atualizar a fonte
+  if (resultado.cboCodigo && texto.includes('employeeRelationShip') && resultado.fonte !== 'erro_cbo_bloqueado') {
+    resultado.fonte = 'employeeRelationShip';
+  }
+
+  return resultado;
+};
+
+/**
+ * Extrai apenas o código CBO do lead (conveniente para exibição em tabelas)
+ */
+export const extrairCBOCodigo = (lead: LeadData): string | null => {
+  const dados = extrairDadosTrabalhador(lead);
+  return dados.cboCodigo;
+};
+
+/**
+ * Extrai CBO completo (código - descrição) do lead
+ */
+export const extrairCBOCompleto = (lead: LeadData): string | null => {
+  const dados = extrairDadosTrabalhador(lead);
+  if (!dados.cboCodigo) return null;
+  if (!dados.cboDescricao) return dados.cboCodigo;
+  return `${dados.cboCodigo} - ${dados.cboDescricao}`;
+};
+
+/**
+ * Extrai nome do empregador do lead
+ */
+export const extrairEmpregador = (lead: LeadData): string | null => {
+  const dados = extrairDadosTrabalhador(lead);
+  return dados.empregador;
+};
+
+/**
+ * Extrai CNAE completo (código - descrição) do lead
+ */
+export const extrairCNAECompleto = (lead: LeadData): string | null => {
+  const dados = extrairDadosTrabalhador(lead);
+  if (!dados.cnaeCodigo) return null;
+  if (!dados.cnaeDescricao) return dados.cnaeCodigo;
+  return `${dados.cnaeCodigo} - ${dados.cnaeDescricao}`;
 };
 
 /**

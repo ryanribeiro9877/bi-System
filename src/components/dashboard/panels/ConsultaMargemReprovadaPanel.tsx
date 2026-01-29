@@ -636,98 +636,87 @@ const ConsultaMargemReprovadaPanel = () => {
                   </div>
                 </div>
 
-                {/* Motivo do Erro - Extraído dos dados reais */}
+                {/* Motivo da Reprovação - Apenas valor da margem */}
                 {(() => {
-                  const margem = selectedLead.retorno_margem as Record<string, unknown> | null;
-                  const simulacao = selectedLead.retorno_simulacao as Record<string, unknown> | null;
+                  const valorMargem = extrairValorMargemLead(selectedLead);
+                  const tipoMargem = selectedLead.tipo_reprovacao_classificado;
                   
-                  // Extrair motivos de erro dos dados reais
-                  const motivos: { campo: string; valor: string }[] = [];
+                  // Determinar cor e descrição baseado no tipo/valor
+                  let corFundo = "bg-yellow-500/10 border-yellow-500/30";
+                  let corTexto = "text-yellow-500";
+                  let descricaoTipo = "Margem baixa";
                   
-                  // Verificar retorno_margem
-                  if (margem) {
-                    if (margem.error) motivos.push({ campo: 'Erro de Margem', valor: String(margem.error) });
-                    if (margem.motivo) motivos.push({ campo: 'Motivo', valor: String(margem.motivo) });
-                    if (margem.message) motivos.push({ campo: 'Mensagem', valor: String(margem.message) });
-                    if (margem.statusDescription) motivos.push({ campo: 'Descrição do Status', valor: String(margem.statusDescription) });
-                    if (margem.descricao) motivos.push({ campo: 'Descrição', valor: String(margem.descricao) });
-                    if (typeof margem.valorMargemDisponivel !== 'undefined') {
-                      motivos.push({ campo: 'Margem Disponível', valor: formatCurrency(Number(margem.valorMargemDisponivel)) });
-                    }
-                    if (typeof margem.valorMargemBase !== 'undefined') {
-                      motivos.push({ campo: 'Margem Base', valor: formatCurrency(Number(margem.valorMargemBase)) });
-                    }
+                  if (tipoMargem === "margem_zerada" || valorMargem === 0) {
+                    corFundo = "bg-orange-500/10 border-orange-500/30";
+                    corTexto = "text-orange-500";
+                    descricaoTipo = "Margem zerada";
+                  } else if (tipoMargem === "margem_negativa" || valorMargem < 0) {
+                    corFundo = "bg-red-500/10 border-red-500/30";
+                    corTexto = "text-red-500";
+                    descricaoTipo = "Margem negativa";
                   }
                   
-                  // Verificar retorno_simulacao
-                  if (simulacao) {
-                    if (simulacao.error) motivos.push({ campo: 'Erro de Simulação', valor: String(simulacao.error) });
-                    if (simulacao.motivo) motivos.push({ campo: 'Motivo Simulação', valor: String(simulacao.motivo) });
-                    if (simulacao.message) motivos.push({ campo: 'Mensagem Simulação', valor: String(simulacao.message) });
-                    const details = simulacao.details as Record<string, unknown> | undefined;
-                    if (details?.error) motivos.push({ campo: 'Detalhe do Erro', valor: String(details.error) });
-                    if (details?.description) motivos.push({ campo: 'Descrição do Erro', valor: String(details.description) });
-                  }
-                  
-                  if (motivos.length > 0) {
-                    return (
-                      <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30">
-                        <h4 className="font-medium text-red-400 mb-3 flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4" />
-                          Motivo da Reprovação
-                        </h4>
-                        <div className="space-y-2">
-                          {motivos.map((m, idx) => (
-                            <div key={idx} className="text-sm">
-                              <span className="text-muted-foreground">{m.campo}:</span>
-                              <span className="ml-2 text-foreground">{m.valor}</span>
-                            </div>
-                          ))}
-                        </div>
+                  return (
+                    <div className={`p-6 rounded-lg border ${corFundo}`}>
+                      <h4 className={`font-medium ${corTexto} mb-4 flex items-center gap-2 justify-center`}>
+                        <AlertTriangle className="w-5 h-5" />
+                        Motivo da Reprovação: {descricaoTipo}
+                      </h4>
+                      <div className="text-center">
+                        <p className="text-sm text-muted-foreground mb-2">Valor da Margem Disponível</p>
+                        <p className={`text-5xl font-bold ${corTexto}`}>
+                          {formatCurrency(valorMargem)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-3">
+                          {valorMargem < 0 
+                            ? "Cliente possui margem negativa, impossibilitando a contratação"
+                            : valorMargem === 0 
+                            ? "Cliente não possui margem disponível para contratação"
+                            : "Cliente possui margem insuficiente para o valor solicitado"}
+                        </p>
                       </div>
-                    );
-                  }
-                  return null;
+                    </div>
+                  );
                 })()}
 
-                {/* Dados de Margem */}
+                {/* Informações Adicionais de Margem (sem JSON) */}
                 {selectedLead.retorno_margem && (
                   <div className="p-4 rounded-lg bg-muted/30 border border-border">
-                    <h4 className="font-medium text-foreground mb-2">Dados de Margem</h4>
-                    <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                    <h4 className="font-medium text-foreground mb-3">Informações Adicionais</h4>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
                       {(() => {
                         const m = selectedLead.retorno_margem as Record<string, unknown>;
                         const campos: { label: string; valor: string }[] = [];
                         
-                        if (typeof m.valorMargemDisponivel !== 'undefined') campos.push({ label: 'Margem Disponível', valor: formatCurrency(Number(m.valorMargemDisponivel)) });
                         if (typeof m.valorMargemBase !== 'undefined') campos.push({ label: 'Margem Base', valor: formatCurrency(Number(m.valorMargemBase)) });
-                        if (typeof m.margemDisponivel !== 'undefined') campos.push({ label: 'Margem', valor: formatCurrency(Number(m.margemDisponivel)) });
+                        if (typeof m.margemDisponivel !== 'undefined' && m.margemDisponivel !== m.valorMargemDisponivel) {
+                          campos.push({ label: 'Margem', valor: formatCurrency(Number(m.margemDisponivel)) });
+                        }
                         if (m.status) campos.push({ label: 'Status', valor: String(m.status) });
                         if (m.matricula) campos.push({ label: 'Matrícula', valor: String(m.matricula) });
                         if (m.convenio) campos.push({ label: 'Convênio', valor: String(m.convenio) });
+                        if (m.empregador) campos.push({ label: 'Empregador', valor: String(m.empregador) });
+                        
+                        if (campos.length === 0) {
+                          return <p className="text-muted-foreground col-span-2">Nenhuma informação adicional disponível</p>;
+                        }
                         
                         return campos.map((c, idx) => (
-                          <div key={idx}>
-                            <span className="text-muted-foreground">{c.label}:</span>
-                            <span className="ml-2 text-foreground">{c.valor}</span>
+                          <div key={idx} className="flex justify-between items-center p-2 rounded bg-background/50">
+                            <span className="text-muted-foreground">{c.label}</span>
+                            <span className="text-foreground font-medium">{c.valor}</span>
                           </div>
                         ));
                       })()}
                     </div>
-                    <details className="text-xs">
-                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Ver dados completos</summary>
-                      <pre className="text-xs text-muted-foreground overflow-auto max-h-[150px] bg-background p-2 rounded mt-2">
-                        {JSON.stringify(selectedLead.retorno_margem, null, 2)}
-                      </pre>
-                    </details>
                   </div>
                 )}
 
-                {/* Dados de Simulação */}
+                {/* Dados de Simulação (sem JSON) */}
                 {selectedLead.retorno_simulacao && (
                   <div className="p-4 rounded-lg bg-muted/30 border border-border">
-                    <h4 className="font-medium text-foreground mb-2">Dados de Simulação</h4>
-                    <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                    <h4 className="font-medium text-foreground mb-3">Dados de Simulação</h4>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
                       {(() => {
                         const s = selectedLead.retorno_simulacao as Record<string, unknown>;
                         const campos: { label: string; valor: string }[] = [];
@@ -739,20 +728,18 @@ const ConsultaMargemReprovadaPanel = () => {
                         if (s.numberOfPayments) campos.push({ label: 'Parcelas', valor: String(s.numberOfPayments) });
                         if (s.productName) campos.push({ label: 'Produto', valor: String(s.productName) });
                         
+                        if (campos.length === 0) {
+                          return <p className="text-muted-foreground col-span-2">Nenhum dado de simulação disponível</p>;
+                        }
+                        
                         return campos.map((c, idx) => (
-                          <div key={idx}>
-                            <span className="text-muted-foreground">{c.label}:</span>
-                            <span className="ml-2 text-foreground">{c.valor}</span>
+                          <div key={idx} className="flex justify-between items-center p-2 rounded bg-background/50">
+                            <span className="text-muted-foreground">{c.label}</span>
+                            <span className="text-foreground font-medium">{c.valor}</span>
                           </div>
                         ));
                       })()}
                     </div>
-                    <details className="text-xs">
-                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Ver dados completos</summary>
-                      <pre className="text-xs text-muted-foreground overflow-auto max-h-[150px] bg-background p-2 rounded mt-2">
-                        {JSON.stringify(selectedLead.retorno_simulacao, null, 2)}
-                      </pre>
-                    </details>
                   </div>
                 )}
               </div>

@@ -2,8 +2,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Lead } from "@/hooks/useLeadsData";
-import { FileText, CheckCircle, Clock, User, CreditCard, FileJson, AlertTriangle } from "lucide-react";
-import { normalizarStatusLead, extrairMotivoErro, extrairMotivoReprovacaoTecnica } from "@/lib/leadStatusUtils";
+import { FileText, CheckCircle, Clock, User, CreditCard, FileJson, AlertTriangle, Building2 } from "lucide-react";
+import { normalizarStatusLead, extrairMotivoErro, extrairMotivoReprovacaoTecnica, extrairDadosTrabalhador, extrairCBOCompleto, extrairEmpregador, extrairCNAECompleto } from "@/lib/leadStatusUtils";
 
 interface LeadDetailDialogProps {
   lead: Lead | null;
@@ -67,34 +67,23 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
     const leadAny = l as unknown as Record<string, unknown>;
     const manualStatus = leadAny.pagamento_status as string | null;
 
+    // Se tem descrição manual, usar ela
     if (manualStatus === "aguardando") {
       const motivoManual = leadAny.pagamento_descricao as string | null;
-      const sanitizedManual = sanitizeMotivo(motivoManual);
-      if (sanitizedManual) {
-        const normalized = sanitizedManual
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .toLowerCase()
-          .trim();
-        if (normalized.includes("assinatura")) return "Assinatura pendente";
+      if (motivoManual && motivoManual.trim()) {
+        return motivoManual.trim();
       }
     }
 
+    // Usar statusDescription do retorno_get_proposta
     const obj = l.retorno_get_proposta as unknown;
-    const statusRaw =
-      obj && typeof obj === "object" && typeof (obj as Record<string, unknown>).status === "string"
-        ? ((obj as Record<string, unknown>).status as string)
-        : null;
+    if (obj && typeof obj === "object") {
+      const statusDescription = (obj as Record<string, unknown>).statusDescription;
+      if (typeof statusDescription === "string" && statusDescription.trim()) {
+        return statusDescription.trim();
+      }
+    }
 
-    if (!statusRaw) return "Pendente";
-
-    const normalized = statusRaw
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .trim();
-
-    if (normalized.includes("assinatura")) return "Assinatura pendente";
     return "Pendente";
   };
 
@@ -236,12 +225,29 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">CBO</p>
-                <p className="text-foreground truncate">{lead.cbo || "-"}</p>
+                <p className="text-foreground truncate" title={extrairCBOCompleto(lead) || undefined}>
+                  {extrairCBOCompleto(lead) || lead.cbo || "-"}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Valor</p>
                 <p className="text-foreground">
                   {valor > 0 ? `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">CNAE</p>
+                <p className="text-foreground truncate" title={extrairCNAECompleto(lead) || undefined}>
+                  {extrairCNAECompleto(lead) || "-"}
+                </p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                  <Building2 className="w-3 h-3" />
+                  Empregador
+                </p>
+                <p className="text-foreground truncate" title={extrairEmpregador(lead) || undefined}>
+                  {extrairEmpregador(lead) || "-"}
                 </p>
               </div>
               <div>
