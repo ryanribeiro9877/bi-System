@@ -143,20 +143,111 @@ const ResultadosConsultasPanel = () => {
 
   // Função para contar erros de um lead (verifica múltiplas etapas)
   const contarErrosLead = (lead: LeadPorErro): number => {
-    let count = 0;
-    const checkError = (retorno: unknown): boolean => {
-      if (!retorno) return false;
-      const str = typeof retorno === 'string' ? retorno : JSON.stringify(retorno);
-      const lower = str.toLowerCase();
-      return lower.includes('error') || lower.includes('erro') || 
-             lower.includes('400') || lower.includes('429') ||
-             lower.includes('failed') || lower.includes('invalid');
+    const mensagens = new Set<string>();
+
+    const parseJsonString = (str: string): unknown => {
+      try {
+        const cleanStr = str.replace(/\\n/g, "").replace(/\\"/g, '"');
+        const jsonMatch = cleanStr.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
+        }
+        return JSON.parse(str);
+      } catch {
+        return null;
+      }
     };
-    if (checkError(lead.retorno_autorizacao)) count++;
-    if (checkError(lead.retorno_margem)) count++;
-    if (checkError(lead.retorno_simulacao)) count++;
-    if (checkError(lead.retorno_proposta)) count++;
-    return count || 1; // Mínimo 1 erro (o tipo_reprovacao)
+
+    const asObject = (retorno: unknown): Record<string, unknown> | null => {
+      if (!retorno) return null;
+      if (typeof retorno === "string") {
+        const parsed = parseJsonString(retorno);
+        return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+      }
+      return typeof retorno === "object" ? (retorno as Record<string, unknown>) : null;
+    };
+
+    const addMensagem = (msg: unknown) => {
+      if (typeof msg !== "string") return;
+      const trimmed = msg.trim();
+      if (!trimmed) return;
+      mensagens.add(trimmed);
+    };
+
+    const addFromDomainValidations = (obj: Record<string, unknown> | null) => {
+      if (!obj) return;
+      const errors = obj.errors as Record<string, unknown> | undefined;
+      const details = obj.details as Record<string, unknown> | undefined;
+      const detailsErrors = (details?.errors as Record<string, unknown> | undefined) ?? undefined;
+      const domainValidations = (errors?.DomainValidations ?? detailsErrors?.DomainValidations) as unknown;
+      if (!Array.isArray(domainValidations)) return;
+      for (const v of domainValidations) {
+        if (typeof v === "string") {
+          addMensagem(v);
+          continue;
+        }
+        if (v && typeof v === "object") {
+          const vv = v as Record<string, unknown>;
+          addMensagem(
+            (vv.Message || vv.message || vv.ErrorMessage || vv.errorMessage || vv.Description || vv.description || vv.Reason || vv.reason) as unknown
+          );
+        }
+      }
+    };
+
+    const addFromDataprevValidation = (obj: Record<string, unknown> | null) => {
+      if (!obj) return;
+      const details = obj.details as Record<string, unknown> | undefined;
+      const responses = details?.dataprevValidationResponses as Array<Record<string, unknown>> | undefined;
+      if (!Array.isArray(responses)) return;
+      for (const r of responses) {
+        const reasons = r.reasonForIneligibility as Array<Record<string, unknown>> | undefined;
+        if (Array.isArray(reasons)) {
+          for (const reason of reasons) {
+            addMensagem((reason.messageError as unknown) ?? (reason.message as unknown) ?? (reason.description as unknown));
+          }
+        }
+        const employeeRelationShip = r.employeeRelationShip as Record<string, unknown> | undefined;
+        const motivoInelegibilidade = employeeRelationShip?.motivoInelegibilidade as Record<string, unknown> | undefined;
+        if (motivoInelegibilidade) {
+          addMensagem(motivoInelegibilidade.descricao as unknown);
+        }
+      }
+    };
+
+    const addFromKnownMessageFields = (obj: Record<string, unknown> | null) => {
+      if (!obj) return;
+      addMensagem(obj.message);
+      addMensagem(obj.erro);
+      addMensagem(obj.error);
+      addMensagem(obj.statusDescription);
+
+      const details = obj.details as Record<string, unknown> | undefined;
+      if (details) {
+        addMensagem(details.reason);
+        addMensagem(details.message);
+        addMensagem(details.error);
+        addMensagem(details.detail);
+      }
+    };
+
+    const processRetorno = (retorno: unknown) => {
+      const obj = asObject(retorno);
+      addFromDomainValidations(obj);
+      addFromDataprevValidation(obj);
+      addFromKnownMessageFields(obj);
+    };
+
+    processRetorno(lead.retorno_autorizacao);
+    processRetorno(lead.retorno_margem);
+    processRetorno(lead.retorno_simulacao);
+    processRetorno(lead.retorno_proposta);
+
+    if (mensagens.size === 0 && lead.tipo_reprovacao) {
+      addMensagem(lead.tipo_reprovacao);
+    }
+
+    return mensagens.size || 1; // Mínimo 1 erro (o tipo_reprovacao)
   };
 
   // Função para extrair motivo resumido
