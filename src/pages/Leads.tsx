@@ -117,43 +117,84 @@ const LeadsContent = () => {
       value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
     
     const sd = normalize(statusDescription);
-    const pagos = ["encerrado", "liquidacao", "liquidacao manual", "pago", "liquidado"];
+    const pagos = [
+      "encerrado", 
+      "liquidacao", 
+      "liquidacao manual", 
+      "pago", 
+      "liquidado",
+      "aprovacao de instrumento",
+      "aprovacao manual",
+      "aprovado"
+    ];
     const reprovadosCancelados = ["cancelada", "cancelado", "reprovado"];
     
-    if (pagos.includes(sd)) return "pago";
-    if (reprovadosCancelados.includes(sd)) return "reprovado_cancelado";
+    if (pagos.some(p => sd.includes(p))) return "pago";
+    if (reprovadosCancelados.some(r => sd.includes(r))) return "reprovado_cancelado";
     return "aguardando";
   };
 
+  // Helper para verificar se lead deve ser considerado aprovado
+  // Considera tanto o status quanto o statusDescription do retorno_get_proposta
+  const isLeadAprovado = useCallback((lead: Lead): boolean => {
+    const status = (lead.status || "").toLowerCase();
+    
+    // Se status é aprovado ou reprovacao_tecnica, é aprovado
+    if (status === "aprovado" || status === "approved" || status === "reprovacao_tecnica") {
+      return true;
+    }
+    
+    // Se tem statusDescription indicando pagamento, também é aprovado
+    const getProposta = lead.retorno_get_proposta as Record<string, unknown> | null;
+    if (getProposta?.statusDescription) {
+      const statusDescription = String(getProposta.statusDescription);
+      const normalized = statusDescription
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
+      
+      const statusPagos = [
+        "encerrado", 
+        "liquidacao", 
+        "liquidacao manual", 
+        "pago", 
+        "liquidado",
+        "aprovacao de instrumento",
+        "aprovacao manual",
+        "aprovado"
+      ];
+      
+      if (statusPagos.some(s => normalized.includes(s))) {
+        return true;
+      }
+    }
+    
+    return false;
+  }, []);
+
   // Calcula estatísticas com nova lógica:
-  // - Total Aprovados = total de leads com status aprovado ou reprovacao_tecnica
+  // - Total Aprovados = leads aprovados OU com statusDescription de pagamento
   // - Margem Média = soma das margens / quantidade de aprovados
-  // - Taxa de Aprovação = (leads aprovados com pagamento pago/aguardando)
+  // - Taxa de Aprovação = (aprovados com pagamento pago/aguardando) / (total de aprovados)
   const statsFiltradas = useMemo(() => {
     const totalLeads = stats.totalLeads;
 
-    // Total Aprovados: considera todos os aprovados (verde) + reprovação técnica
-    const aprovadosParaMargem = allLeads.filter((l) => {
-      const status = (l.status || "").toLowerCase();
-      return status === "aprovado" || status === "approved" || status === "reprovacao_tecnica";
-    });
+    // Total Aprovados: usa isLeadAprovado que considera status E statusDescription
+    const aprovadosParaMargem = allLeads.filter(isLeadAprovado);
     
     const leadsAprovados = aprovadosParaMargem.length;
 
     // Margem Média: soma das margens / quantidade de aprovados (TODOS aprovados, não apenas os com margem)
-    // Fórmula: totalValorMargemDisponivel / quantidadeLeadsAprovados
     const margens = aprovadosParaMargem
       .map((l) => extrairValorMargemDisponivelLead(l))
       .filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
 
     const somaMargens = margens.reduce((acc, v) => acc + v, 0);
-    // Dividir pela quantidade de leads aprovados (todos), não pela quantidade que tem margem
     const margemMedia = leadsAprovados > 0 ? somaMargens / leadsAprovados : 0;
 
     // Taxa de Aprovação = (aprovados com pagamento pago/aguardando) / (total de aprovados)
-    const leadsAprovadosComPagamentoPositivo = allLeads.filter(l => {
-      const status = (l.status || "").toLowerCase();
-      if (status !== "aprovado" && status !== "approved") return false;
+    const leadsAprovadosComPagamentoPositivo = aprovadosParaMargem.filter(l => {
       const statusPag = getStatusPagamento(l);
       return statusPag === "pago" || statusPag === "aguardando";
     }).length;
@@ -165,19 +206,17 @@ const LeadsContent = () => {
     return {
       totalLeads,
       leadsAprovados,
+      leadsAptosPagamento: leadsAprovadosComPagamentoPositivo,
       taxaAprovacao,
       margemMedia,
       margemTotal: stats.valorSimulacaoTotal,
     };
-  }, [stats, allLeads]);
+  }, [stats, allLeads, isLeadAprovado]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
 
-    const aprovadosParaMargem = allLeads.filter((l) => {
-      const status = (l.status || "").toLowerCase();
-      return status === "aprovado" || status === "approved" || status === "reprovacao_tecnica";
-    });
+    const aprovadosParaMargem = allLeads.filter(isLeadAprovado);
 
     const margens = aprovadosParaMargem
       .map((l) => extrairValorMargemDisponivelLead(l))
@@ -187,33 +226,14 @@ const LeadsContent = () => {
     const totalAprovados = aprovadosParaMargem.length;
     const margemMedia = totalAprovados > 0 ? somaMargens / totalAprovados : 0;
 
-    const first = aprovadosParaMargem[0] as unknown as Record<string, unknown> | undefined;
-    const rm = first?.retorno_margem as unknown;
-    const rmIsObject = !!rm && typeof rm === "object";
-    const rmKeys = rmIsObject ? Object.keys(rm as Record<string, unknown>) : [];
-    const registro = rmIsObject ? (rm as Record<string, unknown>).registroEmpregaticio : undefined;
-    const registroKeys = registro && typeof registro === "object" ? Object.keys(registro as Record<string, unknown>) : [];
-    const direct = rmIsObject ? (rm as Record<string, unknown>).valorMargemDisponivel : null;
-    const nested = registro && typeof registro === "object" ? (registro as Record<string, unknown>).valorMargemDisponivel : null;
-
-    // Não logar JSON bruto. Apenas contagens/valores.
     console.log("[MargemMediaDebug]", {
       totalAllLeads: allLeads.length,
       aprovadosParaMargem: aprovadosParaMargem.length,
       aprovadosComMargemExtraida: margens.length,
       somaMargens: somaMargens,
-      exemploMargens: margens.slice(0, 5),
-      retornoMargemType: typeof rm,
-      retornoMargemIsArray: Array.isArray(rm),
-      retornoMargemKeys: rmKeys.slice(0, 30),
-      registroEmpregaticioKeys: registroKeys.slice(0, 30),
-      sampleValorMargemDisponivel_direct: direct,
-      sampleValorMargemDisponivel_registroEmpregaticio: nested,
+      margemMedia: margemMedia,
     });
-
-    // Resposta direta: valor total das margens dos clientes com status aprovado
-    console.log("[ValorTotalMargensAprovados]", `R$ ${somaMargens.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-  }, [allLeads]);
+  }, [allLeads, isLeadAprovado]);
 
   // Aplica filtros via contexto
   const handleSearch = () => {
@@ -233,12 +253,12 @@ const LeadsContent = () => {
   };
 
   // Aplica filtro local e limpa ao sair da página
-  // Sempre busca aprovados + reprovacao_tecnica, filtro de situação de pagamento é local
+  // Busca todos os leads e filtra localmente para considerar statusDescription
   useEffect(() => {
     setFilters({ 
       ...filters, 
-      status: "aprovado",
-      statuses: ["aprovado", "approved", "reprovacao_tecnica"],
+      status: "",
+      statuses: undefined,
       tiposReprovacaoMultiplos: [],
     });
     
@@ -249,28 +269,70 @@ const LeadsContent = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Filtra leads pela situação de pagamento (filtro local)
-  const leadsFiltrados = useMemo(() => {
-    if (listSituacaoPagamento === "todos") {
-      return leads;
+  // Estado para paginação local quando filtro de pagamento está ativo
+  const [localPage, setLocalPage] = useState(1);
+  const localPageSize = 50;
+
+  // Reset página local quando filtro muda
+  useEffect(() => {
+    setLocalPage(1);
+  }, [listSituacaoPagamento]);
+
+  // Filtra leads pela situação de pagamento
+  // Sempre usa allLeads e filtra localmente para considerar statusDescription
+  const { leadsFiltrados, localPagination } = useMemo(() => {
+    // Primeiro: filtrar apenas leads aprovados (considerando statusDescription)
+    const leadsAprovados = allLeads.filter(isLeadAprovado);
+    
+    // Segundo: aplicar filtro de situação de pagamento
+    let todosFiltrados = leadsAprovados;
+    
+    if (listSituacaoPagamento !== "todos") {
+      todosFiltrados = leadsAprovados.filter(lead => {
+        const situacao = getStatusPagamento(lead);
+        
+        if (listSituacaoPagamento === "aguardando") {
+          return situacao === "aguardando";
+        }
+        if (listSituacaoPagamento === "reprovado_cancelado") {
+          return situacao === "reprovado_cancelado";
+        }
+        if (listSituacaoPagamento === "pago") {
+          return situacao === "pago";
+        }
+        
+        return true;
+      });
     }
     
-    return leads.filter(lead => {
-      const situacao = getStatusPagamento(lead);
-      
-      if (listSituacaoPagamento === "aguardando") {
-        return situacao === "aguardando";
+    // Paginação local
+    const totalCount = todosFiltrados.length;
+    const totalPages = Math.ceil(totalCount / localPageSize);
+    const startIndex = (localPage - 1) * localPageSize;
+    const endIndex = startIndex + localPageSize;
+    const paginados = todosFiltrados.slice(startIndex, endIndex);
+    
+    return {
+      leadsFiltrados: paginados,
+      localPagination: {
+        page: localPage,
+        pageSize: localPageSize,
+        totalCount,
+        totalPages
       }
-      if (listSituacaoPagamento === "reprovado_cancelado") {
-        return situacao === "reprovado_cancelado";
-      }
-      if (listSituacaoPagamento === "pago") {
-        return situacao === "pago";
-      }
-      
-      return true;
-    });
-  }, [leads, listSituacaoPagamento]);
+    };
+  }, [allLeads, listSituacaoPagamento, localPage, isLeadAprovado]);
+
+  // Função para navegar na paginação local
+  const goToLocalPage = useCallback((page: number) => {
+    if (localPagination && page >= 1 && page <= localPagination.totalPages) {
+      setLocalPage(page);
+    }
+  }, [localPagination]);
+
+  // Usa sempre paginação local
+  const activePagination = localPagination;
+  const activeGoToPage = goToLocalPage;
 
   // Funções para edição de pagamento
   const openPaymentEdit = (lead: Lead) => {
@@ -556,12 +618,16 @@ const LeadsContent = () => {
     return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   };
 
-  const getStatusBadge = (status: string | null) => {
+  const getStatusBadge = (lead: Lead) => {
+    // Se o lead é considerado aprovado (inclui verificação de statusDescription), mostra Aprovado
+    if (isLeadAprovado(lead)) {
+      return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ Aprovado</Badge>;
+    }
+    
+    const status = lead.status;
     if (!status) return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">⏳ Pendente</Badge>;
     const s = status.toLowerCase();
-    if (s === "aprovado") return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ Aprovado</Badge>;
     if (s === "reprovado") return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">✕ Reprovado</Badge>;
-    if (s === "reprovacao_tecnica") return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ Aprovado</Badge>;
     if (s === "pendente") return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">⏳ Pendente</Badge>;
     return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">⏳ Pendente</Badge>;
   };
@@ -609,20 +675,29 @@ const LeadsContent = () => {
 
     const sd = normalize(raw);
 
-    // Pagos: statusDescription IN (Encerrado, Liquidação, Liquidação Manual, Pago, Liquidado)
-    const pagos = ["Encerrado", "Liquidação", "Liquidação Manual", "Pago", "Liquidado"].map(normalize);
-    // Reprovados/Cancelados: statusDescription IN (Cancelada, Cancelado, Reprovado)
-    const reprovadosCancelados = ["Cancelada", "Cancelado", "Reprovado"].map(normalize);
+    // Pagos: statusDescription contém algum desses termos
+    const pagos = [
+      "encerrado", 
+      "liquidacao", 
+      "liquidacao manual", 
+      "pago", 
+      "liquidado",
+      "aprovacao de instrumento",
+      "aprovacao manual",
+      "aprovado"
+    ];
+    // Reprovados/Cancelados: statusDescription contém algum desses termos
+    const reprovadosCancelados = ["cancelada", "cancelado", "reprovado"];
 
-    if (pagos.includes(sd)) {
+    if (pagos.some(p => sd.includes(p))) {
       return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ Pago</Badge>;
     }
 
-    if (reprovadosCancelados.includes(sd)) {
+    if (reprovadosCancelados.some(r => sd.includes(r))) {
       return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">✕ Reprovado/Cancelado</Badge>;
     }
 
-    // Aguardando: statusDescription NOT IN (Encerrado, Liquidação, Liquidação Manual, Pago, Cancelada, Cancelado, Reprovado)
+    // Aguardando: statusDescription não corresponde a nenhum dos anteriores
     return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">⏳ Aguardando</Badge>;
   };
 
@@ -715,7 +790,7 @@ const LeadsContent = () => {
     },
     {
       title: "Leads Aptos a\nPagamentos",
-      value: statsFiltradas.totalLeads.toLocaleString("pt-BR"),
+      value: statsFiltradas.leadsAptosPagamento.toLocaleString("pt-BR"),
       subtitle: "Dos leads aprovados",
       icon: Users,
       borderColor: "border-l-blue-500",
@@ -828,7 +903,7 @@ const LeadsContent = () => {
                     </CardTitle>
                     <p className="text-xs lg:text-sm text-muted-foreground mt-1">Visualize e filtre todos os leads</p>
                   </div>
-                  <span className="text-xs lg:text-sm text-muted-foreground">{pagination.totalCount.toLocaleString("pt-BR")} leads</span>
+                  <span className="text-xs lg:text-sm text-muted-foreground">{activePagination.totalCount.toLocaleString("pt-BR")} leads</span>
                 </div>
 
                 <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2 lg:gap-3 mt-3 lg:mt-4">
@@ -904,7 +979,7 @@ const LeadsContent = () => {
                                     : "-";
                                 })()}
                               </TableCell>
-                              <TableCell className="text-center">{getStatusBadge(lead.status)}</TableCell>
+                              <TableCell className="text-center">{getStatusBadge(lead)}</TableCell>
                               <TableCell className="text-center">{getPagamentoBadge(lead)}</TableCell>
                               <TableCell className="text-muted-foreground whitespace-nowrap text-center">{formatDateTime(lead.created_at)}</TableCell>
                               <TableCell className="text-center">
@@ -940,17 +1015,17 @@ const LeadsContent = () => {
                       </Table>
                     </div>
 
-                    {/* Pagination - usando paginação do servidor */}
+                    {/* Pagination - usa paginação local quando filtro de pagamento está ativo */}
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-3 lg:mt-4 pt-3 lg:pt-4 border-t border-border">
                       <span className="text-xs lg:text-sm text-muted-foreground text-center sm:text-left">
-                        Pág. {pagination.page}/{pagination.totalPages} ({pagination.totalCount.toLocaleString("pt-BR")})
+                        Pág. {activePagination.page}/{activePagination.totalPages} ({activePagination.totalCount.toLocaleString("pt-BR")})
                       </span>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(pagination.page - 1)} disabled={pagination.page === 1}>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => activeGoToPage(activePagination.page - 1)} disabled={activePagination.page === 1}>
                           <ChevronLeft className="h-4 w-4" />
                         </Button>
-                        <span className="flex items-center px-2 lg:px-3 text-xs lg:text-sm text-muted-foreground">{pagination.page}</span>
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(pagination.page + 1)} disabled={pagination.page === pagination.totalPages || pagination.totalPages === 0}>
+                        <span className="flex items-center px-2 lg:px-3 text-xs lg:text-sm text-muted-foreground">{activePagination.page}</span>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => activeGoToPage(activePagination.page + 1)} disabled={activePagination.page === activePagination.totalPages || activePagination.totalPages === 0}>
                           <ChevronRight className="h-4 w-4" />
                         </Button>
                       </div>

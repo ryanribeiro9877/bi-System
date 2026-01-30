@@ -16,6 +16,7 @@ const Importacoes = lazy(() => import("./pages/Importacoes"));
 const Leads = lazy(() => import("./pages/Leads"));
 const CBOsBloqueados = lazy(() => import("./pages/CBOsBloqueados"));
 const Alertas = lazy(() => import("./pages/Alertas"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Wrapper que inclui o DashboardProvider para rotas protegidas
@@ -88,6 +89,14 @@ const App = () => (
                 element={
                   <ProtectedWithDashboard>
                     <Alertas />
+                  </ProtectedWithDashboard>
+                }
+              />
+              <Route
+                path="/dashboard/analytics"
+                element={
+                  <ProtectedWithDashboard>
+                    <Dashboard />
                   </ProtectedWithDashboard>
                 }
               />

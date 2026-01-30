@@ -296,6 +296,45 @@ const hasValoresFinanceiros = (lead: LeadData): boolean => {
 };
 
 // =====================================================
+// VERIFICAÇÃO DE STATUS DO GET_PROPOSTA
+// =====================================================
+
+/**
+ * Lista de status que indicam que o lead foi pago/aprovado
+ * Esses status têm prioridade sobre erros em outras etapas
+ */
+const STATUS_PAGOS = [
+  'encerrado', 
+  'liquidacao', 
+  'liquidacao manual', 
+  'pago', 
+  'liquidado',
+  'aprovacao de instrumento',
+  'aprovacao manual',
+  'aprovado'
+];
+
+/**
+ * Verifica se o statusDescription do retorno_get_proposta indica pagamento/aprovação
+ * Se sim, o lead deve ser considerado aprovado independente de erros em outras etapas
+ */
+const hasStatusDescriptionAprovado = (lead: LeadData): boolean => {
+  const getProposta = lead.retorno_get_proposta;
+  if (!getProposta || !isRecord(getProposta)) return false;
+  
+  const statusDescription = getProposta.statusDescription;
+  if (typeof statusDescription !== 'string') return false;
+  
+  const normalized = statusDescription
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+  
+  return STATUS_PAGOS.some(status => normalized.includes(status));
+};
+
+// =====================================================
 // VERIFICAÇÃO DE STATUS SUCCESS
 // =====================================================
 
@@ -491,6 +530,86 @@ const extractFormErrorsMessage = (retorno: unknown): string | null => {
   return messages.length > 0 ? messages.join(" | ") : null;
 };
 
+/**
+ * Extrai mensagens de erro do campo DomainValidations (comum em retorno_autorizacao)
+ * Estrutura esperada: { errors: { DomainValidations: ["mensagem de erro"] } }
+ */
+const extrairDomainValidationsMessage = (retorno: unknown): string | null => {
+  if (!retorno) return null;
+  
+  // Se for string, tentar parsear como JSON
+  let obj: Record<string, unknown> | null = null;
+  if (typeof retorno === 'string') {
+    try {
+      const parsed = JSON.parse(retorno);
+      if (parsed && typeof parsed === 'object') {
+        obj = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Tentar extrair JSON embutido na string
+      const jsonMatch = retorno.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed && typeof parsed === 'object') {
+            obj = parsed as Record<string, unknown>;
+          }
+        } catch {
+          return null;
+        }
+      }
+    }
+  } else if (isRecord(retorno)) {
+    obj = retorno as Record<string, unknown>;
+  }
+  
+  if (!obj) return null;
+  
+  // DomainValidations está dentro de errors
+  const errors = isRecord(obj.errors) ? obj.errors as Record<string, unknown> : null;
+  const details = isRecord(obj.details) ? obj.details as Record<string, unknown> : null;
+  const detailsErrors = details && isRecord(details.errors) ? details.errors as Record<string, unknown> : null;
+  
+  const domainValidations = errors?.DomainValidations || detailsErrors?.DomainValidations;
+  
+  if (!Array.isArray(domainValidations) || domainValidations.length === 0) return null;
+  
+  // Extrair mensagens de erro de cada validação
+  const mensagens: string[] = [];
+  for (const validation of domainValidations) {
+    // Caso 1: O item é uma string direta (ex: ["erro 1", "erro 2"])
+    if (typeof validation === 'string' && validation.trim().length > 0) {
+      mensagens.push(validation.trim());
+      continue;
+    }
+    
+    // Caso 2: O item é um objeto com campos de mensagem
+    if (isRecord(validation)) {
+      const msg = validation.Message || validation.message || 
+                  validation.ErrorMessage || validation.errorMessage ||
+                  validation.Description || validation.description ||
+                  validation.Reason || validation.reason;
+      if (msg && typeof msg === 'string' && msg.trim().length > 0) {
+        mensagens.push(msg.trim());
+      }
+    }
+  }
+  
+  // Normalizar/traduzir mensagens
+  const normalizarMensagem = (msg: string): string => {
+    // Traduzir termos em inglês para português
+    let normalizada = msg;
+    
+    // formalization -> formalização
+    normalizada = normalizada.replace(/\bformalization\b/gi, 'formalização');
+    
+    return normalizada;
+  };
+  
+  // Retornar todas as mensagens concatenadas ou null se não houver
+  return mensagens.length > 0 ? mensagens.map(normalizarMensagem).join('; ') : null;
+};
+
 const extrairMessageError = (retorno: unknown): string | null => {
   if (!retorno) return null;
   
@@ -625,6 +744,17 @@ const retornoIndicaErro = (retorno: unknown): boolean => {
 const extrairErroCodeMotivoDoRetorno = (retorno: unknown): { code: string | null; motivo: string | null } | null => {
   if (!retornoIndicaErro(retorno)) return null;
 
+  // Primeiro: tentar extrair do DomainValidations (mais específico para erros de autorização)
+  const domainValidationsMessage = extrairDomainValidationsMessage(retorno);
+  if (domainValidationsMessage) {
+    const errorString = extractRetornoErrorString(retorno);
+    const statusFromText = errorString ? hasHttpStatusInText(errorString) : null;
+    const recordCode =
+      isRecord(retorno) && (typeof retorno.code === "string" || typeof retorno.code === "number") ? String(retorno.code) : null;
+    const code = statusFromText ?? recordCode;
+    return { code, motivo: domainValidationsMessage };
+  }
+
   const messageError = extrairMessageError(retorno);
   if (messageError) {
     const errorString = extractRetornoErrorString(retorno);
@@ -714,17 +844,27 @@ export const extrairErroFunil = (lead: LeadData): FunilErroInfo | null => {
 /**
  * REGRA MESTRE: Normaliza o status do lead
  * 
- * APROVADO = APENAS retorno_proposta.status === "success" E SEM erros técnicos
+ * APROVADO = 
+ *   1. retorno_proposta.status === "success" E SEM erros técnicos
+ *   2. OU retorno_get_proposta.statusDescription indica pagamento/aprovação
+ *      (Liquidação, Pago, Aprovado, etc.) - TEM PRIORIDADE sobre erros
+ * 
  * REPROVACAO_TECNICA = retorno_proposta.status === "success" MAS com erros em alguma etapa anterior
  * PENDENTE = erros de sistema (rate limit, limite excedido)
  * REPROVADO = qualquer outro caso
- * 
- * IMPORTANTE: retorno_get_proposta NÃO indica aprovação!
  */
 export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
   // =====================================================
+  // 0. PRIORIDADE: VERIFICAR statusDescription DO GET_PROPOSTA
+  // Se indica pagamento/aprovação, o lead é APROVADO
+  // independente de erros em outras etapas
+  // =====================================================
+  if (hasStatusDescriptionAprovado(lead)) {
+    return "aprovado";
+  }
+  
+  // =====================================================
   // 1. VERIFICAR SE TEM STATUS SUCCESS NA PROPOSTA
-  // ÚNICO critério para aprovação
   // =====================================================
   if (hasStatusSuccess(lead)) {
     // Verificar erros técnicos no processo
@@ -735,12 +875,6 @@ export const normalizarStatusLead = (lead: LeadData): StatusNormalizado => {
     // Aprovado sem erros técnicos
     return "aprovado";
   }
-  
-  // =====================================================
-  // REMOVIDO: Fallback de retorno_get_proposta
-  // retorno_get_proposta NÃO indica aprovação!
-  // Apenas retorno_proposta.status === "success" aprova
-  // =====================================================
   
   // =====================================================
   // 2. VERIFICAR SE É PENDENTE (erros de sistema)

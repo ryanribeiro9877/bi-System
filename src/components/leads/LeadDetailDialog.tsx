@@ -113,11 +113,20 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
     const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
     const sd = normalize(raw);
 
-    const pagos = ["Encerrado", "Liquidação", "Liquidação Manual", "Pago", "Liquidado"].map(normalize);
-    const reprovadosCancelados = ["Cancelada", "Cancelado", "Reprovado"].map(normalize);
+    const pagos = [
+      "encerrado", 
+      "liquidacao", 
+      "liquidacao manual", 
+      "pago", 
+      "liquidado",
+      "aprovacao de instrumento",
+      "aprovacao manual",
+      "aprovado"
+    ];
+    const reprovadosCancelados = ["cancelada", "cancelado", "reprovado"];
 
-    if (pagos.includes(sd)) return { label: "Pago", variant: "success" };
-    if (reprovadosCancelados.includes(sd)) return { label: "Reprovado/Cancelado", variant: "danger" };
+    if (pagos.some(p => sd.includes(p))) return { label: "Pago", variant: "success" };
+    if (reprovadosCancelados.some(r => sd.includes(r))) return { label: "Reprovado/Cancelado", variant: "danger" };
     return { label: "Aguardando", variant: "warning" };
   };
 
@@ -176,6 +185,27 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
     mensagem: string;
   };
 
+  // Lista de status que indicam pagamento (não são erros)
+  const STATUS_PAGOS = [
+    'encerrado', 
+    'liquidacao', 
+    'liquidacao manual', 
+    'pago', 
+    'liquidado',
+    'aprovacao de instrumento',
+    'aprovacao manual',
+    'aprovado'
+  ];
+
+  const isStatusPagamento = (valor: string): boolean => {
+    const normalized = valor
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+    return STATUS_PAGOS.some(s => normalized.includes(s));
+  };
+
   const extrairErrosDetalhados = (retorno: unknown, etapa: string): ErroDetalhado[] => {
     const erros: ErroDetalhado[] = [];
     if (!retorno) return erros;
@@ -214,6 +244,10 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
         const innerObj = innerParsed as Record<string, unknown>;
         if (innerObj.details && typeof innerObj.details === 'object') {
           obj = { ...obj, details: innerObj.details };
+        }
+        // Também copiar errors se existir (para DomainValidations)
+        if (innerObj.errors && typeof innerObj.errors === 'object') {
+          obj = { ...obj, errors: innerObj.errors };
         }
       }
     }
@@ -256,12 +290,53 @@ const LeadDetailDialog = ({ lead, open, onOpenChange }: LeadDetailDialogProps) =
       }
     }
 
+    // Extrair erros do DomainValidations (comum em retorno_autorizacao)
+    // Estrutura: { errors: { DomainValidations: ["mensagem de erro"] } }
+    const errors = obj.errors as Record<string, unknown> | undefined;
+    const domainValidations = errors?.DomainValidations || 
+                              (details?.errors as Record<string, unknown> | undefined)?.DomainValidations as Array<unknown> | undefined;
+    if (Array.isArray(domainValidations) && domainValidations.length > 0) {
+      domainValidations.forEach((validation, idx) => {
+        // Caso 1: O item é uma string direta (ex: ["erro 1", "erro 2"])
+        if (typeof validation === 'string' && validation.trim().length > 0) {
+          erros.push({
+            etapa: `${etapa} (Validação ${idx + 1})`,
+            campo: 'DomainValidation',
+            mensagem: validation.trim()
+          });
+          return;
+        }
+        
+        // Caso 2: O item é um objeto com campos de mensagem
+        if (validation && typeof validation === 'object') {
+          const v = validation as Record<string, unknown>;
+          const msg = (v.Message || v.message || 
+                      v.ErrorMessage || v.errorMessage ||
+                      v.Description || v.description ||
+                      v.Reason || v.reason) as string | undefined;
+          if (msg && typeof msg === 'string' && msg.trim().length > 0) {
+            erros.push({
+              etapa: `${etapa} (Validação ${idx + 1})`,
+              campo: 'DomainValidation',
+              mensagem: msg.trim()
+            });
+          }
+        }
+      });
+    }
+
     // Se não encontrou erros estruturados, tentar extrair do message ou error
     if (erros.length === 0) {
       const errorFields = ['error', 'message', 'mensagem', 'statusDescription'];
       for (const field of errorFields) {
         if (obj[field] && typeof obj[field] === 'string') {
           const val = obj[field] as string;
+          
+          // Se for statusDescription com valor de pagamento, não é erro
+          if (field === 'statusDescription' && isStatusPagamento(val)) {
+            continue;
+          }
+          
           if (val.toLowerCase().includes('erro') || val.toLowerCase().includes('error') || 
               val.toLowerCase().includes('400') || val.toLowerCase().includes('429') ||
               val.toLowerCase().includes('failed')) {

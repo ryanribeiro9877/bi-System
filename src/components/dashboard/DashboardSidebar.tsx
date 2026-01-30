@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { BarChart3, LayoutDashboard, LogOut, Users, UserPlus, UserX, Upload, Bell, Menu, X } from "lucide-react";
+import { BarChart3, LayoutDashboard, LogOut, Users, UserPlus, UserX, Upload, Bell, Menu, X, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import ImportFileFilter from "./ImportFileFilter";
@@ -18,6 +18,7 @@ const DashboardSidebar = () => {
   }, [location.pathname]);
 
   const menuItems = [
+    { icon: TrendingUp, label: "Dashboard", path: "/dashboard/analytics" },
     { icon: LayoutDashboard, label: "Consultas", path: "/dashboard" },
     { icon: Users, label: "Contratos Digitados", path: "/dashboard/leads" },
     { icon: UserX, label: "CBOs Bloqueados", path: "/dashboard/cbos-bloqueados" },

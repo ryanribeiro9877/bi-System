@@ -118,9 +118,10 @@ export const useLeadsQueryEnabled = (
     queryKey,
     queryFn: () => fetchLeads({ filters, page, pageSize }),
     enabled,
-    staleTime: 2 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
+    staleTime: 5 * 60 * 1000, // 5 minutos - dados considerados frescos
+    gcTime: 30 * 60 * 1000, // 30 minutos em cache
     placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false, // Não recarregar ao focar na janela
   });
 
   useEffect(() => {

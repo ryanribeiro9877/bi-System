@@ -1077,7 +1077,16 @@ const PerfilIdealPanel = ({ bancoFilter = "todos", importBatchId }: PerfilIdealP
                   .toLowerCase()
                   .trim();
                 
-                const statusPagos = ['encerrado', 'liquidacao', 'liquidacao manual', 'pago', 'liquidado'];
+                const statusPagos = [
+                  'encerrado', 
+                  'liquidacao', 
+                  'liquidacao manual', 
+                  'pago', 
+                  'liquidado',
+                  'aprovacao de instrumento',
+                  'aprovacao manual',
+                  'aprovado'
+                ];
                 const statusCancelados = ['cancelada', 'cancelado', 'reprovado'];
                 
                 let situacao = 'Aguardando';

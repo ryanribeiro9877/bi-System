@@ -146,13 +146,11 @@ const DashboardProviderInner = ({ children, enableLeadsQuery }: { children: Reac
         .order("created_at", { ascending: false })
         .range(from, to);
 
+      // Filtro otimizado: busca aprovados OU com statusDescription de pagamento
+      query = query.or('status.in.(aprovado,approved,reprovacao_tecnica),retorno_get_proposta->>statusDescription.ilike.%liquid%,retorno_get_proposta->>statusDescription.ilike.%pago%,retorno_get_proposta->>statusDescription.ilike.%aprovado%,retorno_get_proposta->>statusDescription.ilike.%aprovacao%,retorno_get_proposta->>statusDescription.ilike.%encerrado%');
+
       if (filters.importBatchId) query = query.eq("import_batch_id", filters.importBatchId);
       if (filters.banco) query = query.eq("banco", filters.banco);
-      if (filters.statuses && filters.statuses.length > 0) {
-        query = query.in("status", filters.statuses);
-      } else if (filters.status) {
-        query = query.eq("status", filters.status);
-      }
       if (filters.cpf) {
         const digits = filters.cpf.replace(/\D/g, "");
         if (digits.length === 11) query = query.eq("cpf", digits);
@@ -213,9 +211,10 @@ const DashboardProviderInner = ({ children, enableLeadsQuery }: { children: Reac
     queryKey: allLeadsQueryKey,
     queryFn: fetchAllLeads,
     enabled: enableLeadsQuery,
-    staleTime: 2 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
+    staleTime: 5 * 60 * 1000, // 5 minutos - dados considerados frescos
+    gcTime: 30 * 60 * 1000, // 30 minutos em cache
     placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false, // Não recarregar ao focar na janela
   });
 
   const allLeads = allLeadsData || [];

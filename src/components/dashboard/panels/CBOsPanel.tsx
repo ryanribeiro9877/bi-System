@@ -595,6 +595,21 @@ const CBOsPanel = () => {
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
 
+    // Calcular total de erros somando todos os motivos visíveis
+    const totalErrosMotivos = 
+      // Subtipos 400
+      by400Subtype.INVALID_FORM_PHONE_NUMBER +
+      by400Subtype.BUSINESS_RULE_CPF_NAO_ENCONTRADO +
+      by400Subtype.BUSINESS_RULE_VIRADA_COMPETENCIA +
+      by400Subtype.OUTROS_400 +
+      // Subtipos 429
+      by429Subtype.RATE_LIMIT_DATAPREV_TOO_MANY_REQUESTS +
+      by429Subtype.OUTROS_429 +
+      // Top reasons 400 (motivos detalhados)
+      topReasons400.reduce((acc, r) => acc + r.count, 0) +
+      // Top reasons 429 (motivos detalhados)
+      topReasons429.reduce((acc, r) => acc + r.count, 0);
+
     return {
       total: annotated.length,
       byCategory,
@@ -602,6 +617,7 @@ const CBOsPanel = () => {
       by429Subtype,
       topReasons400,
       topReasons429,
+      totalErrosMotivos,
     };
   }, [annotated]);
 
@@ -625,7 +641,12 @@ const CBOsPanel = () => {
   const filteredLeads = useMemo(() => {
     let list = annotated;
     if (selectedCategory !== "TODOS") {
-      list = list.filter((l) => l.authCategory === selectedCategory);
+      // Categoria especial "ERROS" filtra ERRO_400, ERRO_429 e OUTROS
+      if (selectedCategory === ("ERROS" as AuthCategory)) {
+        list = list.filter((l) => l.authCategory === "ERRO_400" || l.authCategory === "ERRO_429" || l.authCategory === "OUTROS");
+      } else {
+        list = list.filter((l) => l.authCategory === selectedCategory);
+      }
     }
     if (selectedReason) {
       list = list.filter((l) => l.authReason === selectedReason);
@@ -719,7 +740,7 @@ const CBOsPanel = () => {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
         <button
           type="button"
           onClick={() => {
@@ -765,7 +786,7 @@ const CBOsPanel = () => {
         <button
           type="button"
           onClick={() => {
-            setSelectedCategory("ERRO_400");
+            setSelectedCategory("ERROS" as AuthCategory);
             setSelectedReason(null);
             setSelected400Subtype(null);
             setSelected429Subtype(null);
@@ -774,35 +795,12 @@ const CBOsPanel = () => {
           }}
           className="text-left"
         >
-          <KPICard title="Erro 400" value={totals.byCategory.ERRO_400.toLocaleString("pt-BR")} icon={AlertTriangle} variant="danger" />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedCategory("ERRO_429");
-            setSelectedReason(null);
-            setSelected400Subtype(null);
-            setSelected429Subtype(null);
-            setSelectedErrorType("TODOS");
-            setPage(1);
-          }}
-          className="text-left"
-        >
-          <KPICard title="Erro 429" value={totals.byCategory.ERRO_429.toLocaleString("pt-BR")} icon={Clock} variant="warning" />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedCategory("OUTROS");
-            setSelectedReason(null);
-            setSelected400Subtype(null);
-            setSelected429Subtype(null);
-            setSelectedErrorType("TODOS");
-            setPage(1);
-          }}
-          className="text-left"
-        >
-          <KPICard title="Outros" value={totals.byCategory.OUTROS.toLocaleString("pt-BR")} icon={Shield} variant="default" />
+          <KPICard 
+            title="Erros" 
+            value={totals.totalErrosMotivos.toLocaleString("pt-BR")} 
+            icon={AlertTriangle} 
+            variant="danger" 
+          />
         </button>
       </div>
 

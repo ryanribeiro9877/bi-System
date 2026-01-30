@@ -51,12 +51,34 @@ interface FetchParams {
   importBatchId?: string;
 }
 
+// Lista de status que indicam pagamento
+const STATUS_PAGOS = [
+  'encerrado', 
+  'liquidacao', 
+  'liquidacao manual', 
+  'pago', 
+  'liquidado',
+  'aprovacao de instrumento',
+  'aprovacao manual',
+  'aprovado'
+];
+
+const isStatusPagamento = (statusDescription: string | null): boolean => {
+  if (!statusDescription) return false;
+  const normalized = statusDescription
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+  return STATUS_PAGOS.some(s => normalized.includes(s));
+};
+
 const fetchContratosAprovadosAnalysis = async (params?: FetchParams): Promise<ContratosAprovadosAnalysis> => {
-  // Buscar leads aprovados diretamente
+  // Buscar leads aprovados OU com statusDescription de pagamento usando filtro OR
   let query = supabase
     .from('leads')
-    .select('id, cpf, nome, banco, created_at, data_envio, data_retorno, retorno_get_proposta, retorno_simulacao, valor')
-    .eq('status', 'aprovado');
+    .select('id, cpf, nome, banco, status, created_at, data_envio, data_retorno, retorno_get_proposta, retorno_simulacao, valor')
+    .or('status.in.(aprovado,approved,reprovacao_tecnica),retorno_get_proposta->>statusDescription.ilike.%liquid%,retorno_get_proposta->>statusDescription.ilike.%pago%,retorno_get_proposta->>statusDescription.ilike.%aprovado%,retorno_get_proposta->>statusDescription.ilike.%aprovacao%,retorno_get_proposta->>statusDescription.ilike.%encerrado%');
 
   if (params?.banco) {
     query = query.eq('banco', params.banco);
@@ -111,7 +133,16 @@ const fetchContratosAprovadosAnalysis = async (params?: FetchParams): Promise<Co
       ? statusDescription.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()
       : '';
     
-    const statusPagos = ['encerrado', 'liquidacao', 'liquidacao manual', 'pago', 'liquidado'];
+    const statusPagos = [
+      'encerrado', 
+      'liquidacao', 
+      'liquidacao manual', 
+      'pago', 
+      'liquidado',
+      'aprovacao de instrumento',
+      'aprovacao manual',
+      'aprovado'
+    ];
     const isPago = statusPagos.some(s => normalizedStatus.includes(s));
     
     const valorLead = lead.valor || Number(getProposta?.disbursedIssueAmount || getProposta?.requestedAmount || 0);
@@ -216,8 +247,10 @@ export const useContratosAprovadosAnalysis = (banco?: string, importBatchId?: st
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['contratos-aprovados-analysis', banco || 'todos', importBatchId || ''],
     queryFn: () => fetchContratosAprovadosAnalysis({ banco, importBatchId }),
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
+    staleTime: 5 * 60 * 1000, // 5 minutos - dados considerados frescos
+    gcTime: 30 * 60 * 1000, // 30 minutos em cache
+    refetchOnWindowFocus: false, // Não recarregar ao focar na janela
+    placeholderData: (previousData) => previousData, // Manter dados anteriores enquanto carrega
   });
 
   // Invalidar cache quando houver importação

@@ -246,8 +246,80 @@ const extrairBancoDoNomeArquivo = (fileName: string): string => {
   return "Não Informado";
 };
 
+// Função para extrair motivos de erro do DomainValidations (retorno_autorizacao)
+// Estrutura esperada: { errors: { DomainValidations: ["mensagem de erro"] } }
+const extrairMotivosDomainValidations = (autorizacao: any): string | undefined => {
+  if (!autorizacao) return undefined;
+  
+  // Se for string, tentar parsear como JSON
+  let obj: any = autorizacao;
+  if (typeof autorizacao === 'string') {
+    try {
+      obj = JSON.parse(autorizacao);
+    } catch {
+      // Tentar extrair JSON embutido na string
+      const jsonMatch = autorizacao.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          obj = JSON.parse(jsonMatch[0]);
+        } catch {
+          return undefined;
+        }
+      } else {
+        return undefined;
+      }
+    }
+  }
+  
+  if (!obj || typeof obj !== 'object') return undefined;
+  
+  // DomainValidations está dentro de errors
+  const domainValidations = obj?.errors?.DomainValidations || 
+                            obj?.details?.errors?.DomainValidations;
+  
+  if (!Array.isArray(domainValidations) || domainValidations.length === 0) return undefined;
+  
+  // Extrair mensagens de erro de cada validação
+  const mensagens: string[] = [];
+  for (const validation of domainValidations) {
+    // Caso 1: O item é uma string direta (ex: ["erro 1", "erro 2"])
+    if (typeof validation === 'string' && validation.trim().length > 0) {
+      mensagens.push(validation.trim());
+      continue;
+    }
+    
+    // Caso 2: O item é um objeto com campos de mensagem
+    if (validation && typeof validation === 'object') {
+      const msg = validation?.Message || validation?.message || 
+                  validation?.ErrorMessage || validation?.errorMessage ||
+                  validation?.Description || validation?.description ||
+                  validation?.Reason || validation?.reason;
+      if (msg && typeof msg === 'string' && msg.trim().length > 0) {
+        mensagens.push(msg.trim());
+      }
+    }
+  }
+  
+  // Normalizar/traduzir mensagens
+  const normalizarMensagem = (msg: string): string => {
+    let normalizada = msg;
+    // formalization -> formalização
+    normalizada = normalizada.replace(/\bformalization\b/gi, 'formalização');
+    return normalizada;
+  };
+  
+  // Retornar todas as mensagens concatenadas ou undefined se não houver
+  return mensagens.length > 0 ? mensagens.map(normalizarMensagem).join('; ') : undefined;
+};
+
 // Função para extrair tipo de reprovação - busca em TODAS as colunas
 const extrairTipoReprovacao = (simulacao: any, margem: any, getProposta?: any, proposta?: any, autorizacao?: any): string | undefined => {
+  // Primeiro: tentar extrair do DomainValidations (mais específico para erros de autorização)
+  const motivoDomainValidations = extrairMotivosDomainValidations(autorizacao);
+  if (motivoDomainValidations) {
+    return motivoDomainValidations;
+  }
+  
   const fontes = [
     // retorno_simulacao
     simulacao?.details?.error,
@@ -265,6 +337,8 @@ const extrairTipoReprovacao = (simulacao: any, margem: any, getProposta?: any, p
     proposta?.motivo,
     // retorno_autorizacao
     autorizacao?.error,
+    autorizacao?.message,
+    autorizacao?.details?.error,
   ];
   
   const erro = fontes.find(v => v && String(v).trim().length > 0)?.toString();
