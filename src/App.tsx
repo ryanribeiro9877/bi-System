@@ -47,6 +47,14 @@ const App = () => (
               <Route
                 path="/dashboard"
                 element={
+                  <ProtectedWithDashboard enableLeadsQuery>
+                    <Dashboard />
+                  </ProtectedWithDashboard>
+                }
+              />
+              <Route
+                path="/dashboard/consultas"
+                element={
                   <ProtectedWithDashboard>
                     <Consultas />
                   </ProtectedWithDashboard>
@@ -89,14 +97,6 @@ const App = () => (
                 element={
                   <ProtectedWithDashboard>
                     <Alertas />
-                  </ProtectedWithDashboard>
-                }
-              />
-              <Route
-                path="/dashboard/analytics"
-                element={
-                  <ProtectedWithDashboard>
-                    <Dashboard />
                   </ProtectedWithDashboard>
                 }
               />

@@ -18,8 +18,8 @@ const DashboardSidebar = () => {
   }, [location.pathname]);
 
   const menuItems = [
-    { icon: TrendingUp, label: "Dashboard", path: "/dashboard/analytics" },
-    { icon: LayoutDashboard, label: "Consultas", path: "/dashboard" },
+    { icon: TrendingUp, label: "Dashboard", path: "/dashboard" },
+    { icon: LayoutDashboard, label: "Consultas", path: "/dashboard/consultas" },
     { icon: Users, label: "Contratos Digitados", path: "/dashboard/leads" },
     { icon: UserX, label: "CBOs Bloqueados", path: "/dashboard/cbos-bloqueados" },
     { icon: Upload, label: "Importações", path: "/dashboard/importacoes" },

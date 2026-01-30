@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useDashboard } from "@/contexts/DashboardContext";
 import { extrairCBOUniversal } from "@/lib/cboUtils";
+import { extrairValorMargem } from "@/lib/leadStatusUtils";
 
 interface LeadAnalytics {
   id: string;
@@ -46,20 +47,12 @@ interface EmpresaStats {
   taxaAprovacao: number;
 }
 
-interface TemporalStats {
-  data: string;
-  diaSemana: string;
-  total: number;
-  aprovados: number;
-  reprovados: number;
-  taxaAprovacao: number;
-}
 
 interface PerfilIdeal {
-  cboIdeal: { codigo: string; descricao: string; taxaAprovacao: number } | null;
+  cboIdeal: { codigo: string; descricao: string; totalAprovacoes: number } | null;
   margemIdeal: { min: number; max: number; media: number } | null;
-  bancoIdeal: { banco: string; taxaAprovacao: number } | null;
-  melhorDiaSemana: { dia: string; taxaAprovacao: number } | null;
+  bancoIdeal: { banco: string; totalAprovacoes: number } | null;
+  melhorDiaSemana: { dia: string; totalPagamentos: number } | null;
 }
 
 export interface DashboardAnalyticsData {
@@ -89,7 +82,6 @@ export interface DashboardAnalyticsData {
   bancoMenosAprovacoes: BancoStats | null;
   
   // Confronto Temporal (% aprovados vs % pagos)
-  aprovacoesPorDia: TemporalStats[];
   aprovacoesPorDiaSemana: { dia: string; total: number; aprovados: number; pagos: number; taxaAprovacao: number; taxaPagamento: number }[];
   aprovacoesPorMes: { mes: string; total: number; aprovados: number; pagos: number; taxaAprovacao: number; taxaPagamento: number }[];
   
@@ -103,10 +95,46 @@ export interface DashboardAnalyticsData {
 
 const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
-const isAprovado = (status: string | null): boolean => {
+const isAprovadoPorStatus = (status: string | null): boolean => {
   if (!status) return false;
   const s = status.toLowerCase();
-  return s.includes('aprovad') || s.includes('contrato') || s === 'aprovado' || s === 'contratado';
+  return s.includes('aprovad') || s.includes('contrato') || s === 'aprovado' || s === 'contratado' || s === 'reprovacao_tecnica';
+};
+
+// Verifica se lead é aprovado considerando status E statusDescription (consistente com página Leads)
+const isLeadAprovado = (lead: LeadAnalytics): boolean => {
+  // Se status é aprovado ou reprovacao_tecnica, é aprovado
+  if (isAprovadoPorStatus(lead.status)) {
+    return true;
+  }
+  
+  // Se tem statusDescription indicando pagamento, também é aprovado
+  const getProposta = lead.retorno_get_proposta as Record<string, unknown> | null;
+  if (getProposta?.statusDescription) {
+    const statusDescription = String(getProposta.statusDescription);
+    const normalized = statusDescription
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+    
+    const statusPagos = [
+      "encerrado", 
+      "liquidacao", 
+      "liquidacao manual", 
+      "pago", 
+      "liquidado",
+      "aprovacao de instrumento",
+      "aprovacao manual",
+      "aprovado"
+    ];
+    
+    if (statusPagos.some(s => normalized.includes(s))) {
+      return true;
+    }
+  }
+  
+  return false;
 };
 
 const isReprovado = (status: string | null): boolean => {
@@ -133,7 +161,7 @@ export const useDashboardAnalytics = (): DashboardAnalyticsData => {
       const buildQuery = () => {
         let query = supabase
           .from("leads")
-          .select("id, cpf, nome, banco, status, valor, created_at, retorno_margem, retorno_simulacao, retorno_get_proposta")
+          .select("id, cpf, nome, banco, status, valor, created_at, cbo, retorno_margem, retorno_simulacao, retorno_get_proposta")
           .order("created_at", { ascending: false });
 
         if (filters?.dataInicial) {
@@ -157,8 +185,9 @@ export const useDashboardAnalytics = (): DashboardAnalyticsData => {
         if (fetchError) throw fetchError;
 
         const batch = (data || []).map((row: Record<string, unknown>) => {
-          // extrairCBOUniversal retorna string no formato "codigo - descricao" ou apenas "codigo"
-          const cboStr = extrairCBOUniversal({
+          // Usar campo cbo do banco ou extrair via extrairCBOUniversal
+          const cboBanco = row.cbo as string | null;
+          const cboStr = cboBanco || extrairCBOUniversal({
             retorno_margem: row.retorno_margem,
             retorno_simulacao: row.retorno_simulacao,
           } as Record<string, unknown>);
@@ -177,15 +206,29 @@ export const useDashboardAnalytics = (): DashboardAnalyticsData => {
             }
           }
 
-          // Extrair empresa do retorno_margem
-          const margem = row.retorno_margem as Record<string, unknown> | null;
+          // Extrair empresa do retorno_margem (pode ser array ou objeto)
+          const margemRaw = row.retorno_margem;
           let empresa: string | null = null;
-          if (margem) {
-            const regEmp = margem.registroEmpregaticio as Record<string, unknown> | undefined;
-            empresa = (regEmp?.nomeEmpregador as string) || 
-                      (margem.nomeEmpresa as string) || 
-                      (margem.empresa as string) || 
-                      (margem.razaoSocial as string) || null;
+          if (margemRaw) {
+            // Se for array, pegar o primeiro elemento
+            const margem = Array.isArray(margemRaw) ? margemRaw[0] : margemRaw;
+            if (margem && typeof margem === 'object') {
+              const margemObj = margem as Record<string, unknown>;
+              // Tentar extrair de result[0].nomeEmpregador
+              const result = margemObj.result;
+              if (Array.isArray(result) && result.length > 0) {
+                const resultItem = result[0] as Record<string, unknown>;
+                empresa = (resultItem?.nomeEmpregador as string) || null;
+              }
+              // Fallback para outros campos
+              if (!empresa) {
+                const regEmp = margemObj.registroEmpregaticio as Record<string, unknown> | undefined;
+                empresa = (regEmp?.nomeEmpregador as string) || 
+                          (margemObj.nomeEmpresa as string) || 
+                          (margemObj.empresa as string) || 
+                          (margemObj.razaoSocial as string) || null;
+              }
+            }
           }
 
           // Verificar se foi pago baseado no statusDescription do retorno_get_proposta
@@ -197,15 +240,21 @@ export const useDashboardAnalytics = (): DashboardAnalyticsData => {
               const normalizedStatus = statusDescription.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
               const statusPagos = [
                 'encerrado', 
-                'liquidacao', 
                 'liquidacao manual', 
                 'pago', 
                 'liquidado',
                 'aprovacao de instrumento',
-                'aprovacao manual',
-                'aprovado'
+                'aprovacao manual'
               ];
-              isPago = statusPagos.some(s => normalizedStatus.includes(s));
+              // Status que indicam aguardando (em andamento, não pagos ainda)
+              const statusAguardando = [
+                'revisao',
+                'rascunho',
+                'coleta'
+              ];
+              // Verificar se NÃO é um status de aguardando e SE é um status pago
+              const isAguardando = statusAguardando.some(s => normalizedStatus.includes(s));
+              isPago = !isAguardando && statusPagos.some(s => normalizedStatus.includes(s));
             }
           }
 
@@ -263,7 +312,6 @@ export const useDashboardAnalytics = (): DashboardAnalyticsData => {
       empresaMaisReprovacoes: null,
       bancoMaisAprovacoes: null,
       bancoMenosAprovacoes: null,
-      aprovacoesPorDia: [],
       aprovacoesPorDiaSemana: [],
       aprovacoesPorMes: [],
       perfilIdeal: {
@@ -280,158 +328,157 @@ export const useDashboardAnalytics = (): DashboardAnalyticsData => {
       return emptyResult;
     }
 
-    // Estatísticas gerais
-    const aprovados = leads.filter(l => isAprovado(l.status));
-    const reprovados = leads.filter(l => isReprovado(l.status));
-    const pagos = leads.filter(l => l.isPago);
-    const totalAprovados = aprovados.length;
-    const totalReprovados = reprovados.length;
-    const totalPagos = pagos.length;
+    // ===== PROCESSAMENTO ÚNICO DE TODOS OS LEADS =====
+    // Consolidar todas as estatísticas em uma única iteração para melhor performance
+    const cboMap = new Map<string, { codigo: string; descricao: string; total: number; aprovados: number; reprovados: number }>();
+    const empresaMap = new Map<string, { empresa: string; total: number; aprovados: number; reprovados: number }>();
+    const bancoMap = new Map<string, { banco: string; total: number; aprovados: number; reprovados: number; valorTotal: number }>();
+    const diaSemanaMap = new Map<string, { dia: string; total: number; aprovados: number; pagos: number }>();
+    const mesMap = new Map<string, { mes: string; total: number; aprovados: number; pagos: number }>();
+    
+    // Inicializar dias da semana
+    DIAS_SEMANA.forEach(dia => diaSemanaMap.set(dia, { dia, total: 0, aprovados: 0, pagos: 0 }));
+    
+    // Contadores gerais
+    let totalAprovados = 0;
+    let totalReprovados = 0;
+    let totalPagos = 0;
+    let valorGanho = 0;
+    const aprovadosParaMargem: LeadAnalytics[] = [];
+    
+    // Processar todos os leads em uma única iteração
+    for (const l of leads) {
+      const leadAprovado = isLeadAprovado(l);
+      const leadReprovado = isReprovado(l.status);
+      
+      // Contadores gerais
+      if (leadAprovado) {
+        totalAprovados++;
+        aprovadosParaMargem.push(l);
+      }
+      if (leadReprovado) totalReprovados++;
+      if (l.isPago) {
+        totalPagos++;
+        const liquidValue = extrairValorMargem({ retorno_simulacao: l.retorno_simulacao } as never);
+        valorGanho += liquidValue * 0.07;
+      }
+      
+      // CBO
+      if (l.cbo_codigo) {
+        const cboExisting = cboMap.get(l.cbo_codigo) || { codigo: l.cbo_codigo, descricao: l.cbo_descricao || l.cbo_codigo, total: 0, aprovados: 0, reprovados: 0 };
+        cboExisting.total++;
+        if (leadAprovado) cboExisting.aprovados++;
+        if (leadReprovado) cboExisting.reprovados++;
+        cboMap.set(l.cbo_codigo, cboExisting);
+      }
+      
+      // Empresa
+      if (l.empresa) {
+        const empExisting = empresaMap.get(l.empresa) || { empresa: l.empresa, total: 0, aprovados: 0, reprovados: 0 };
+        empExisting.total++;
+        if (leadAprovado) empExisting.aprovados++;
+        if (leadReprovado) empExisting.reprovados++;
+        empresaMap.set(l.empresa, empExisting);
+      }
+      
+      // Banco
+      if (l.banco) {
+        const bancoExisting = bancoMap.get(l.banco) || { banco: l.banco, total: 0, aprovados: 0, reprovados: 0, valorTotal: 0 };
+        bancoExisting.total++;
+        if (leadAprovado) {
+          bancoExisting.aprovados++;
+          bancoExisting.valorTotal += l.valor || 0;
+        }
+        if (leadReprovado) bancoExisting.reprovados++;
+        bancoMap.set(l.banco, bancoExisting);
+      }
+      
+      // Dia da Semana e Mês (baseado em created_at do lead)
+      if (l.created_at) {
+        const date = new Date(l.created_at);
+        const diaSemana = DIAS_SEMANA[date.getDay()];
+        const diaExisting = diaSemanaMap.get(diaSemana)!;
+        diaExisting.total++;
+        if (leadAprovado) diaExisting.aprovados++;
+        
+        const mesStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        const mesExisting = mesMap.get(mesStr) || { mes: mesStr, total: 0, aprovados: 0, pagos: 0 };
+        mesExisting.total++;
+        if (leadAprovado) mesExisting.aprovados++;
+        mesMap.set(mesStr, mesExisting);
+      }
+      
+      // Pagamentos: usar createdAt do retorno_get_proposta (data real do pagamento)
+      if (l.isPago) {
+        const getProposta = l.retorno_get_proposta as Record<string, unknown> | null;
+        const createdAtPagamento = getProposta?.createdAt as string | null;
+        if (createdAtPagamento) {
+          const datePagamento = new Date(createdAtPagamento);
+          const diaSemana = DIAS_SEMANA[datePagamento.getDay()];
+          const diaExisting = diaSemanaMap.get(diaSemana)!;
+          diaExisting.pagos++;
+          
+          const mesStr = `${datePagamento.getFullYear()}-${String(datePagamento.getMonth() + 1).padStart(2, '0')}`;
+          const mesExisting = mesMap.get(mesStr);
+          if (mesExisting) mesExisting.pagos++;
+        }
+      }
+    }
+    
+    // Taxas gerais
     const taxaAprovacaoGeral = leads.length > 0 ? (totalAprovados / leads.length) * 100 : 0;
     const taxaPagamentoGeral = leads.length > 0 ? (totalPagos / leads.length) * 100 : 0;
+    const valorGasto = totalAprovados * 1.15;
+    const valorPerdido = totalReprovados * 1.15;
 
-    // Valores financeiros
-    const valorGanho = pagos.reduce((acc, l) => acc + (l.valor || 0), 0); // Valor dos pagos
-    const valorGasto = aprovados.reduce((acc, l) => acc + (l.valor || 0), 0); // Valor dos aprovados (potencial)
-    const valorPerdido = reprovados.reduce((acc, l) => acc + (l.valor || 0), 0); // Valor dos reprovados
-
-    // Estatísticas por CBO
-    const cboMap = new Map<string, { codigo: string; descricao: string; total: number; aprovados: number; reprovados: number }>();
-    leads.forEach(l => {
-      if (!l.cbo_codigo) return;
-      const key = l.cbo_codigo;
-      const existing = cboMap.get(key) || { codigo: l.cbo_codigo, descricao: l.cbo_descricao || l.cbo_codigo, total: 0, aprovados: 0, reprovados: 0 };
-      existing.total++;
-      if (isAprovado(l.status)) existing.aprovados++;
-      if (isReprovado(l.status)) existing.reprovados++;
-      cboMap.set(key, existing);
-    });
+    // ===== PROCESSAR ESTATÍSTICAS DE CBO =====
+    const todosCbosComAprovacoes: CBOStats[] = Array.from(cboMap.values())
+      .filter(c => c.aprovados > 0)
+      .map(c => ({ ...c, taxaAprovacao: c.total > 0 ? (c.aprovados / c.total) * 100 : 0 }));
 
     const cboStats: CBOStats[] = Array.from(cboMap.values())
       .filter(c => c.total >= 3)
-      .map(c => ({
-        ...c,
-        taxaAprovacao: c.total > 0 ? (c.aprovados / c.total) * 100 : 0,
-      }));
+      .map(c => ({ ...c, taxaAprovacao: c.total > 0 ? (c.aprovados / c.total) * 100 : 0 }));
 
-    // CBO com mais aprovação (maior taxa) vs CBO com mais reprovação (menor taxa)
-    const cboMaisAprovacao = cboStats.length > 0 
-      ? [...cboStats].sort((a, b) => b.taxaAprovacao - a.taxaAprovacao)[0] 
-      : null;
+    const cbosOrdenadosPorAprovacoes = todosCbosComAprovacoes.sort((a, b) => b.aprovados - a.aprovados);
+    const cboMaisAprovacao = cbosOrdenadosPorAprovacoes.length > 1 
+      ? cbosOrdenadosPorAprovacoes[1]
+      : (cbosOrdenadosPorAprovacoes.length > 0 ? cbosOrdenadosPorAprovacoes[0] : null);
     const cboMaisReprovacao = cboStats.length > 0 
       ? [...cboStats].sort((a, b) => a.taxaAprovacao - b.taxaAprovacao)[0] 
       : null;
 
-    // Estatísticas por Empresa
-    const empresaMap = new Map<string, { empresa: string; total: number; aprovados: number; reprovados: number }>();
-    leads.forEach(l => {
-      if (!l.empresa) return;
-      const key = l.empresa;
-      const existing = empresaMap.get(key) || { empresa: l.empresa, total: 0, aprovados: 0, reprovados: 0 };
-      existing.total++;
-      if (isAprovado(l.status)) existing.aprovados++;
-      if (isReprovado(l.status)) existing.reprovados++;
-      empresaMap.set(key, existing);
-    });
+    // ===== PROCESSAR ESTATÍSTICAS DE EMPRESA =====
+    const todasEmpresasComAprovacoes: EmpresaStats[] = Array.from(empresaMap.values())
+      .filter(e => e.aprovados > 0)
+      .map(e => ({ ...e, taxaAprovacao: e.total > 0 ? (e.aprovados / e.total) * 100 : 0 }));
 
-    const empresaStats: EmpresaStats[] = Array.from(empresaMap.values())
-      .filter(e => e.total >= 3)
-      .map(e => ({
-        ...e,
-        taxaAprovacao: e.total > 0 ? (e.aprovados / e.total) * 100 : 0,
-      }));
-
-    // Empresa com mais aprovações (quantidade) vs Empresa com mais reprovações (quantidade)
-    const empresaMaisAprovacoes = empresaStats.length > 0 
-      ? [...empresaStats].sort((a, b) => b.aprovados - a.aprovados)[0] 
-      : null;
-    const empresaMaisReprovacoes = empresaStats.length > 0 
-      ? [...empresaStats].sort((a, b) => b.reprovados - a.reprovados)[0] 
+    const empresasOrdenadas = todasEmpresasComAprovacoes.sort((a, b) => b.aprovados - a.aprovados);
+    const empresaMaisAprovacoes = empresasOrdenadas.length > 0 ? empresasOrdenadas[0] : null;
+    
+    // Empresa com mais REPROVAÇÕES (ordenar por número de reprovados)
+    const todasEmpresasComReprovacoes: EmpresaStats[] = Array.from(empresaMap.values())
+      .filter(e => e.reprovados > 0)
+      .map(e => ({ ...e, taxaAprovacao: e.total > 0 ? (e.aprovados / e.total) * 100 : 0 }));
+    const empresaMaisReprovacoes = todasEmpresasComReprovacoes.length > 0
+      ? todasEmpresasComReprovacoes.sort((a, b) => b.reprovados - a.reprovados)[0]
       : null;
 
-    // Estatísticas por Banco
-    const bancoMap = new Map<string, { banco: string; total: number; aprovados: number; reprovados: number; valorTotal: number }>();
-    leads.forEach(l => {
-      if (!l.banco) return;
-      const key = l.banco;
-      const existing = bancoMap.get(key) || { banco: l.banco, total: 0, aprovados: 0, reprovados: 0, valorTotal: 0 };
-      existing.total++;
-      if (isAprovado(l.status)) {
-        existing.aprovados++;
-        existing.valorTotal += l.valor || 0;
-      }
-      if (isReprovado(l.status)) existing.reprovados++;
-      bancoMap.set(key, existing);
-    });
-
+    // ===== PROCESSAR ESTATÍSTICAS DE BANCO =====
     const bancoStats: BancoStats[] = Array.from(bancoMap.values())
       .filter(b => b.total >= 3)
-      .map(b => ({
-        ...b,
-        taxaAprovacao: b.total > 0 ? (b.aprovados / b.total) * 100 : 0,
-      }));
+      .map(b => ({ ...b, taxaAprovacao: b.total > 0 ? (b.aprovados / b.total) * 100 : 0 }));
 
-    // Banco com mais aprovações (quantidade) vs Banco com menos aprovações (quantidade)
-    const bancoMaisAprovacoes = bancoStats.length > 0 
-      ? [...bancoStats].sort((a, b) => b.aprovados - a.aprovados)[0] 
-      : null;
-    const bancoMenosAprovacoes = bancoStats.length > 0 
-      ? [...bancoStats].sort((a, b) => a.aprovados - b.aprovados)[0] 
-      : null;
+    const bancosOrdenados = [...bancoStats].sort((a, b) => b.aprovados - a.aprovados);
+    const bancoMaisAprovacoes = bancosOrdenados.length > 0 ? bancosOrdenados[0] : null;
+    const bancoMenosAprovacoes = bancosOrdenados.length > 0 ? bancosOrdenados[bancosOrdenados.length - 1] : null;
 
-    // Estatísticas Temporais - Por Dia
-    const diaMap = new Map<string, { data: string; diaSemana: string; total: number; aprovados: number; reprovados: number }>();
-    leads.forEach(l => {
-      if (!l.created_at) return;
-      const date = new Date(l.created_at);
-      const dataStr = date.toISOString().split('T')[0];
-      const diaSemana = DIAS_SEMANA[date.getDay()];
-      const existing = diaMap.get(dataStr) || { data: dataStr, diaSemana, total: 0, aprovados: 0, reprovados: 0 };
-      existing.total++;
-      if (isAprovado(l.status)) existing.aprovados++;
-      if (isReprovado(l.status)) existing.reprovados++;
-      diaMap.set(dataStr, existing);
-    });
-
-    const aprovacoesPorDia: TemporalStats[] = Array.from(diaMap.values())
-      .map(d => ({
-        ...d,
-        taxaAprovacao: d.total > 0 ? (d.aprovados / d.total) * 100 : 0,
-      }))
-      .sort((a, b) => a.data.localeCompare(b.data));
-
-    // Estatísticas por Dia da Semana (com pagos)
-    const diaSemanaMap = new Map<string, { dia: string; total: number; aprovados: number; pagos: number }>();
-    DIAS_SEMANA.forEach(dia => diaSemanaMap.set(dia, { dia, total: 0, aprovados: 0, pagos: 0 }));
-    leads.forEach(l => {
-      if (!l.created_at) return;
-      const date = new Date(l.created_at);
-      const diaSemana = DIAS_SEMANA[date.getDay()];
-      const existing = diaSemanaMap.get(diaSemana)!;
-      existing.total++;
-      if (isAprovado(l.status)) existing.aprovados++;
-      if (l.isPago) existing.pagos++;
-    });
-
-    const aprovacoesPorDiaSemana = Array.from(diaSemanaMap.values())
-      .map(d => ({
-        ...d,
-        taxaAprovacao: d.total > 0 ? (d.aprovados / d.total) * 100 : 0,
-        taxaPagamento: d.total > 0 ? (d.pagos / d.total) * 100 : 0,
-      }));
-
-    // Estatísticas por Mês (com pagos)
-    const mesMap = new Map<string, { mes: string; total: number; aprovados: number; pagos: number }>();
-    leads.forEach(l => {
-      if (!l.created_at) return;
-      const date = new Date(l.created_at);
-      const mesStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      const existing = mesMap.get(mesStr) || { mes: mesStr, total: 0, aprovados: 0, pagos: 0 };
-      existing.total++;
-      if (isAprovado(l.status)) existing.aprovados++;
-      if (l.isPago) existing.pagos++;
-      mesMap.set(mesStr, existing);
-    });
+    // ===== PROCESSAR ESTATÍSTICAS TEMPORAIS =====
+    const aprovacoesPorDiaSemana = Array.from(diaSemanaMap.values()).map(d => ({
+      ...d,
+      taxaAprovacao: d.total > 0 ? (d.aprovados / d.total) * 100 : 0,
+      taxaPagamento: d.total > 0 ? (d.pagos / d.total) * 100 : 0,
+    }));
 
     const aprovacoesPorMes = Array.from(mesMap.values())
       .map(m => ({
@@ -441,28 +488,29 @@ export const useDashboardAnalytics = (): DashboardAnalyticsData => {
       }))
       .sort((a, b) => a.mes.localeCompare(b.mes));
 
-    // Perfil Ideal
-    const cboIdeal = cboMaisAprovacao ? {
-      codigo: cboMaisAprovacao.codigo,
-      descricao: cboMaisAprovacao.descricao,
-      taxaAprovacao: cboMaisAprovacao.taxaAprovacao,
+    // ===== PERFIL IDEAL =====
+    const cboIdeal = cbosOrdenadosPorAprovacoes.length > 0 ? {
+      codigo: cbosOrdenadosPorAprovacoes[0].codigo,
+      descricao: cbosOrdenadosPorAprovacoes[0].descricao,
+      totalAprovacoes: cbosOrdenadosPorAprovacoes[0].aprovados,
     } : null;
 
-    const valoresAprovados = aprovados.map(l => l.valor).filter((v): v is number => v !== null && v > 0);
-    const margemIdeal = valoresAprovados.length > 0 ? {
-      min: Math.min(...valoresAprovados),
-      max: Math.max(...valoresAprovados),
-      media: valoresAprovados.reduce((a, b) => a + b, 0) / valoresAprovados.length,
+    const margensAprovados = aprovadosParaMargem
+      .map(l => extrairValorMargem({ retorno_simulacao: l.retorno_simulacao } as never))
+      .filter((v): v is number => v !== null && v > 0);
+    const margemIdeal = margensAprovados.length > 0 ? {
+      min: Math.min(...margensAprovados),
+      max: Math.max(...margensAprovados),
+      media: margensAprovados.reduce((a, b) => a + b, 0) / margensAprovados.length,
     } : null;
 
-    const bancoIdeal = bancoMaisAprovacoes ? {
-      banco: bancoMaisAprovacoes.banco,
-      taxaAprovacao: bancoMaisAprovacoes.taxaAprovacao,
+    const bancoIdeal = bancosOrdenados.length > 0 ? {
+      banco: bancosOrdenados[0].banco,
+      totalAprovacoes: bancosOrdenados[0].aprovados,
     } : null;
 
-    const melhorDiaSemana = aprovacoesPorDiaSemana.length > 0 
-      ? aprovacoesPorDiaSemana.reduce((best, curr) => curr.taxaAprovacao > best.taxaAprovacao ? curr : best)
-      : null;
+    const melhorDiaSemana = aprovacoesPorDiaSemana.reduce((best, curr) => 
+      curr.pagos > best.pagos ? curr : best, aprovacoesPorDiaSemana[0]);
 
     return {
       totalLeads: leads.length,
@@ -480,14 +528,13 @@ export const useDashboardAnalytics = (): DashboardAnalyticsData => {
       empresaMaisReprovacoes,
       bancoMaisAprovacoes,
       bancoMenosAprovacoes,
-      aprovacoesPorDia,
       aprovacoesPorDiaSemana,
       aprovacoesPorMes,
       perfilIdeal: {
         cboIdeal,
         margemIdeal,
         bancoIdeal,
-        melhorDiaSemana: melhorDiaSemana ? { dia: melhorDiaSemana.dia, taxaAprovacao: melhorDiaSemana.taxaAprovacao } : null,
+        melhorDiaSemana: melhorDiaSemana ? { dia: melhorDiaSemana.dia, totalPagamentos: melhorDiaSemana.pagos } : null,
       },
       isLoading,
       error,
