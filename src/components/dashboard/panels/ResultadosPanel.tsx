@@ -381,6 +381,165 @@ const parseJsonString = (value: string): unknown | null => {
   }
 };
 
+// Função para contar erros detalhados de um lead (mesma lógica do LeadDetailDialog)
+const contarErrosDetalhados = (lead: ResultsLeadRow): number => {
+  const mensagens = new Set<string>();
+
+  const parseJson = (str: string): unknown => {
+    try {
+      const cleanStr = str.replace(/\\n/g, "").replace(/\\"/g, '"');
+      const jsonMatch = cleanStr.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return JSON.parse(str);
+    } catch {
+      return null;
+    }
+  };
+
+  const asObject = (retorno: unknown): Record<string, unknown> | null => {
+    if (!retorno) return null;
+    if (typeof retorno === "string") {
+      const parsed = parseJson(retorno);
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+    }
+    return typeof retorno === "object" ? (retorno as Record<string, unknown>) : null;
+  };
+
+  const addMensagem = (msg: unknown) => {
+    if (typeof msg !== "string") return;
+    const trimmed = msg.trim();
+    if (!trimmed) return;
+    mensagens.add(trimmed);
+  };
+
+  const addFromDomainValidations = (obj: Record<string, unknown> | null) => {
+    if (!obj) return;
+    
+    // Extrair erros do campo 'error' que pode conter JSON embutido
+    if (typeof obj.error === 'string') {
+      const errorStr = obj.error;
+      const innerParsed = parseJson(errorStr);
+      if (innerParsed && typeof innerParsed === 'object') {
+        const innerObj = innerParsed as Record<string, unknown>;
+        if (innerObj.errors && typeof innerObj.errors === 'object') {
+          obj = { ...obj, errors: innerObj.errors };
+        }
+        if (innerObj.details && typeof innerObj.details === 'object') {
+          obj = { ...obj, details: innerObj.details };
+        }
+      }
+    }
+    
+    const errors = obj.errors as Record<string, unknown> | undefined;
+    const details = obj.details as Record<string, unknown> | undefined;
+    const detailsErrors = (details?.errors as Record<string, unknown> | undefined) ?? undefined;
+    const domainValidations = (errors?.DomainValidations ?? detailsErrors?.DomainValidations) as unknown;
+    if (!Array.isArray(domainValidations)) return;
+    for (const v of domainValidations) {
+      if (typeof v === "string") {
+        addMensagem(v);
+        continue;
+      }
+      if (v && typeof v === "object") {
+        const vv = v as Record<string, unknown>;
+        addMensagem(
+          (vv.Message || vv.message || vv.ErrorMessage || vv.errorMessage || vv.Description || vv.description || vv.Reason || vv.reason) as unknown
+        );
+      }
+    }
+  };
+
+  const addFromDataprevValidation = (obj: Record<string, unknown> | null) => {
+    if (!obj) return;
+    
+    // Extrair erros do campo 'error' que pode conter JSON embutido
+    let details = obj.details as Record<string, unknown> | undefined;
+    if (typeof obj.error === 'string') {
+      const errorStr = obj.error;
+      const innerParsed = parseJson(errorStr);
+      if (innerParsed && typeof innerParsed === 'object') {
+        const innerObj = innerParsed as Record<string, unknown>;
+        if (innerObj.details && typeof innerObj.details === 'object') {
+          details = innerObj.details as Record<string, unknown>;
+        }
+      }
+    }
+    
+    const responses = details?.dataprevValidationResponses as Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(responses)) return;
+    for (const r of responses) {
+      const reasons = r.reasonForIneligibility as Array<Record<string, unknown>> | undefined;
+      if (Array.isArray(reasons)) {
+        for (const reason of reasons) {
+          addMensagem((reason.messageError as unknown) ?? (reason.message as unknown) ?? (reason.description as unknown));
+        }
+      }
+      const employeeRelationShip = r.employeeRelationShip as Record<string, unknown> | undefined;
+      const motivoInelegibilidade = employeeRelationShip?.motivoInelegibilidade as Record<string, unknown> | undefined;
+      if (motivoInelegibilidade) {
+        addMensagem(motivoInelegibilidade.descricao as unknown);
+      }
+    }
+  };
+
+  const addFromKnownMessageFields = (obj: Record<string, unknown> | null) => {
+    if (!obj) return;
+    
+    // Só adicionar se parecer erro (não adicionar statusDescription de pagamento)
+    const STATUS_PAGOS = ['encerrado', 'liquidacao', 'pago', 'liquidado', 'aprovacao', 'aprovado'];
+    const isStatusPagamento = (val: string): boolean => {
+      const normalized = val.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+      return STATUS_PAGOS.some(s => normalized.includes(s));
+    };
+    
+    const checkAndAdd = (val: unknown, fieldName: string) => {
+      if (typeof val !== 'string' || !val.trim()) return;
+      if (fieldName === 'statusDescription' && isStatusPagamento(val)) return;
+      const lower = val.toLowerCase();
+      if (lower.includes('erro') || lower.includes('error') || 
+          lower.includes('400') || lower.includes('429') ||
+          lower.includes('failed') || lower.includes('invalid') ||
+          lower.includes('ineligibility') || lower.includes('inelegibilidade')) {
+        addMensagem(val);
+      }
+    };
+    
+    checkAndAdd(obj.message, 'message');
+    checkAndAdd(obj.erro, 'erro');
+    checkAndAdd(obj.error, 'error');
+    checkAndAdd(obj.statusDescription, 'statusDescription');
+
+    const details = obj.details as Record<string, unknown> | undefined;
+    if (details) {
+      addMensagem(details.reason);
+      checkAndAdd(details.message, 'message');
+      checkAndAdd(details.error, 'error');
+      checkAndAdd(details.detail, 'detail');
+    }
+  };
+
+  const processRetorno = (retorno: unknown) => {
+    const obj = asObject(retorno);
+    addFromDomainValidations(obj);
+    addFromDataprevValidation(obj);
+    addFromKnownMessageFields(obj);
+  };
+
+  processRetorno(lead.retorno_autorizacao);
+  processRetorno(lead.retorno_margem);
+  processRetorno(lead.retorno_simulacao);
+  processRetorno(lead.retorno_proposta);
+  processRetorno(lead.retorno_get_proposta);
+
+  if (mensagens.size === 0 && lead.tipo_reprovacao) {
+    addMensagem(lead.tipo_reprovacao);
+  }
+
+  return mensagens.size || 0;
+};
+
 const extractErrorInfoFromRecord = (record: Record<string, unknown>): { erro: string; motivo: string | null } | null => {
   const errorCandidate = sanitizeErrorText(pickFirstString(record.error, record.message));
   const statusCandidate = typeof record.status === "string" ? record.status.trim() : null;
@@ -861,15 +1020,6 @@ const ResultadosPanel = () => {
         return p.status;
       })();
 
-      // Contar erros em cada etapa
-      const contarErros = (): number => {
-        let count = 0;
-        if (a.status === "ERRO_400" || a.status === "ERRO_429" || a.status === "OUTROS") count++;
-        if (m.status === "ERRO_400" || m.status === "ERRO_429" || m.status === "ERRO_OUTRO") count++;
-        if (propostaStatus === "ERRO_400" || propostaStatus === "ERRO_429" || propostaStatus === "OUTRO") count++;
-        return count || (propostaErroBase ? 1 : 0);
-      };
-
       return {
         ...l,
         statusAutorizacao: a.status,
@@ -881,7 +1031,7 @@ const ResultadosPanel = () => {
         resultadoNegocio: n.resultado,
         resultadoNegocioLabel: n.label,
         propostaErro: propostaErroBase,
-        numErros: contarErros(),
+        numErros: contarErrosDetalhados(l),
       };
     });
   }, [resultsLeads]);
