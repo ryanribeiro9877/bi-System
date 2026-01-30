@@ -66,6 +66,7 @@ interface LeadPorErro {
   retorno_simulacao: unknown;
   retorno_autorizacao: unknown;
   retorno_proposta: unknown;
+  retorno_get_proposta?: unknown;
   created_at: string;
 }
 
@@ -242,6 +243,7 @@ const ResultadosConsultasPanel = () => {
     processRetorno(lead.retorno_margem);
     processRetorno(lead.retorno_simulacao);
     processRetorno(lead.retorno_proposta);
+    processRetorno(lead.retorno_get_proposta);
 
     if (mensagens.size === 0 && lead.tipo_reprovacao) {
       addMensagem(lead.tipo_reprovacao);
@@ -325,7 +327,7 @@ const ResultadosConsultasPanel = () => {
       }
       const { data: leads, error } = await supabase
         .from('leads')
-        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, retorno_autorizacao, retorno_proposta, created_at')
+        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, retorno_autorizacao, retorno_proposta, retorno_get_proposta, created_at')
         .in('tipo_reprovacao', tiposOriginais)
         .eq('status', 'reprovado')
         .order('created_at', { ascending: false })
@@ -378,7 +380,7 @@ const ResultadosConsultasPanel = () => {
 
       const { data: leads, error, count } = await supabase
         .from('leads')
-        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, retorno_autorizacao, retorno_proposta, created_at', { count: 'exact' })
+        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, retorno_autorizacao, retorno_proposta, retorno_get_proposta, created_at', { count: 'exact' })
         .in('tipo_reprovacao', errosDaCategoria)
         .eq('status', 'reprovado')
         .order('created_at', { ascending: false })
@@ -558,7 +560,7 @@ const ResultadosConsultasPanel = () => {
     try {
       const { data: leads, error } = await supabase
         .from('leads')
-        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, retorno_autorizacao, retorno_proposta, created_at')
+        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, retorno_autorizacao, retorno_proposta, retorno_get_proposta, created_at')
         .eq('banco', data.banco)
         .in('tipo_reprovacao', errosSelecionados)
         .eq('status', 'reprovado')
@@ -599,7 +601,7 @@ const ResultadosConsultasPanel = () => {
 
       const { data: leads, error } = await supabase
         .from('leads')
-        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, retorno_autorizacao, retorno_proposta, created_at')
+        .select('cpf, nome, banco, tipo_reprovacao, retorno_margem, retorno_simulacao, retorno_autorizacao, retorno_proposta, retorno_get_proposta, created_at')
         .in('tipo_reprovacao', errosComGrade)
         .eq('status', 'reprovado')
         .order('created_at', { ascending: false })
