@@ -269,7 +269,7 @@ const Dashboard = () => {
                       <p className="text-sm text-muted-foreground truncate">{analytics.cboMaisReprovacao.descricao}</p>
                       <div className="mt-3 flex items-center gap-4">
                         <Badge variant="secondary" className="bg-red-500/20 text-red-500">
-                          {formatPercent(100 - analytics.cboMaisReprovacao.taxaAprovacao)} reprovação
+                          {formatPercent((analytics.cboMaisReprovacao.reprovados / analytics.cboMaisReprovacao.total) * 100)} reprovação
                         </Badge>
                         <span className="text-xs text-muted-foreground">
                           {analytics.cboMaisReprovacao.reprovados} de {analytics.cboMaisReprovacao.total} leads
