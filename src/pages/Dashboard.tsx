@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import { useDashboardAnalytics } from "@/hooks/useDashboardAnalytics";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,44 +15,24 @@ import {
   XCircle,
 } from "lucide-react";
 
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-};
+// ============================================================
+// FUNÇÕES DE FORMATAÇÃO (fora do componente para evitar recriação)
+// ============================================================
+const currencyFormatter = new Intl.NumberFormat('pt-BR', { 
+  style: 'currency', 
+  currency: 'BRL' 
+});
 
-const formatPercent = (value: number) => {
-  return `${value.toFixed(1)}%`;
-};
+const formatCurrency = (value: number) => currencyFormatter.format(value);
+const formatPercent = (value: number) => `${value.toFixed(1)}%`;
 
+// ============================================================
+// COMPONENTE PRINCIPAL
+// ============================================================
 const Dashboard = () => {
   const analytics = useDashboardAnalytics();
 
-  const kpis = useMemo(() => [
-    {
-      title: "Valor Ganho",
-      subtitle: "Leads pagos",
-      value: formatCurrency(analytics.valorGanho),
-      icon: Banknote,
-      color: "text-emerald-500",
-      bgColor: "bg-emerald-500/10",
-    },
-    {
-      title: "Valor Gasto",
-      subtitle: "Leads aprovados",
-      value: formatCurrency(analytics.valorGasto),
-      icon: CircleDollarSign,
-      color: "text-blue-500",
-      bgColor: "bg-blue-500/10",
-    },
-    {
-      title: "Valor Perdido",
-      subtitle: "Leads reprovados",
-      value: formatCurrency(analytics.valorPerdido),
-      icon: XCircle,
-      color: "text-red-500",
-      bgColor: "bg-red-500/10",
-    },
-  ], [analytics]);
-
+  // Loading state
   if (analytics.isLoading) {
     return (
       <div className="flex min-h-screen bg-background">
@@ -62,6 +41,21 @@ const Dashboard = () => {
           <div className="flex items-center justify-center h-96">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
             <span className="ml-3 text-muted-foreground">Carregando análises...</span>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Error state
+  if (analytics.error) {
+    return (
+      <div className="flex min-h-screen bg-background">
+        <DashboardSidebar />
+        <main className="flex-1 p-4 lg:p-8 pt-16 lg:pt-8">
+          <div className="flex items-center justify-center h-96">
+            <XCircle className="w-8 h-8 text-destructive" />
+            <span className="ml-3 text-destructive">{analytics.error}</span>
           </div>
         </main>
       </div>
@@ -79,29 +73,63 @@ const Dashboard = () => {
               <h1 className="text-2xl lg:text-3xl font-bold text-foreground">Dashboard de Aprovações</h1>
               <p className="text-muted-foreground mt-1">Análise comparativa e perfil ideal de aprovação</p>
             </div>
-            {/* Filtros são aplicados via sidebar */}
           </div>
 
-          {/* KPIs */}
+          {/* KPIs - Inline para evitar useMemo desnecessário */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl mx-auto">
-            {kpis.map((kpi, idx) => (
-              <Card key={idx} className="glass-card">
-                <CardContent className="p-4 lg:p-6">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-xs lg:text-sm text-muted-foreground">{kpi.title}</p>
-                      <p className={`text-xl lg:text-2xl font-bold mt-1 ${kpi.color}`}>{kpi.value}</p>
-                      {kpi.subtitle && (
-                        <p className={`text-sm mt-1 ${kpi.color}`}>{kpi.subtitle}</p>
-                      )}
-                    </div>
-                    <div className={`p-2 lg:p-3 rounded-xl ${kpi.bgColor}`}>
-                      <kpi.icon className={`w-5 h-5 lg:w-6 lg:h-6 ${kpi.color}`} />
-                    </div>
+            {/* Valor Ganho */}
+            <Card className="glass-card">
+              <CardContent className="p-4 lg:p-6">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs lg:text-sm text-muted-foreground">Valor Ganho</p>
+                    <p className="text-xl lg:text-2xl font-bold mt-1 text-emerald-500">
+                      {formatCurrency(analytics.valorGanho)}
+                    </p>
+                    <p className="text-sm mt-1 text-emerald-500">Leads pagos</p>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                  <div className="p-2 lg:p-3 rounded-xl bg-emerald-500/10">
+                    <Banknote className="w-5 h-5 lg:w-6 lg:h-6 text-emerald-500" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Valor Gasto */}
+            <Card className="glass-card">
+              <CardContent className="p-4 lg:p-6">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs lg:text-sm text-muted-foreground">Valor Gasto</p>
+                    <p className="text-xl lg:text-2xl font-bold mt-1 text-blue-500">
+                      {formatCurrency(analytics.valorGasto)}
+                    </p>
+                    <p className="text-sm mt-1 text-blue-500">Leads aprovados</p>
+                  </div>
+                  <div className="p-2 lg:p-3 rounded-xl bg-blue-500/10">
+                    <CircleDollarSign className="w-5 h-5 lg:w-6 lg:h-6 text-blue-500" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Valor Perdido */}
+            <Card className="glass-card">
+              <CardContent className="p-4 lg:p-6">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs lg:text-sm text-muted-foreground">Valor Perdido</p>
+                    <p className="text-xl lg:text-2xl font-bold mt-1 text-red-500">
+                      {formatCurrency(analytics.valorPerdido)}
+                    </p>
+                    <p className="text-sm mt-1 text-red-500">Leads reprovados</p>
+                  </div>
+                  <div className="p-2 lg:p-3 rounded-xl bg-red-500/10">
+                    <XCircle className="w-5 h-5 lg:w-6 lg:h-6 text-red-500" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Perfil Ideal de Aprovação */}
@@ -195,7 +223,7 @@ const Dashboard = () => {
             </CardContent>
           </Card>
 
-          {/* Confronto CBO: Mais Aprovação X Mais Reprovação */}
+          {/* Confronto CBO */}
           <Card className="glass-card">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base lg:text-lg">
@@ -256,7 +284,7 @@ const Dashboard = () => {
             </CardContent>
           </Card>
 
-          {/* Confronto Empresa: Mais Aprovações X Mais Reprovações */}
+          {/* Confronto Empresa */}
           <Card className="glass-card">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base lg:text-lg">
@@ -319,7 +347,7 @@ const Dashboard = () => {
             </CardContent>
           </Card>
 
-          {/* Confronto Banco: Mais Aprovações X Menos Aprovações */}
+          {/* Confronto Banco */}
           <Card className="glass-card">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base lg:text-lg">
@@ -393,7 +421,6 @@ const Dashboard = () => {
               </div>
             </CardContent>
           </Card>
-
         </div>
       </main>
     </div>

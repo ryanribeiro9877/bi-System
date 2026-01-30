@@ -7,52 +7,77 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
   public: {
     Tables: {
+      _lint_backups: {
+        Row: {
+          created_at: string | null
+          ddl: string
+          id: number
+          object_name: string
+          object_schema: string
+          object_type: string
+        }
+        Insert: {
+          created_at?: string | null
+          ddl: string
+          id?: number
+          object_name: string
+          object_schema: string
+          object_type: string
+        }
+        Update: {
+          created_at?: string | null
+          ddl?: string
+          id?: number
+          object_name?: string
+          object_schema?: string
+          object_type?: string
+        }
+        Relationships: []
+      }
       imports: {
         Row: {
-          completed_at: string | null
-          created_at: string
+          created_at: string | null
           error_message: string | null
           failed_records: number | null
           file_name: string
-          file_type: string
+          file_type: string | null
           id: string
-          imported_by: string
+          imported_by: string | null
           status: string | null
           successful_records: number | null
           total_records: number | null
+          updated_at: string | null
         }
         Insert: {
-          completed_at?: string | null
-          created_at?: string
+          created_at?: string | null
           error_message?: string | null
           failed_records?: number | null
           file_name: string
-          file_type: string
+          file_type?: string | null
           id?: string
-          imported_by: string
+          imported_by?: string | null
           status?: string | null
           successful_records?: number | null
           total_records?: number | null
+          updated_at?: string | null
         }
         Update: {
-          completed_at?: string | null
-          created_at?: string
+          created_at?: string | null
           error_message?: string | null
           failed_records?: number | null
           file_name?: string
-          file_type?: string
+          file_type?: string | null
           id?: string
-          imported_by?: string
+          imported_by?: string | null
           status?: string | null
           successful_records?: number | null
           total_records?: number | null
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -63,7 +88,7 @@ export type Database = {
           cbo_block_code: string | null
           cbo_block_name: string | null
           cpf: string
-          created_at: string
+          created_at: string | null
           data_envio: string | null
           data_retorno: string | null
           id: string
@@ -79,8 +104,8 @@ export type Database = {
           status: string | null
           tipo_reprovacao: string | null
           ultimo_log: string | null
-          updated_at: string
-          valor: number | null
+          updated_at: string | null
+          valor: string | null
         }
         Insert: {
           banco?: string | null
@@ -88,7 +113,7 @@ export type Database = {
           cbo_block_code?: string | null
           cbo_block_name?: string | null
           cpf: string
-          created_at?: string
+          created_at?: string | null
           data_envio?: string | null
           data_retorno?: string | null
           id?: string
@@ -104,8 +129,8 @@ export type Database = {
           status?: string | null
           tipo_reprovacao?: string | null
           ultimo_log?: string | null
-          updated_at?: string
-          valor?: number | null
+          updated_at?: string | null
+          valor?: string | null
         }
         Update: {
           banco?: string | null
@@ -113,7 +138,7 @@ export type Database = {
           cbo_block_code?: string | null
           cbo_block_name?: string | null
           cpf?: string
-          created_at?: string
+          created_at?: string | null
           data_envio?: string | null
           data_retorno?: string | null
           id?: string
@@ -129,50 +154,58 @@ export type Database = {
           status?: string | null
           tipo_reprovacao?: string | null
           ultimo_log?: string | null
-          updated_at?: string
-          valor?: number | null
+          updated_at?: string | null
+          valor?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "leads_import_batch_id_fkey"
+            columns: ["import_batch_id"]
+            isOneToOne: false
+            referencedRelation: "imports"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
-          created_at: string
-          email: string
+          created_at: string | null
+          email: string | null
           full_name: string | null
           id: string
-          updated_at: string
+          updated_at: string | null
         }
         Insert: {
-          created_at?: string
-          email: string
+          created_at?: string | null
+          email?: string | null
           full_name?: string | null
           id: string
-          updated_at?: string
+          updated_at?: string | null
         }
         Update: {
-          created_at?: string
-          email?: string
+          created_at?: string | null
+          email?: string | null
           full_name?: string | null
           id?: string
-          updated_at?: string
+          updated_at?: string | null
         }
         Relationships: []
       }
       user_roles: {
         Row: {
-          created_at: string
+          created_at: string | null
           id: string
           role: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Insert: {
-          created_at?: string
+          created_at?: string | null
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Update: {
-          created_at?: string
+          created_at?: string | null
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
@@ -181,43 +214,319 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      leads_com_motivo: {
+        Row: {
+          banco: string | null
+          cbo: string | null
+          cbo_block_code: string | null
+          cbo_block_name: string | null
+          cpf: string | null
+          created_at: string | null
+          data_envio: string | null
+          data_retorno: string | null
+          id: string | null
+          import_batch_id: string | null
+          imported_by: string | null
+          motivo_reprovacao_tecnica: string | null
+          nome: string | null
+          observacoes: string | null
+          retorno_autorizacao: Json | null
+          retorno_get_proposta: Json | null
+          retorno_margem: Json | null
+          retorno_proposta: Json | null
+          retorno_simulacao: Json | null
+          status: string | null
+          tipo_reprovacao: string | null
+          ultimo_log: string | null
+          updated_at: string | null
+          valor: string | null
+        }
+        Insert: {
+          banco?: string | null
+          cbo?: string | null
+          cbo_block_code?: string | null
+          cbo_block_name?: string | null
+          cpf?: string | null
+          created_at?: string | null
+          data_envio?: string | null
+          data_retorno?: string | null
+          id?: string | null
+          import_batch_id?: string | null
+          imported_by?: string | null
+          motivo_reprovacao_tecnica?: never
+          nome?: string | null
+          observacoes?: string | null
+          retorno_autorizacao?: Json | null
+          retorno_get_proposta?: Json | null
+          retorno_margem?: Json | null
+          retorno_proposta?: Json | null
+          retorno_simulacao?: Json | null
+          status?: string | null
+          tipo_reprovacao?: string | null
+          ultimo_log?: string | null
+          updated_at?: string | null
+          valor?: string | null
+        }
+        Update: {
+          banco?: string | null
+          cbo?: string | null
+          cbo_block_code?: string | null
+          cbo_block_name?: string | null
+          cpf?: string | null
+          created_at?: string | null
+          data_envio?: string | null
+          data_retorno?: string | null
+          id?: string | null
+          import_batch_id?: string | null
+          imported_by?: string | null
+          motivo_reprovacao_tecnica?: never
+          nome?: string | null
+          observacoes?: string | null
+          retorno_autorizacao?: Json | null
+          retorno_get_proposta?: Json | null
+          retorno_margem?: Json | null
+          retorno_proposta?: Json | null
+          retorno_simulacao?: Json | null
+          status?: string | null
+          tipo_reprovacao?: string | null
+          ultimo_log?: string | null
+          updated_at?: string | null
+          valor?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_import_batch_id_fkey"
+            columns: ["import_batch_id"]
+            isOneToOne: false
+            referencedRelation: "imports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
-      has_role: {
-        Args: {
-          _role: Database["public"]["Enums"]["app_role"]
-          _user_id: string
-        }
-        Returns: boolean
-      }
-      is_admin: { Args: never; Returns: boolean }
-      get_dashboard_stats: {
-        Args: {
-          p_data_inicial?: string | null
-          p_data_final?: string | null
-          p_banco?: string | null
-          p_status?: string | null
-          p_tipo_reprovacao?: string | null
-          p_tipos_reprovacao_multiplos?: string[] | null
-        }
-        Returns: Json
-      }
-      get_filter_options: {
-        Args: Record<string, never>
-        Returns: Json
-      }
       count_leads: {
         Args: {
-          p_data_inicial?: string | null
-          p_data_final?: string | null
-          p_banco?: string | null
-          p_status?: string | null
-          p_tipo_reprovacao?: string | null
-          p_cpf?: string | null
+          p_banco?: string
+          p_cpf?: string
+          p_data_final?: string
+          p_data_inicial?: string
+          p_status?: string
+          p_tipo_reprovacao?: string
         }
         Returns: number
       }
+      extract_message_errors: { Args: { margem: Json }; Returns: string }
+      extract_motivo_prioritario: { Args: { margem: Json }; Returns: string }
+      get_cbos_por_banco: {
+        Args: { p_import_batch_id?: string }
+        Returns: {
+          banco: string
+          cbo_codigo: string
+          cbo_nome: string
+          quantidade: number
+        }[]
+      }
+      get_dashboard_analytics: {
+        Args: {
+          p_data_inicial?: string
+          p_data_final?: string
+          p_banco?: string
+          p_import_batch_id?: string
+        }
+        Returns: Json
+      }
+      get_dashboard_stats: {
+        Args: {
+          p_banco?: string
+          p_data_final?: string
+          p_data_inicial?: string
+          p_import_batch_id?: string
+          p_status?: string
+        }
+        Returns: Json
+      }
+      get_empresas_por_banco: {
+        Args: { p_import_batch_id?: string }
+        Returns: {
+          banco: string
+          empresa_nome: string
+          quantidade: number
+        }[]
+      }
+      get_erros_consultas_analysis: {
+        Args: { p_banco?: string; p_import_batch_id?: string }
+        Returns: {
+          banco: string
+          categoria_erro: string
+          percentual: number
+          quantidade: number
+          tipo_erro: string
+        }[]
+      }
+      get_erros_por_banco: {
+        Args: { p_import_batch_id?: string }
+        Returns: {
+          banco: string
+          erro_mais_comum: string
+          erro_mais_comum_qtd: number
+          taxa_erro: number
+          total_consultas: number
+          total_erros: number
+        }[]
+      }
+      get_erros_resumo: {
+        Args: { p_banco?: string; p_import_batch_id?: string }
+        Returns: {
+          categoria_mais_comum: string
+          categoria_mais_comum_qtd: number
+          erro_mais_comum: string
+          erro_mais_comum_qtd: number
+          erro_menos_comum: string
+          erro_menos_comum_qtd: number
+          taxa_erro: number
+          total_aprovados: number
+          total_consultas: number
+          total_erros: number
+        }[]
+      }
+      get_filter_options: { Args: Record<string, never>; Returns: Json }
+      get_leads_analysis: {
+        Args: { p_banco?: string; p_import_batch_id?: string }
+        Returns: Json
+      }
+      get_leads_by_banco: {
+        Args: {
+          p_banco: string
+          p_import_batch_id?: string
+          p_limit?: number
+          p_status?: string
+        }
+        Returns: Json
+      }
+      get_leads_by_cbo: {
+        Args: {
+          p_cbo_codigo: string
+          p_import_batch_id?: string
+          p_limit?: number
+        }
+        Returns: Json
+      }
+      get_leads_by_empresa: {
+        Args: {
+          p_empresa_nome: string
+          p_import_batch_id?: string
+          p_limit?: number
+        }
+        Returns: Json
+      }
+      get_leads_by_faixa_margem: {
+        Args: { p_faixa: string; p_import_batch_id?: string; p_limit?: number }
+        Returns: Json
+      }
+      get_leads_by_margem_status: {
+        Args: {
+          p_import_batch_id?: string
+          p_limit?: number
+          p_tem_margem: boolean
+        }
+        Returns: {
+          banco: string
+          cpf: string
+          margem: number
+          nome: string
+          parcelas: number
+          produto: string
+          status: string
+        }[]
+      }
+      get_leads_by_parcelas: {
+        Args: {
+          p_import_batch_id?: string
+          p_limit?: number
+          p_parcelas: number
+        }
+        Returns: {
+          banco: string
+          cpf: string
+          margem: number
+          nome: string
+          parcelas: number
+          produto: string
+          status: string
+        }[]
+      }
+      get_leads_by_porte: {
+        Args: { p_limit?: number; p_porte: string }
+        Returns: Json
+      }
+      get_leads_by_produto: {
+        Args: {
+          p_import_batch_id?: string
+          p_limit?: number
+          p_produto: string
+        }
+        Returns: {
+          banco: string
+          cpf: string
+          margem: number
+          nome: string
+          parcelas: number
+          produto: string
+          status: string
+        }[]
+      }
+      get_leads_by_simulacao_status: {
+        Args: {
+          p_aprovada: boolean
+          p_import_batch_id?: string
+          p_limit?: number
+        }
+        Returns: {
+          banco: string
+          cpf: string
+          margem: number
+          nome: string
+          parcelas: number
+          produto: string
+          status: string
+        }[]
+      }
+      get_leads_by_vinculo: {
+        Args: { p_faixa: string; p_import_batch_id?: string; p_limit?: number }
+        Returns: Json
+      }
+      get_leads_stats: { Args: Record<string, never>; Returns: Json }
+      get_leads_with_motivo: {
+        Args: {
+          p_banco?: string
+          p_cpf?: string
+          p_import_batch_id?: string
+          p_limit?: number
+          p_offset?: number
+          p_status?: string
+        }
+        Returns: {
+          banco: string
+          cpf: string
+          created_at: string
+          id: string
+          import_batch_id: string
+          motivo_reprovacao_tecnica: string
+          nome: string
+          retorno_get_proposta: Json
+          status: string
+          tipo_reprovacao: string
+          valor: number
+        }[]
+      }
+      is_admin: { Args: Record<string, never>; Returns: boolean }
+      is_lead_aprovado: {
+        Args: { p_retorno_get_proposta: Json; p_status: string }
+        Returns: boolean
+      }
+      is_lead_pago: { Args: { p_retorno_get_proposta: Json }; Returns: boolean }
+      is_lead_reprovado: { Args: { p_status: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "user"
